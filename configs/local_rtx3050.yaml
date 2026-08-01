@@ -1,0 +1,25 @@
+llm:
+  temperature: 0.0
+  context_length: 4096
+  max_output_tokens: 160
+  json_schema_constrained: true
+
+retrieval:
+  lexical_top_k: 30
+  dense_top_k: 30
+  fused_top_k: 12
+  graph_hops: 1
+  final_top_k: 6
+
+execution:
+  timeout_seconds: 5
+  max_rows: 100000
+  allow_operations:
+    - lookup
+    - compare
+    - difference
+    - growth_rate
+    - ratio
+    - average
+    - sum
+    - rank

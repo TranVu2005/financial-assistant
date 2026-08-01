@@ -1,0 +1,6 @@
+evaluation:
+  split: dev
+  retrieval_f2_minimum: 0.80
+  answer_accuracy_minimum: 0.85
+  execution_accuracy_minimum: 0.85
+  require_provenance_or_abstention: true

@@ -1,0 +1,30 @@
+# Python and local configuration
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.coverage
+htmlcov/
+dist/
+.worktrees/
+.env
+
+# Large or machine-specific project assets
+models/
+data/raw/
+data/quarantine/
+data/interim/
+data/processed/
+data/indexes/
+artifacts/
+submissions/
+
+# Keep the project layout while ignoring generated data.
+!data/README.md
+!data/manifests/.gitkeep
+!data/qa/.gitkeep
+!artifacts/.gitkeep
+!submissions/.gitkeep

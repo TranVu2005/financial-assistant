@@ -1,0 +1,12 @@
+app:
+  env: local
+  data_root: data
+
+llm:
+  base_url: http://127.0.0.1:8080/v1
+  model: qwen3-4b-instruct-2507-q4_k_m
+  timeout_seconds: 30
+  max_output_tokens: 160
+
+ocr:
+  enabled: true
