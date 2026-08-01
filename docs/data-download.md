@@ -17,14 +17,14 @@ Open the repository from WSL and install the locked environment:
 
 ```bash
 cd /mnt/d/GitHub/financial-assistant
-uv sync --extra dev
+uv sync --frozen --extra dev
 ```
 
 If the dataset is gated or private, authenticate without placing a token in
 the command history:
 
 ```bash
-uv run hf auth login
+uv run --frozen --no-sync hf auth login
 ```
 
 ## Inspect the download first
@@ -40,7 +40,7 @@ bash scripts/download_dataset.sh
 You can also invoke the Python entry point directly:
 
 ```bash
-uv run financial-report-qa download-data
+uv run --frozen --no-sync financial-report-qa download-data
 ```
 
 ## Download the full snapshot
@@ -49,14 +49,14 @@ After checking the dry-run output and free space, start or resume the full
 download:
 
 ```bash
-uv run financial-report-qa download-data --download
+uv run --frozen --no-sync financial-report-qa download-data --download
 ```
 
 The command leaves at least 20 GiB free by default. Increase the reserve when
 the same disk will also hold normalized tables and indexes:
 
 ```bash
-uv run financial-report-qa download-data --reserve-gb 100 --download
+uv run --frozen --no-sync financial-report-qa download-data --reserve-gb 100 --download
 ```
 
 To use a different destination under `data/`:

@@ -6,7 +6,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 if command -v uv >/dev/null 2>&1; then
-  exec uv run financial-report-qa download-data "$@"
+  exec uv run --frozen --no-sync financial-report-qa download-data "$@"
 fi
 
 if command -v python3 >/dev/null 2>&1; then

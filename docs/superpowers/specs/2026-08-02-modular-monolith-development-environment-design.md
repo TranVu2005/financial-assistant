@@ -75,7 +75,7 @@ with dry-run behavior.
 Local and CI gates are the same:
 
 1. Ruff linting.
-2. Strict mypy checking over `src`.
+2. Strict mypy checking over `src` and `tests`.
 3. Pytest unit/integration suite.
 4. Wheel and source-distribution build.
 

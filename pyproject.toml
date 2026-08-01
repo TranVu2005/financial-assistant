@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling==1.31.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -36,6 +36,7 @@ financial-report-qa = "financial_report_qa.cli:main"
 
 [project.optional-dependencies]
 dev = [
+    "hatchling==1.31.0",
     "hypothesis>=6.120,<7",
     "mypy>=1.14,<2",
     "pre-commit>=4,<5",
@@ -51,6 +52,7 @@ ocr = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+cache_dir = ".cache/pytest"
 
 [tool.ruff]
 target-version = "py311"
@@ -62,7 +64,7 @@ select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src"]
+files = ["src", "tests"]
 strict = true
 warn_unused_ignores = true
 

@@ -13,7 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from huggingface_hub import snapshot_download
+from huggingface_hub.errors import HfHubHTTPError
 from huggingface_hub.file_download import DryRunFileInfo
+
+from financial_report_qa.core.errors import FinancialReportQAError
 
 DEFAULT_REPO_ID = "tinixai/ocr_annual_financials"
 DEFAULT_TARGET_DIR = Path("data/raw/ocr_annual_financials")
@@ -66,7 +69,7 @@ class DownloadPlan:
     bytes_to_download: int
 
 
-class DatasetDownloadError(RuntimeError):
+class DatasetDownloadError(FinancialReportQAError):
     """Base exception for downloader validation failures."""
 
 
@@ -107,9 +110,12 @@ def build_download_plan(
     snapshot_download_fn: SnapshotDownloadFn = snapshot_download,
 ) -> DownloadPlan:
     """Resolve the moving revision and calculate the remaining transfer size."""
-    raw_plan = snapshot_download_fn(
-        **_snapshot_arguments(request, revision=request.revision, dry_run=True)
-    )
+    try:
+        raw_plan = snapshot_download_fn(
+            **_snapshot_arguments(request, revision=request.revision, dry_run=True)
+        )
+    except (HfHubHTTPError, OSError) as error:
+        raise DatasetDownloadError(f"Unable to inspect dataset snapshot: {error}") from error
     if isinstance(raw_plan, str) or not raw_plan:
         raise DatasetDownloadError("Hugging Face returned an empty dry-run plan")
 
@@ -161,8 +167,11 @@ def download_dataset(
     if dry_run:
         return plan
 
-    request.target_dir.mkdir(parents=True, exist_ok=True)
-    available_bytes = free_space_fn(request.target_dir)
+    try:
+        request.target_dir.mkdir(parents=True, exist_ok=True)
+        available_bytes = free_space_fn(request.target_dir)
+    except OSError as error:
+        raise DatasetDownloadError(f"Unable to access download storage: {error}") from error
     required_bytes = plan.bytes_to_download + request.reserve_bytes
     if available_bytes < required_bytes:
         raise InsufficientDiskSpaceError(
@@ -170,14 +179,17 @@ def download_dataset(
             available_bytes=available_bytes,
         )
 
-    snapshot_download_fn(
-        **_snapshot_arguments(
-            request,
-            revision=plan.resolved_revision,
-            dry_run=False,
+    try:
+        snapshot_download_fn(
+            **_snapshot_arguments(
+                request,
+                revision=plan.resolved_revision,
+                dry_run=False,
+            )
         )
-    )
-    _write_manifest(request, plan)
+        _write_manifest(request, plan)
+    except (HfHubHTTPError, OSError) as error:
+        raise DatasetDownloadError(f"Unable to complete dataset download: {error}") from error
     return plan
 
 
@@ -235,7 +247,7 @@ def main(
             snapshot_download_fn=snapshot_download_fn,
             free_space_fn=free_space_fn,
         )
-    except (DatasetDownloadError, ValueError) as error:
+    except (FinancialReportQAError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 

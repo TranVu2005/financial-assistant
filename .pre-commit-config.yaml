@@ -3,21 +3,21 @@ repos:
     hooks:
       - id: ruff-check
         name: Ruff lint
-        entry: uv run ruff check .
+        entry: uv run --frozen --no-sync ruff check .
         language: system
         pass_filenames: false
       - id: ruff-format-check
         name: Ruff format check
-        entry: uv run ruff format --check .
+        entry: uv run --frozen --no-sync ruff format --check .
         language: system
         pass_filenames: false
       - id: mypy
         name: mypy strict
-        entry: uv run mypy src
+        entry: uv run --frozen --no-sync mypy src tests
         language: system
         pass_filenames: false
       - id: pytest-fast
-        name: pytest
-        entry: uv run pytest -q -p no:cacheprovider
+        name: pytest unit
+        entry: uv run --frozen --no-sync pytest -q tests/unit
         language: system
         pass_filenames: false

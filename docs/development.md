@@ -32,7 +32,7 @@ sudo apt-get install --yes make
 | `make lint` | Chạy Ruff lint |
 | `make format` | Định dạng Python bằng Ruff |
 | `make format-check` | Kiểm tra format mà không sửa file |
-| `make typecheck` | Chạy mypy strict trên `src` |
+| `make typecheck` | Chạy mypy strict trên `src` và `tests` |
 | `make test` | Chạy toàn bộ pytest |
 | `make check` | Chạy lint, format check, mypy và pytest |
 | `make build` | Tạo wheel và source distribution |
@@ -41,7 +41,7 @@ sudo apt-get install --yes make
 Tải thật chỉ khi thêm cờ rõ ràng:
 
 ```bash
-uv run financial-report-qa download-data --reserve-gb 100 --download
+uv run --frozen --no-sync financial-report-qa download-data --reserve-gb 100 --download
 ```
 
 ## Quy trình thay đổi code

@@ -67,8 +67,8 @@ make download-data  # chỉ dry-run dataset
 CLI của sản phẩm:
 
 ```bash
-uv run financial-report-qa --help
-uv run financial-report-qa download-data --help
+uv run --frozen --no-sync financial-report-qa --help
+uv run --frozen --no-sync financial-report-qa download-data --help
 ```
 
 ## Tải dataset
@@ -82,7 +82,7 @@ make download-data
 Sau khi kiểm tra dung lượng, tải hoặc tiếp tục snapshot đầy đủ:
 
 ```bash
-uv run financial-report-qa download-data \
+uv run --frozen --no-sync financial-report-qa download-data \
   --reserve-gb 100 \
   --download
 ```

@@ -9,7 +9,9 @@ from typing import Any
 import pytest
 from huggingface_hub.file_download import DryRunFileInfo
 
+from financial_report_qa.core.errors import FinancialReportQAError
 from financial_report_qa.data.download import (
+    DatasetDownloadError,
     DownloadRequest,
     InsufficientDiskSpaceError,
     build_download_plan,
@@ -84,6 +86,7 @@ def test_download_stops_before_network_transfer_when_disk_space_is_insufficient(
     assert error.value.required_bytes == 3_072
     assert error.value.available_bytes == 2_500
     assert calls == [True]
+    assert request.manifest_path is not None
     assert not request.manifest_path.exists()
 
 
@@ -161,6 +164,7 @@ def test_dry_run_does_not_start_transfer_or_write_manifest(tmp_path: Path) -> No
 
     assert calls == [True]
     assert result.bytes_to_download == 50
+    assert request.manifest_path is not None
     assert not request.manifest_path.exists()
 
 
@@ -183,3 +187,28 @@ def test_cli_defaults_to_dry_run_until_download_flag_is_present(
     assert exit_code == 0
     assert calls == [True]
     assert "Dry run only" in capsys.readouterr().out
+
+
+def test_download_errors_belong_to_the_shared_product_hierarchy() -> None:
+    """Callers need one stable base exception for expected product failures."""
+    assert issubclass(DatasetDownloadError, FinancialReportQAError)
+
+
+def test_cli_reports_operational_download_failure_without_traceback(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Expected network or filesystem failures should remain concise for operators."""
+
+    def failing_snapshot_download(**kwargs: Any) -> list[DryRunFileInfo] | str:
+        raise OSError("temporary storage failure")
+
+    exit_code = main(
+        ["--target", str(tmp_path / "data")],
+        snapshot_download_fn=failing_snapshot_download,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "temporary storage failure" in captured.err
+    assert "Traceback" not in captured.err

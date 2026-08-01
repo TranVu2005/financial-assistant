@@ -303,10 +303,10 @@ Nhóm dependency cần ghi vào `pyproject.toml`:
 Sau khi tạo `pyproject.toml`:
 
 ```powershell
-uv sync --extra dev
+uv sync --frozen --extra dev
 Copy-Item .env.example .env
-uv run pytest
-uv run ruff check .
+uv run --frozen --no-sync pytest
+uv run --frozen --no-sync ruff check .
 ```
 
 ### 4.3. Cấu hình runtime
@@ -895,9 +895,9 @@ Nguyên tắc retry: mỗi stage tối đa một retry có lý do; không tạo 
 ### 9.6. Lệnh kiểm tra trước mỗi release
 
 ```powershell
-uv run ruff check .
-uv run mypy src
-uv run pytest --cov=src --cov-report=term-missing
+uv run --frozen --no-sync ruff check .
+uv run --frozen --no-sync mypy src tests
+uv run --frozen --no-sync pytest --cov=src --cov-report=term-missing
 uv run python scripts/evaluate.py --config configs/evaluation.yaml --split test_locked
 uv run python scripts/export_submission.py --validate-only
 ```

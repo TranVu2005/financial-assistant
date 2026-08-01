@@ -113,8 +113,8 @@
 - [ ] Run `uv lock --check` and confirm the lockfile is current.
 - [ ] Run `python -m ruff check .` and confirm zero errors.
 - [ ] Run `python -m ruff format --check .` and confirm no formatting drift.
-- [ ] Run `python -m mypy src` and confirm strict typing passes.
-- [ ] Run `python -m pytest -q -p no:cacheprovider` and confirm all tests pass.
-- [ ] Run `uv build` and confirm both wheel and source distribution are created.
+- [ ] Run `python -m mypy src tests` and confirm strict typing passes.
+- [ ] Run `python -m pytest -q` and confirm all tests pass.
+- [ ] Run `uv build --no-build-isolation` and confirm both wheel and source distribution are created.
 - [ ] Run the CLI help and dataset dry-run unit tests without downloading real data.
 - [ ] Review `git status` to confirm caches, large data, models, and build artifacts are ignored.
