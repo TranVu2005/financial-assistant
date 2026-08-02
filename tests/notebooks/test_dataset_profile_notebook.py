@@ -58,6 +58,24 @@ def test_parse_report_path_extracts_financial_report_hierarchy(tmp_path: Path) -
     assert parsed["structure_status"] == "valid"
 
 
+def test_parse_report_path_rejects_unexpected_nested_directory(tmp_path: Path) -> None:
+    root = tmp_path / "ocr_result"
+    report_name = "FPT_Baocaotaichinh_2023_Kiemtoan_Hopnhat"
+    path = root / "FPT" / "2023" / report_name / "unexpected" / "report.txt"
+    path.parent.mkdir(parents=True)
+    path.write_text("sample", encoding="utf-8")
+
+    parse_report_path = cast(
+        Callable[[Path, Path], dict[str, object]],
+        _load_helpers()["parse_report_path"],
+    )
+    parsed = parse_report_path(path, root)
+
+    assert parsed["report_name"] == report_name
+    assert parsed["structure_status"] == "malformed"
+    assert "expected exactly" in cast(str, parsed["structure_issue"])
+
+
 def test_build_inventory_keeps_malformed_paths_as_anomalies(tmp_path: Path) -> None:
     root = tmp_path / "ocr_result"
     valid = root / "FPT" / "2023" / "FPT_Baocaotaichinh_2023" / "valid.txt"
@@ -123,6 +141,36 @@ def test_inspect_text_file_records_invalid_utf8_without_raising(tmp_path: Path) 
     assert result["read_error"] is None
 
 
+def test_inspect_text_file_does_not_reject_utf8_split_at_sample_boundary(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "boundary.txt"
+    path.write_text("A€B", encoding="utf-8")
+
+    inspect_text_file = cast(
+        Callable[[Path, int], dict[str, object]],
+        _load_helpers()["inspect_text_file"],
+    )
+    result = inspect_text_file(path, 2)
+
+    assert result["truncated"] is True
+    assert result["utf8_valid"] is True
+    assert result["replacement_char_count"] == 0
+
+
+def test_inspect_text_file_keeps_encoding_unknown_when_read_fails(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.txt"
+
+    inspect_text_file = cast(
+        Callable[[Path, int], dict[str, object]],
+        _load_helpers()["inspect_text_file"],
+    )
+    result = inspect_text_file(missing, 1_000)
+
+    assert result["read_error"] is not None
+    assert result["utf8_valid"] is None
+
+
 def test_readiness_summary_has_actionable_schema() -> None:
     helpers = _load_helpers()
     inventory = pd.DataFrame(
@@ -157,6 +205,27 @@ def test_readiness_summary_has_actionable_schema() -> None:
     )
 
 
+def test_content_quality_summary_excludes_read_errors_from_encoding_rate() -> None:
+    content = pd.DataFrame(
+        [
+            {"utf8_valid": True, "read_error": None},
+            {"utf8_valid": False, "read_error": None},
+            {"utf8_valid": None, "read_error": "permission denied"},
+        ]
+    )
+    summarize_content_quality = cast(
+        Callable[[pd.DataFrame], dict[str, object]],
+        _load_helpers()["summarize_content_quality"],
+    )
+
+    summary = summarize_content_quality(content)
+
+    assert summary["sampled_files"] == 3
+    assert summary["successfully_read_files"] == 2
+    assert summary["read_error_count"] == 1
+    assert summary["strict_utf8_share"] == 0.5
+
+
 def test_notebook_contains_required_analysis_sections() -> None:
     notebook = _notebook()
     markdown = "\n".join(
@@ -171,6 +240,16 @@ def test_notebook_contains_required_analysis_sections() -> None:
         "Recommended next steps",
     ):
         assert heading in markdown
+
+
+def test_overview_charts_include_all_report_type_dimensions() -> None:
+    notebook = _notebook()
+    overview_source = next(
+        _cell_source(cell) for cell in notebook["cells"] if cell.get("id") == "overview-charts"
+    )
+
+    for column in ("scope", "assurance", "period_type"):
+        assert f'["{column}"]' in overview_source
 
 
 def test_notebook_cells_have_unique_stable_ids() -> None:
