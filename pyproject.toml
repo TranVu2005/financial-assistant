@@ -38,7 +38,11 @@ financial-report-qa = "financial_report_qa.cli:main"
 dev = [
     "hatchling==1.31.0",
     "hypothesis>=6.120,<7",
+    "jupyterlab>=4.4,<5",
+    "matplotlib>=3.10,<4",
     "mypy>=1.14,<2",
+    "nbformat>=5.10,<6",
+    "pandas-stubs>=2.3,<4",
     "pre-commit>=4,<5",
     "pytest>=8.3,<9",
     "pytest-cov>=6,<8",

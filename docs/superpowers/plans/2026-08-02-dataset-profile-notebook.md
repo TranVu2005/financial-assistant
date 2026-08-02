@@ -41,6 +41,7 @@
 ```python
 NOTEBOOK = Path(__file__).parents[2] / "notebooks" / "01_dataset_profile.ipynb"
 
+
 def load_helpers() -> dict[str, object]:
     notebook = nbformat.read(NOTEBOOK, as_version=4)
     source = next(
@@ -52,9 +53,12 @@ def load_helpers() -> dict[str, object]:
     exec(compile(source, str(NOTEBOOK), "exec"), namespace)
     return namespace
 
+
 def test_parse_report_path_extracts_hierarchy(tmp_path: Path) -> None:
     root = tmp_path / "ocr_result"
-    path = root / "HTG" / "2022" / "HTG_Baocaotaichinh_2022_Kiemtoan_Hopnhat" / "report_extracted.txt"
+    path = (
+        root / "HTG" / "2022" / "HTG_Baocaotaichinh_2022_Kiemtoan_Hopnhat" / "report_extracted.txt"
+    )
     path.parent.mkdir(parents=True)
     path.write_text("sample", encoding="utf-8")
     parsed = load_helpers()["parse_report_path"](path, root)
@@ -79,11 +83,15 @@ def test_inventory_keeps_malformed_paths_as_anomalies(tmp_path: Path) -> None:
     assert len(frame) == 2
     assert set(frame["structure_status"]) == {"valid", "malformed"}
 
+
 def test_sample_paths_is_bounded_and_deterministic(tmp_path: Path) -> None:
     paths = [tmp_path / f"{index}.txt" for index in range(10)]
     sample_paths = load_helpers()["sample_paths"]
-    assert sample_paths(paths, sample_size=4, seed=42) == sample_paths(paths, sample_size=4, seed=42)
+    assert sample_paths(paths, sample_size=4, seed=42) == sample_paths(
+        paths, sample_size=4, seed=42
+    )
     assert len(sample_paths(paths, sample_size=40, seed=42)) == 10
+
 
 def test_inspect_text_file_reports_utf8_and_table_markers(tmp_path: Path) -> None:
     path = tmp_path / "report.txt"
