@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -98,3 +99,70 @@ def test_serialization_failure_preserves_previous_manifest(
 
     assert path.read_text(encoding="utf-8") == "previous\n"
     assert list(tmp_path.iterdir()) == [path]
+
+
+class _FlushFailingStream:
+    def __init__(self, path: Path) -> None:
+        self.name = str(path)
+        self._path = path
+
+    def __enter__(self) -> _FlushFailingStream:
+        self._path.write_text("", encoding="utf-8")
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def write(self, value: str) -> int:
+        return len(value)
+
+    def flush(self) -> None:
+        raise OSError("simulated flush failure")
+
+
+def test_stream_flush_failure_preserves_previous_manifest_and_cleans_temp_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "documents.jsonl"
+    path.write_text("previous\n", encoding="utf-8")
+    temporary_path = tmp_path / ".documents.jsonl.flush.tmp"
+    result = InventoryResult(
+        documents=(_document("VCB/2024/Consolidated/a.txt", "a" * 64),),
+        issues=(),
+    )
+
+    def failing_named_temporary_file(*args: object, **kwargs: object) -> _FlushFailingStream:
+        return _FlushFailingStream(temporary_path)
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", failing_named_temporary_file)
+
+    with pytest.raises(OSError, match="simulated flush failure"):
+        write_manifest(result, path)
+
+    assert path.read_text(encoding="utf-8") == "previous\n"
+    assert not temporary_path.exists()
+
+
+def test_cleanup_failure_does_not_replace_primary_write_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "documents.jsonl"
+    temporary_path = tmp_path / ".documents.jsonl.flush.tmp"
+    result = InventoryResult(
+        documents=(_document("VCB/2024/Consolidated/a.txt", "a" * 64),),
+        issues=(),
+    )
+
+    def failing_named_temporary_file(*args: object, **kwargs: object) -> _FlushFailingStream:
+        return _FlushFailingStream(temporary_path)
+
+    def fail_cleanup(path: Path, *, missing_ok: bool = False) -> None:
+        raise OSError("simulated cleanup failure")
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", failing_named_temporary_file)
+    monkeypatch.setattr(Path, "unlink", fail_cleanup)
+
+    with pytest.raises(OSError, match="simulated flush failure"):
+        write_manifest(result, path)

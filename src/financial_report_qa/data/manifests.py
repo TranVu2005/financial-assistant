@@ -48,5 +48,8 @@ def write_manifest(result: InventoryResult, path: Path) -> None:
         temporary_path.replace(path)
     except Exception:
         if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
         raise

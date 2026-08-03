@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+import financial_report_qa.data.inventory as inventory
 from financial_report_qa.data.inventory import (
     InventoryIssue,
     InventoryResult,
@@ -80,6 +81,32 @@ def test_build_inventory_is_deterministic_and_ignores_non_txt(tmp_path: Path) ->
         "AAA/2022/Other/a.txt",
         "ZZZ/2022/Aggregated/z.txt",
     ]
+
+
+def test_build_inventory_redacts_os_read_error_details(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "financial_statements"
+    source = _write_report(root, "AAA/2024/Consolidated/secret.txt", b"secret")
+    absolute_filename = str(source.resolve())
+
+    def fail_inspection(path: Path) -> object:
+        raise PermissionError(13, "Access is denied", absolute_filename)
+
+    monkeypatch.setattr(inventory, "_inspect_file", fail_inspection)
+
+    result = build_inventory(root, repo_id="org/vifinqa", revision="abc123")
+
+    assert result.documents == ()
+    assert len(result.issues) == 1
+    assert result.issues[0].relative_path == "AAA/2024/Consolidated/secret.txt"
+    reason = result.issues[0].reason
+    assert "PermissionError" in reason
+    assert "errno=13" in reason
+    assert str(root.resolve()) not in reason
+    assert absolute_filename not in reason
+    assert "Access is denied" not in reason
 
 
 @pytest.mark.parametrize("root_state", ["missing", "file"])

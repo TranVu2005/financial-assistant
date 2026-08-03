@@ -88,6 +88,11 @@ def _path_key(value: str) -> tuple[str, str]:
     return value.casefold(), value
 
 
+def _read_failure_reason(error: OSError) -> str:
+    errno = "unknown" if error.errno is None else str(error.errno)
+    return f"read failure: {type(error).__name__} errno={errno}"
+
+
 def _parse_vifinqa_path(path: Path, root: Path) -> _PathMetadata:
     try:
         relative = path.relative_to(root)
@@ -150,7 +155,7 @@ def build_inventory(
             inspection = _inspect_file(path)
         except OSError as error:
             issues.append(
-                InventoryIssue(relative_path=relative_path, reason=f"read failure: {error}")
+                InventoryIssue(relative_path=relative_path, reason=_read_failure_reason(error))
             )
             continue
         try:
