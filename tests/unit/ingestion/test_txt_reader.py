@@ -202,3 +202,16 @@ def test_read_document_rejects_symlink_that_escapes_snapshot_root(
 
 def test_symlink_regression_does_not_hide_unexpected_os_errors() -> None:
     assert not _is_known_windows_symlink_privilege_error(OSError("unexpected failure"))
+
+
+def test_page_marker_allows_outer_whitespace_and_preserves_raw_text(tmp_path: Path) -> None:
+    text = "  ===== PAGE 1 =====  \nAfter marker\n"
+    record = write_record(tmp_path, text.encode())
+
+    result = read_document(tmp_path, record)
+
+    assert [(block.kind, block.line_start, block.line_end) for block in result.blocks] == [
+        ("page_marker", 1, 1),
+        ("paragraph", 2, 2),
+    ]
+    assert result.blocks[0].text == "  ===== PAGE 1 =====  \n"

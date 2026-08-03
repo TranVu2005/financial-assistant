@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from decimal import Decimal
 from typing import TypeAlias
 
@@ -15,10 +16,10 @@ from financial_report_qa.ingestion.provenance import (
 
 _TAB_SPLIT_RE = re.compile(r"\t+")
 _SPACE_SPLIT_RE = re.compile(r" {2,}")
-_HEADER_SIGNALS = ("mÃ£ sá»‘", "chá»‰ tiÃªu", "thuyáº¿t minh", "nÄƒm", "ká»³", "Ä‘Æ¡n vá»‹", "Ä‘vt")
+_HEADER_SIGNALS = ("mã số", "chỉ tiêu", "thuyết minh", "năm", "kỳ", "đơn vị", "đvt")
 _TABLE_TOKEN_RE = re.compile(r"</?table\b[^>]*>", re.IGNORECASE)
 _PAGE_MARKER_RE = re.compile(r"^===== PAGE [1-9][0-9]* =====$")
-_LIST_PREFIX_RE = re.compile(r"(?:[-â€¢*] |[0-9]+\. )")
+_LIST_PREFIX_RE = re.compile(r"(?:[-•*] |[0-9]+\. )")
 DetectionItem: TypeAlias = TableCandidate | RejectedCandidate
 DetectionEvent: TypeAlias = tuple[int, DetectionItem]
 
@@ -38,6 +39,10 @@ def _is_numeric_looking(value: str) -> bool:
     if stripped == "-":
         return True
     return bool(re.fullmatch(r"\(?[+-]?[0-9][0-9., ]*%?\)?", stripped))
+
+
+def _normalized_text(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
 
 
 def _line_offsets(document: DecodedDocument) -> tuple[int, ...]:
@@ -126,9 +131,11 @@ def _html_events(document: DecodedDocument) -> list[DetectionEvent]:
 
 
 def _is_list_line(text: str, cells: tuple[str, ...]) -> bool:
-    return bool(_LIST_PREFIX_RE.match(text)) and not any(
-        _is_numeric_looking(cell) for cell in cells[1:]
-    )
+    if _LIST_PREFIX_RE.match(text) is None:
+        return False
+    populated = tuple(cell for cell in cells[1:] if cell)
+    numeric = tuple(_is_numeric_looking(cell) for cell in populated)
+    return not any(numeric) or (bool(numeric) and all(numeric))
 
 
 def _structured_event(
@@ -158,13 +165,19 @@ def _structured_event(
 
     column_count = counts.pop()
     numeric_rows = sum(any(_is_numeric_looking(cell) for cell in cells[1:]) for _, cells in rows)
-    numeric_cells = sum(
-        _is_numeric_looking(cell) for _, cells in rows for cell in cells[1:]
+    populated_values = tuple(
+        cell for _, cells in rows for cell in cells[1:] if cell
     )
-    value_cells = len(rows) * (column_count - 1)
-    density = Decimal(numeric_cells) / Decimal(value_cells)
-    normalized_rows = " ".join(cell for _, cells in rows for cell in cells).casefold()
-    header = any(signal.casefold() in normalized_rows for signal in _HEADER_SIGNALS)
+    numeric_cells = sum(_is_numeric_looking(cell) for cell in populated_values)
+    density = (
+        Decimal(numeric_cells) / Decimal(len(populated_values))
+        if populated_values
+        else Decimal()
+    )
+    normalized_rows = _normalized_text(
+        " ".join(cell for _, cells in rows for cell in cells)
+    )
+    header = any(signal in normalized_rows for signal in _HEADER_SIGNALS)
     has_density = density >= Decimal("0.5")
     if not 2 <= column_count <= 20 or numeric_rows < 2 or not (header or has_density):
         item = RejectedCandidate(
@@ -213,7 +226,7 @@ def _structured_events(document: DecodedDocument) -> list[DetectionEvent]:
             if (
                 not line.text.strip()
                 or len(line.text) > 200
-                or _PAGE_MARKER_RE.fullmatch(line.text)
+                or _PAGE_MARKER_RE.fullmatch(line.text.strip())
                 or split is None
                 or _is_list_line(line.text, split[1])
             ):
@@ -228,7 +241,7 @@ def _structured_events(document: DecodedDocument) -> list[DetectionEvent]:
                 if (
                     not next_line.text.strip()
                     or len(next_line.text) > 200
-                    or _PAGE_MARKER_RE.fullmatch(next_line.text)
+                    or _PAGE_MARKER_RE.fullmatch(next_line.text.strip())
                     or next_split is None
                     or _is_list_line(next_line.text, next_split[1])
                 ):

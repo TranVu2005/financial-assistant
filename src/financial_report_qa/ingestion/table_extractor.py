@@ -36,17 +36,6 @@ _UNIT_MARKERS = (
     "\u00c4\u2018\u00c6\u00a1n v\u00e1\u00bb\u2039 t\u00c3\u00adnh",
     "\u00c4\u2018vt",
 )
-_UNICODE_HEADER_SIGNALS = (
-    "mã số",
-    "chỉ tiêu",
-    "thuyết minh",
-    "năm",
-    "kỳ",
-    "đơn vị",
-    "đvt",
-)
-
-
 class _ExtractionFailure(Exception):
     def __init__(self, reason: RejectionCode) -> None:
         self.reason = reason
@@ -263,26 +252,6 @@ def _parse_structured(document: DecodedDocument, candidate: TableCandidate) -> _
     return _RawTable(rows=tuple(rows))
 
 
-def _with_unicode_header_evidence(
-    candidate: TableCandidate,
-    raw_table: _RawTable,
-) -> TableCandidate:
-    if candidate.kind != "structured_text" or "financial_header" in candidate.evidence:
-        return candidate
-    first_row = " ".join(cell.text for cell in raw_table.rows[0])
-    normalized = _normalized_header(first_row)
-    if not any(signal in normalized for signal in _UNICODE_HEADER_SIGNALS):
-        return candidate
-    evidence = list(candidate.evidence)
-    insertion = (
-        evidence.index("numeric_density")
-        if "numeric_density" in evidence
-        else len(evidence)
-    )
-    evidence.insert(insertion, "financial_header")
-    return candidate.model_copy(update={"evidence": tuple(evidence)})
-
-
 def _is_numeric_looking(value: str) -> bool:
     stripped = value.strip()
     return stripped == "-" or _NUMERIC_VALUE_RE.fullmatch(stripped) is not None
@@ -339,6 +308,8 @@ def _nearby_metadata(
     document: DecodedDocument,
     candidate: TableCandidate,
     raw_cells: list[_RawCell],
+    origins: list[tuple[int, int]],
+    header_rows: int,
 ) -> tuple[str | None, str | None]:
     prior_lines = document.lines[max(0, candidate.line_start - 4) : candidate.line_start - 1]
     excluded_lines = {
@@ -354,7 +325,7 @@ def _nearby_metadata(
             if (
                 line.number not in excluded_lines
                 and len(line.text) <= 200
-                and not _PAGE_MARKER_RE.fullmatch(line.text)
+                and not _PAGE_MARKER_RE.fullmatch(line.text.strip())
                 and not _is_predominantly_numeric(line.text)
                 and line.text.strip()
             )
@@ -362,7 +333,11 @@ def _nearby_metadata(
         None,
     )
     unit_raw = next(
-        (cell.text for cell in raw_cells if _contains_unit_marker(cell.text)),
+        (
+            cell.text
+            for cell, (origin_row, _) in zip(raw_cells, origins, strict=True)
+            if origin_row < header_rows and _contains_unit_marker(cell.text)
+        ),
         None,
     )
     if unit_raw is None:
@@ -411,7 +386,14 @@ def _materialize_table(
 
     row_count = max(row_idx for row_idx, _ in grid) + 1
     column_count = max(col_idx for _, col_idx in grid) + 1
-    title_raw, unit_raw = _nearby_metadata(document, candidate, raw_cells)
+    header_rows = _header_row_count(candidate, grid, raw_cells, row_count, column_count)
+    title_raw, unit_raw = _nearby_metadata(
+        document,
+        candidate,
+        raw_cells,
+        origins,
+        header_rows,
+    )
     table_id = stable_table_id(document.document.doc_id, candidate.line_start, candidate.line_end)
     table = TableRecord(
         table_id=table_id,
@@ -427,7 +409,6 @@ def _materialize_table(
         quality_score=candidate.confidence,
         csv_path=None,
     )
-    header_rows = _header_row_count(candidate, grid, raw_cells, row_count, column_count)
     column_headers: list[str | None] = []
     for col_idx in range(column_count):
         values: list[str] = []
@@ -678,7 +659,6 @@ def extract_candidates(document: DecodedDocument, detection: DetectionResult) ->
                 if candidate.kind == "html"
                 else _parse_structured(document, candidate)
             )
-            candidate = _with_unicode_header_evidence(candidate, raw_table)
             tables.append(_materialize_table(document, candidate, raw_table.rows))
         except _ExtractionFailure as error:
             rejected.append(_rejected(candidate, error.reason))

@@ -20,6 +20,7 @@ from financial_report_qa.schemas.documents import DocumentRecord
 
 _CHUNK_SIZE = 1024 * 1024
 _PAGE_MARKER_RE = re.compile(r"^===== PAGE [1-9][0-9]* =====$")
+_TABLE_TOKEN_RE = re.compile(r"</?table\b[^>]*>", re.IGNORECASE)
 _NOTES_HEADINGS = {
     "thuyết minh",
     "thuyêt minh",
@@ -123,7 +124,7 @@ def _segment_blocks(lines: tuple[SourceLine, ...]) -> tuple[TextBlock, ...]:
     index = 0
     while index < len(lines):
         line = lines[index]
-        if _PAGE_MARKER_RE.fullmatch(line.text):
+        if _PAGE_MARKER_RE.fullmatch(line.text.strip()):
             flush_prose()
             blocks.append(
                 TextBlock(
@@ -135,13 +136,24 @@ def _segment_blocks(lines: tuple[SourceLine, ...]) -> tuple[TextBlock, ...]:
             )
             index += 1
             continue
-        if "<table" in line.text.casefold():
+        if any(
+            not token.group().startswith("</")
+            for token in _TABLE_TOKEN_RE.finditer(line.text)
+        ):
             flush_prose()
-            table_lines = [line]
-            index += 1
-            while "</table>" not in table_lines[-1].text.casefold() and index < len(lines):
-                table_lines.append(lines[index])
+            table_lines: list[SourceLine] = []
+            table_depth = 0
+            while index < len(lines):
+                table_line = lines[index]
+                table_lines.append(table_line)
                 index += 1
+                for token in _TABLE_TOKEN_RE.finditer(table_line.text):
+                    if token.group().startswith("</"):
+                        table_depth -= 1
+                    else:
+                        table_depth += 1
+                if table_depth == 0:
+                    break
             blocks.append(
                 TextBlock(
                     kind="table",

@@ -102,7 +102,7 @@ def test_detector_splits_sibling_tables_on_one_line(tmp_path: Path) -> None:
 def test_detector_orders_html_and_text_candidates_by_source_offset(tmp_path: Path) -> None:
     source = (
         "Preface <table><tr><td>A</td><td>1</td></tr></table>\n"
-        "Chá»‰ tiÃªu\t2024\t2023\n"
+        "Chỉ tiêu\t2024\t2023\n"
         "Doanh thu\t1.000\t900\n"
         "Lá»£i nhuáº­n\t100\t80\n"
     )
@@ -114,7 +114,7 @@ def test_detector_orders_html_and_text_candidates_by_source_offset(tmp_path: Pat
 
 def test_fallback_accepts_only_consistent_financial_rows(tmp_path: Path) -> None:
     source = (
-        "Chá»‰ tiÃªu\t2024\t2023\n"
+        "Chỉ tiêu\t2024\t2023\n"
         "Doanh thu\t1.000\t900\n"
         "Lá»£i nhuáº­n\t100\t80\n"
     )
@@ -173,7 +173,7 @@ def test_fallback_rejects_delimited_rows_without_financial_evidence(tmp_path: Pa
 
 def test_fallback_caps_high_evidence_confidence_at_point_nine(tmp_path: Path) -> None:
     source = (
-        "Chá»‰ tiÃªu\t2024\t2023\n"
+        "Ch\u1ec9 ti\u00eau\t2024\t2023\n"
         "A\t10\t9\n"
         "B\t8\t7\n"
         "C\t6\t5\n"
@@ -183,3 +183,58 @@ def test_fallback_caps_high_evidence_confidence_at_point_nine(tmp_path: Path) ->
 
     assert result.candidates[0].confidence == 0.9
     assert result.candidates[0].evidence[-1] == "five_or_more_rows"
+
+
+def test_nested_html_rejection_reserves_outer_region_from_structured_fallback(
+    tmp_path: Path,
+) -> None:
+    source = (
+        "<table>\n"
+        "<tr><td><table>\n"
+        "<tr><td>nested</td></tr></table>\n"
+        "Chỉ tiêu\t2024\t2023\n"
+        "Doanh thu\t100\t90\n"
+        "Lợi nhuận\t20\t10\n"
+        "</td></tr></table>\n"
+    )
+
+    result = detect_table_candidates(decoded(tmp_path, source))
+
+    assert result.candidates == ()
+    assert [item.reason for item in result.rejected] == ["nested_html_table"]
+    assert result.rejected[0].raw_source == source
+
+
+def test_unicode_header_signal_drives_acceptance_and_confidence(tmp_path: Path) -> None:
+    source = (
+        "Chỉ tiêu\tKỳ hiện tại\tGhi chú\n"
+        "Doanh thu\t100\tĐã kiểm toán\n"
+        "Lợi nhuận\t80\tƯớc tính\n"
+    )
+
+    result = detect_table_candidates(decoded(tmp_path, source))
+
+    assert len(result.candidates) == 1
+    candidate = result.candidates[0]
+    assert candidate.evidence == ("consistent_columns", "financial_header")
+    assert candidate.confidence == 0.8
+
+
+def test_fallback_ignores_pure_numeric_bullet_lists(tmp_path: Path) -> None:
+    source = "- 2024\t100\t90\n- 2023\t80\t70\n- 2022\t60\t50\n"
+
+    result = detect_table_candidates(decoded(tmp_path, source))
+
+    assert result.candidates == ()
+    assert result.rejected == ()
+
+
+def test_numeric_density_uses_only_populated_non_first_cells(tmp_path: Path) -> None:
+    source = "Metric\t \t100\t\nRevenue\t \t90\t\nProfit\t \t80\t\n"
+
+    result = detect_table_candidates(decoded(tmp_path, source))
+
+    assert len(result.candidates) == 1
+    candidate = result.candidates[0]
+    assert candidate.evidence == ("consistent_columns", "numeric_density")
+    assert candidate.confidence == 0.8

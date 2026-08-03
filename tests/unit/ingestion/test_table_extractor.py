@@ -321,3 +321,14 @@ def test_does_not_merge_compatible_headers_across_prose(tmp_path: Path) -> None:
     source = f"{table}\n===== PAGE 2 =====\nNarrative explanation\n{table}\n"
 
     assert len(extract(tmp_path, source).tables) == 2
+
+
+def test_body_unit_marker_is_not_promoted_to_table_metadata(tmp_path: Path) -> None:
+    source = (
+        "<table><tr><th>Metric</th><th>2024</th></tr>"
+        "<tr><td>Đơn vị: kg</td><td>1</td></tr></table>\n"
+    )
+
+    result = extract(tmp_path, source)
+
+    assert result.tables[0].table.unit_raw is None
