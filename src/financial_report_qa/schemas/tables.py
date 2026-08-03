@@ -1,0 +1,123 @@
+"""Canonical contracts for extracted financial tables and cells."""
+
+from __future__ import annotations
+
+import hashlib
+import re
+from decimal import Decimal
+from pathlib import PurePosixPath, PureWindowsPath
+from typing import Annotated, Self
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
+
+_DOC_ID_RE = re.compile(r"^doc_[0-9a-f]{64}$")
+_TABLE_ID_PATTERN = r"^tbl_[0-9a-f]{64}$"
+
+NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+DocumentId = Annotated[str, StringConstraints(pattern=r"^doc_[0-9a-f]{64}$")]
+TableId = Annotated[str, StringConstraints(pattern=_TABLE_ID_PATTERN)]
+
+
+def _validate_line_span(line_start: int, line_end: int) -> None:
+    if (
+        isinstance(line_start, bool)
+        or isinstance(line_end, bool)
+        or not isinstance(line_start, int)
+        or not isinstance(line_end, int)
+        or line_start < 1
+        or line_end < line_start
+    ):
+        raise ValueError("source lines must be one-based and start must not exceed end")
+
+
+def stable_table_id(doc_id: str, line_start: int, line_end: int) -> str:
+    """Return a deterministic ID for a table at a source-line span."""
+    if not isinstance(doc_id, str):
+        raise ValueError("doc_id must be a string")
+    if _DOC_ID_RE.fullmatch(doc_id) is None:
+        raise ValueError("doc_id must be a canonical document ID")
+    _validate_line_span(line_start, line_end)
+    payload = f"{doc_id}\n{line_start}\n{line_end}".encode()
+    return f"tbl_{hashlib.sha256(payload).hexdigest()}"
+
+
+class TableRecord(BaseModel):
+    """Immutable metadata and provenance for one extracted table."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    table_id: TableId
+    doc_id: DocumentId
+    title_raw: str | None
+    statement_type: NonEmptyString | None
+    unit_raw: str | None
+    unit_normalized: NonEmptyString | None
+    line_start: int = Field(strict=True, ge=1)
+    line_end: int = Field(strict=True, ge=1)
+    row_count: int = Field(strict=True, ge=0)
+    column_count: int = Field(strict=True, ge=0)
+    quality_score: float = Field(strict=True, ge=0, le=1)
+    csv_path: str | None
+
+    @field_validator("csv_path")
+    @classmethod
+    def validate_csv_path(cls, value: str | None) -> str | None:
+        """Require generated artifact paths to be safe POSIX-relative paths."""
+        if value is None:
+            return None
+        path = PurePosixPath(value)
+        if (
+            not value
+            or value != value.strip()
+            or path.is_absolute()
+            or PureWindowsPath(value).drive
+            or "\\" in value
+            or ".." in path.parts
+            or not path.parts
+        ):
+            raise ValueError("csv_path must be a safe POSIX relative path")
+        return value
+
+    @model_validator(mode="after")
+    def validate_identity_and_span(self) -> Self:
+        """Require valid provenance and an ID derived from that provenance."""
+        _validate_line_span(self.line_start, self.line_end)
+        expected_id = stable_table_id(self.doc_id, self.line_start, self.line_end)
+        if self.table_id != expected_id:
+            raise ValueError("table_id must match doc_id and source-line span")
+        return self
+
+
+class CellRecord(BaseModel):
+    """Immutable raw/canonical value and provenance for one table cell."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    cell_id: NonEmptyString
+    table_id: TableId
+    row_idx: int = Field(strict=True, ge=0)
+    col_idx: int = Field(strict=True, ge=0)
+    row_label_raw: str | None
+    row_label_canonical: NonEmptyString | None
+    column_label_raw: str | None
+    column_label_canonical: NonEmptyString | None
+    value_raw: str
+    value_numeric: Decimal | None
+    period: NonEmptyString | None
+    unit: NonEmptyString | None
+    source_line_start: int = Field(strict=True, ge=1)
+    source_line_end: int = Field(strict=True, ge=1)
+    extraction_confidence: float = Field(strict=True, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_source_span(self) -> Self:
+        """Reject reversed or zero-based line provenance."""
+        _validate_line_span(self.source_line_start, self.source_line_end)
+        return self
