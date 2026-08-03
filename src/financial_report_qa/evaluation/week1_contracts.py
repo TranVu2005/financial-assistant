@@ -267,6 +267,7 @@ class GateResult(BaseModel):
     pilot_documents_sha256: str
     expected_tables_sha256: str
     cell_audit_sha256: str
+    evaluation_inputs_sha256: str
     document_count: int
     annotated_table_count: int
     matched_table_count: int

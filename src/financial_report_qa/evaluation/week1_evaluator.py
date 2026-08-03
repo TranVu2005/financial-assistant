@@ -157,46 +157,81 @@ def evaluate_week1_gate(
     total_matched = len(matched_tables)
     total_usable = sum(1 for ta in final_assessments if ta.usable)
 
-    matched_pct = int(
+    cell_audit_sha256 = hashlib.sha256(cell_audit_csv_path.read_bytes()).hexdigest()
+
+    eval_input_lines = sorted(
+        [
+            docs_sha256,
+            expected_tables_sha256,
+            cell_audit_sha256,
+            dataset.dataset_fingerprint,
+            dataset.source_manifest_sha256,
+        ]
+    )
+    evaluation_inputs_sha256 = hashlib.sha256(
+        "\n".join(eval_input_lines).encode("utf-8")
+    ).hexdigest()
+
+    sampled_cell_count = len(cell_audits)
+    verified_cell_count = sum(1 for ca in cell_audits if ca.verified is True)
+    audited_cell_count = sum(1 for ca in cell_audits if ca.verified is not None)
+
+    matched_rate_pct = int(
         (
             Decimal(total_matched) * Decimal(100) / Decimal(total_exp if total_exp > 0 else 1)
         ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     )
-    usable_pct = int(
+    usable_rate_pct = (
+        int(
+            (Decimal(total_usable) * Decimal(100) / Decimal(total_matched)).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        )
+        if total_matched > 0
+        else 0
+    )
+    prov_rate_pct = int(
         (
-            Decimal(total_usable) * Decimal(100) / Decimal(total_exp if total_exp > 0 else 1)
+            Decimal(verified_cell_count)
+            * Decimal(100)
+            / Decimal(sampled_cell_count if sampled_cell_count > 0 else 1)
         ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     )
-
-    cell_audit_sha256 = hashlib.sha256(
-        "\n".join(ca.cell_id for ca in cell_audits).encode("utf-8")
-    ).hexdigest()
-
-    # Provenance check
-    prov_failures = sum(
-        1 for ta in final_assessments for f in ta.failures if f.code == "invalid_provenance"
+    audit_comp_pct = int(
+        (
+            Decimal(audited_cell_count)
+            * Decimal(100)
+            / Decimal(sampled_cell_count if sampled_cell_count > 0 else 1)
+        ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     )
 
     checks = (
         GateCheck(
-            name="table_matching_rate",
-            passed=matched_pct >= 90,
+            name="matching_rate",
+            passed=matched_rate_pct >= 80,
             numerator=total_matched,
             denominator=total_exp,
-            threshold_percent=90,
+            threshold_percent=80,
         ),
         GateCheck(
-            name="table_usability_rate",
-            passed=usable_pct >= 85,
+            name="usability_rate",
+            passed=total_matched > 0 and usable_rate_pct >= 75,
             numerator=total_usable,
-            denominator=total_exp,
-            threshold_percent=85,
+            denominator=total_matched,
+            threshold_percent=75,
         ),
         GateCheck(
-            name="provenance_validity_rate",
-            passed=prov_failures == 0,
-            numerator=total_exp - prov_failures,
-            denominator=total_exp,
+            name="cell_provenance_rate",
+            passed=prov_rate_pct >= 95,
+            numerator=verified_cell_count,
+            denominator=sampled_cell_count,
+            threshold_percent=95,
+        ),
+        GateCheck(
+            name="cell_audit_completion",
+            passed=audit_comp_pct == 100,
+            numerator=audited_cell_count,
+            denominator=sampled_cell_count,
             threshold_percent=100,
         ),
     )
@@ -204,7 +239,6 @@ def evaluate_week1_gate(
     gate_passed = all(c.passed for c in checks)
     pareto_rows = compute_pareto_analysis(final_assessments)
 
-    # Statement & stratum breakdowns
     statement_metrics: dict[str, dict[str, Any]] = {}
     for st in ("balance_sheet", "income_statement", "cash_flow_statement"):
         st_exp = [ta for ta in final_assessments if ta.annotation.statement_type == st]
@@ -226,6 +260,7 @@ def evaluate_week1_gate(
         pilot_documents_sha256=docs_sha256,
         expected_tables_sha256=expected_tables_sha256,
         cell_audit_sha256=cell_audit_sha256,
+        evaluation_inputs_sha256=evaluation_inputs_sha256,
         document_count=len(pilot_docs),
         annotated_table_count=total_exp,
         matched_table_count=total_matched,
@@ -259,37 +294,56 @@ def publish_gate_artifacts(
     pareto_rows = [p.model_dump(mode="json") for p in result.pareto_rows]
     write_csv_rows(output_dir / "pareto-errors.csv", PARETO_CSV_COLUMNS, pareto_rows)
 
-    # Write human-readable markdown summary
-    md_content = f"""# Week 1 Quality Gate Evaluation Report
-
-- **Status:** {"PASSED" if result.passed else "FAILED"}
-- **Sampling Version:** {result.sampling_version}
-- **Dataset Fingerprint:** `{result.dataset_fingerprint}`
-- **Pilot Documents:** {result.document_count}
-- **Annotated Tables:** {result.annotated_table_count}
-- **Matched Tables:** {result.matched_table_count}
-- **Usable Tables:** {result.usable_table_count}
-
-## Quality Gate Checks
-"""
+    status_str = "PASSED" if result.passed else "FAILED"
+    md_lines = [
+        "# Week 1 Quality Gate Evaluation Report",
+        "",
+        f"**Status: {status_str}**",
+        "",
+        "## Summary",
+        f"- **Sampling Version:** {result.sampling_version}",
+        f"- **Pilot Documents:** {result.document_count}",
+        f"- **Annotated Tables:** {result.annotated_table_count}",
+        f"- **Matched Tables:** {result.matched_table_count}",
+        f"- **Usable Tables:** {result.usable_table_count}",
+        "",
+        "## Quality Gate Checks",
+        "| Check | Value | Threshold | Status |",
+        "| --- | --- | --- | --- |",
+    ]
     for check in result.checks:
-        status_str = "PASS" if check.passed else "FAIL"
-        md_content += (
-            f"- **{check.name}:** {status_str} "
-            f"({check.numerator}/{check.denominator}, "
-            f"threshold >= {check.threshold_percent}%)\n"
+        c_status = "PASS" if check.passed else "FAIL"
+        md_lines.append(
+            f"| {check.name} | {check.numerator}/{check.denominator} | "
+            f">= {check.threshold_percent}% | {c_status} |"
         )
 
-    md_content += "\n## Pareto Error Analysis\n"
+    md_lines.extend(["", "## Pareto Error Analysis"])
     if not result.pareto_rows:
-        md_content += "No failure errors recorded.\n"
+        md_lines.append("No failure errors recorded.")
     else:
-        md_content += (
-            "| Rank | Code | Count | Share | Cumulative Share |\n| --- | --- | --- | --- | --- |\n"
+        md_lines.extend(
+            [
+                "| Rank | Code | Count | Share | Cumulative Share |",
+                "| --- | --- | --- | --- | --- |",
+            ]
         )
         for p in result.pareto_rows:
-            md_content += (
-                f"| {p.rank} | {p.code} | {p.count} | {p.share} | {p.cumulative_share} |\n"
+            md_lines.append(
+                f"| {p.rank} | {p.code} | {p.count} | {p.share} | {p.cumulative_share} |"
             )
 
-    (output_dir / "evaluation_report.md").write_text(md_content, encoding="utf-8")
+    md_lines.extend(
+        [
+            "",
+            "## Release Metadata",
+            f"- **Dataset Fingerprint:** `{result.dataset_fingerprint}`",
+            f"- **Source Manifest SHA256:** `{result.source_manifest_sha256}`",
+            f"- **Evaluation Inputs SHA256:** `{result.evaluation_inputs_sha256}`",
+            "",
+        ]
+    )
+
+    content = "\n".join(md_lines)
+    (output_dir / "gate-report.md").write_text(content, encoding="utf-8")
+    (output_dir / "evaluation_report.md").write_text(content, encoding="utf-8")

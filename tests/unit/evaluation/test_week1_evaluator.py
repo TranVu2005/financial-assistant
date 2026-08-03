@@ -108,6 +108,8 @@ def test_evaluate_and_publish_week1_gate(tmp_path: Path) -> None:
     assert result.annotated_table_count == 1
     assert result.matched_table_count == 1
     assert result.usable_table_count == 1
+    assert len(result.checks) == 4
+    assert len(result.evaluation_inputs_sha256) == 64
     assert result.passed is True
 
     output_dir = tmp_path / "output"
@@ -116,4 +118,5 @@ def test_evaluate_and_publish_week1_gate(tmp_path: Path) -> None:
     assert (output_dir / "gate-result.json").is_file()
     assert (output_dir / "cell-audit.csv").is_file()
     assert (output_dir / "pareto-errors.csv").is_file()
+    assert (output_dir / "gate-report.md").is_file()
     assert (output_dir / "evaluation_report.md").is_file()
