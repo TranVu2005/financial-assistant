@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from financial_report_qa.schemas.documents import DocumentRecord, stable_document_id
 
-
 SHA256 = "a" * 64
 
 
@@ -120,3 +119,18 @@ def test_document_record_is_frozen() -> None:
 
     with pytest.raises(ValidationError, match="frozen"):
         setattr(record, "report_year", 2020)
+
+
+def test_schema_package_exports_only_approved_day_one_interfaces() -> None:
+    from financial_report_qa import schemas
+
+    expected = (
+        "CellRecord",
+        "DocumentRecord",
+        "TableRecord",
+        "stable_document_id",
+        "stable_table_id",
+    )
+
+    assert schemas.__all__ == expected
+    assert all(getattr(schemas, name) is not None for name in expected)

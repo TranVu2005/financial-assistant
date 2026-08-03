@@ -34,7 +34,7 @@ def stable_table_id(doc_id: str, line_start: int, line_end: int) -> str:
     if _DOC_ID_RE.fullmatch(doc_id) is None:
         raise ValueError("doc_id must be a canonical document ID")
     _validate_line_span(line_start, line_end)
-    payload = f"{doc_id}\n{line_start}\n{line_end}".encode("utf-8")
+    payload = f"{doc_id}\n{line_start}\n{line_end}".encode()
     return f"tbl_{hashlib.sha256(payload).hexdigest()}"
 
 

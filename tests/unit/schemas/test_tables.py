@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from financial_report_qa.schemas.documents import stable_document_id
 from financial_report_qa.schemas.tables import CellRecord, TableRecord, stable_table_id
 
-
 DOC_ID = stable_document_id("a" * 64)
 
 
