@@ -1,0 +1,244 @@
+"""Immutable canonical dataset release loader and identity verification."""
+
+import json
+import re
+from dataclasses import dataclass
+from decimal import Decimal
+from pathlib import Path
+from typing import Any, cast
+
+import pyarrow.parquet as pq
+
+from financial_report_qa.core.errors import Week1GateInputError
+from financial_report_qa.data.dataset_builder import (
+    CELL_SCHEMA,
+    DOCUMENT_SCHEMA,
+    ISSUE_SCHEMA,
+    TABLE_SCHEMA,
+)
+from financial_report_qa.data.manifests import ManifestSnapshot, read_manifest
+from financial_report_qa.schemas import (
+    CellRecord,
+    DocumentRecord,
+    TableRecord,
+)
+from financial_report_qa.schemas.normalization import NormalizationIssue
+
+HEX64_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+@dataclass(frozen=True)
+class GateDataset:
+    dataset_fingerprint: str
+    source_manifest_sha256: str
+    release_path: Path
+    manifest: ManifestSnapshot
+    documents_by_id: dict[str, DocumentRecord]
+    tables_by_id: dict[str, TableRecord]
+    cells_by_table_id: dict[str, tuple[CellRecord, ...]]
+    issues: tuple[NormalizationIssue, ...]
+
+
+def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
+    """Strictly load, index, and validate a canonical dataset release."""
+    if not release_path.is_dir():
+        raise Week1GateInputError(f"Release path is not a directory: {release_path.name}")
+
+    manifest_json_path = release_path / "manifest.json"
+    if not manifest_json_path.is_file():
+        raise Week1GateInputError("Release manifest.json is missing")
+
+    try:
+        release_manifest_data = json.loads(manifest_json_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise Week1GateInputError(f"Invalid release manifest.json: {e}") from e
+
+    dataset_fingerprint = str(release_manifest_data.get("dataset_fingerprint", ""))
+    source_manifest_sha256 = str(release_manifest_data.get("source_manifest_sha256", ""))
+
+    if not HEX64_PATTERN.match(dataset_fingerprint):
+        raise Week1GateInputError("Invalid dataset_fingerprint format in release manifest")
+    if not HEX64_PATTERN.match(source_manifest_sha256):
+        raise Week1GateInputError("Invalid source_manifest_sha256 format in release manifest")
+
+    manifest = read_manifest(manifest_path)
+    if manifest.sha256 != source_manifest_sha256:
+        raise Week1GateInputError(
+            "Source manifest fingerprint mismatch between release and manifest file"
+        )
+
+    for filename in ("documents.parquet", "tables.parquet", "cells.parquet", "issues.parquet"):
+        if not (release_path / filename).is_file():
+            raise Week1GateInputError(f"Missing required release file: {filename}")
+
+    # Read and check Arrow schemas
+    read_table = cast(Any, pq.read_table)
+    doc_table = read_table(release_path / "documents.parquet")
+    if doc_table.schema != DOCUMENT_SCHEMA:
+        raise Week1GateInputError("documents.parquet Arrow schema mismatch")
+
+    tbl_table = read_table(release_path / "tables.parquet")
+    if tbl_table.schema != TABLE_SCHEMA:
+        raise Week1GateInputError("tables.parquet Arrow schema mismatch")
+
+    cell_table = read_table(release_path / "cells.parquet")
+    if cell_table.schema != CELL_SCHEMA:
+        raise Week1GateInputError("cells.parquet Arrow schema mismatch")
+
+    iss_table = read_table(release_path / "issues.parquet")
+    if iss_table.schema != ISSUE_SCHEMA:
+        raise Week1GateInputError("issues.parquet Arrow schema mismatch")
+
+    # Counts validation
+    doc_rows = doc_table.to_pylist()
+    tbl_rows = tbl_table.to_pylist()
+    cell_rows = cell_table.to_pylist()
+    iss_rows = iss_table.to_pylist()
+
+    if len(doc_rows) != release_manifest_data.get("document_count"):
+        raise Week1GateInputError(
+            "Document count mismatch between release manifest and documents.parquet"
+        )
+    if len(tbl_rows) != release_manifest_data.get("table_count"):
+        raise Week1GateInputError(
+            "Table count mismatch between release manifest and tables.parquet"
+        )
+    if len(cell_rows) != release_manifest_data.get("cell_count"):
+        raise Week1GateInputError("Cell count mismatch between release manifest and cells.parquet")
+    if len(iss_rows) != release_manifest_data.get("issue_count"):
+        raise Week1GateInputError(
+            "Issue count mismatch between release manifest and issues.parquet"
+        )
+
+    # Process and validate documents against manifest
+    ready_manifest_docs = {
+        doc.doc_id: doc for doc in manifest.inventory.documents if doc.inventory_status == "ready"
+    }
+
+    documents_by_id: dict[str, DocumentRecord] = {}
+    for r in doc_rows:
+        doc_id = str(r["doc_id"])
+        if doc_id in documents_by_id:
+            raise Week1GateInputError(f"Duplicate doc_id in documents.parquet: {doc_id}")
+        if doc_id not in ready_manifest_docs:
+            raise Week1GateInputError(
+                f"Released document doc_id {doc_id} not present as ready in manifest"
+            )
+
+        manifest_doc = ready_manifest_docs[doc_id]
+        if (
+            manifest_doc.relative_path != r["relative_path"]
+            or manifest_doc.company_code != r["company_code"]
+            or manifest_doc.report_year != r["report_year"]
+            or manifest_doc.statement_scope != r["statement_scope"]
+            or manifest_doc.sha256 != r["sha256"]
+        ):
+            raise Week1GateInputError(
+                f"Document record {doc_id} disagrees with manifest inventory record"
+            )
+
+        documents_by_id[doc_id] = manifest_doc
+
+    if set(documents_by_id.keys()) != set(ready_manifest_docs.keys()):
+        raise Week1GateInputError(
+            "Released documents set does not equal ready manifest documents set"
+        )
+
+    # Process and validate tables
+    tables_by_id: dict[str, TableRecord] = {}
+    for r in tbl_rows:
+        table_id = str(r["table_id"])
+        doc_id = str(r["doc_id"])
+        if table_id in tables_by_id:
+            raise Week1GateInputError(f"Duplicate table_id in tables.parquet: {table_id}")
+        if doc_id not in documents_by_id:
+            raise Week1GateInputError(f"Table {table_id} references unknown doc_id: {doc_id}")
+
+        quality_val = r.get("quality_score")
+        if quality_val is None:
+            raise Week1GateInputError(f"Table {table_id} missing quality_score")
+
+        table_rec = TableRecord(
+            table_id=table_id,
+            doc_id=doc_id,
+            title_raw=r.get("title_raw"),
+            statement_type=r.get("statement_type"),
+            unit_raw=r.get("unit_raw"),
+            unit_normalized=r.get("unit_normalized"),
+            line_start=int(r["line_start"]),
+            line_end=int(r["line_end"]),
+            row_count=int(r["row_count"]),
+            column_count=int(r["column_count"]),
+            quality_score=float(quality_val),
+            csv_path=r.get("csv_path"),
+        )
+        tables_by_id[table_id] = table_rec
+
+    # Process cells
+    cells_list_by_table: dict[str, list[CellRecord]] = {t_id: [] for t_id in tables_by_id}
+    seen_cell_ids: set[str] = set()
+
+    for r in cell_rows:
+        cell_id = str(r["cell_id"])
+        table_id = str(r["table_id"])
+        if cell_id in seen_cell_ids:
+            raise Week1GateInputError(f"Duplicate cell_id in cells.parquet: {cell_id}")
+        if table_id not in tables_by_id:
+            raise Week1GateInputError(f"Cell {cell_id} references unknown table_id: {table_id}")
+
+        seen_cell_ids.add(cell_id)
+        val_raw = r.get("value_numeric")
+        val_num = Decimal(str(val_raw)) if val_raw is not None else None
+
+        cell_rec = CellRecord(
+            cell_id=cell_id,
+            table_id=table_id,
+            row_idx=int(r["row_idx"]),
+            col_idx=int(r["col_idx"]),
+            row_label_raw=r.get("row_label_raw"),
+            row_label_canonical=r.get("row_label_canonical"),
+            column_label_raw=r.get("column_label_raw"),
+            column_label_canonical=r.get("column_label_canonical"),
+            value_raw=str(r["value_raw"]),
+            value_numeric=val_num,
+            period=r.get("period"),
+            unit=r.get("unit"),
+            source_line_start=int(r["source_line_start"]),
+            source_line_end=int(r["source_line_end"]),
+            extraction_confidence=float(r["extraction_confidence"]),
+        )
+        cells_list_by_table[table_id].append(cell_rec)
+
+    cells_by_table_id: dict[str, tuple[CellRecord, ...]] = {
+        t_id: tuple(
+            sorted(cells_list_by_table[t_id], key=lambda c: (c.row_idx, c.col_idx, c.cell_id))
+        )
+        for t_id in sorted(cells_list_by_table.keys())
+    }
+
+    # Process issues
+    issues_list: list[NormalizationIssue] = []
+    for r in iss_rows:
+        doc_id = str(r["doc_id"])
+        if doc_id not in documents_by_id:
+            raise Week1GateInputError(f"Issue references unknown doc_id: {doc_id}")
+        tbl_id = str(r["table_id"]) if r.get("table_id") is not None else None
+        if tbl_id and tbl_id not in tables_by_id:
+            raise Week1GateInputError(f"Issue references unknown table_id: {tbl_id}")
+
+        issues_list.append(NormalizationIssue.model_validate(r))
+
+    # Sort documents and tables by stable ID
+    sorted_docs_by_id = {k: documents_by_id[k] for k in sorted(documents_by_id.keys())}
+    sorted_tables_by_id = {k: tables_by_id[k] for k in sorted(tables_by_id.keys())}
+
+    return GateDataset(
+        dataset_fingerprint=dataset_fingerprint,
+        source_manifest_sha256=source_manifest_sha256,
+        release_path=release_path,
+        manifest=manifest,
+        documents_by_id=sorted_docs_by_id,
+        tables_by_id=sorted_tables_by_id,
+        cells_by_table_id=cells_by_table_id,
+        issues=tuple(issues_list),
+    )
