@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 from pathlib import Path
@@ -7,8 +8,9 @@ from pathlib import Path
 import pytest
 
 import financial_report_qa.data.manifests as manifests
+from financial_report_qa.core.errors import DatasetBuildError
 from financial_report_qa.data.inventory import InventoryIssue, InventoryResult
-from financial_report_qa.data.manifests import write_manifest
+from financial_report_qa.data.manifests import read_manifest, write_manifest
 from financial_report_qa.schemas.documents import DocumentRecord, stable_document_id
 
 
@@ -166,3 +168,36 @@ def test_cleanup_failure_does_not_replace_primary_write_failure(
 
     with pytest.raises(OSError, match="simulated flush failure"):
         write_manifest(result, path)
+
+
+def test_read_manifest_returns_models_and_exact_byte_fingerprint(tmp_path: Path) -> None:
+    path = tmp_path / "documents.jsonl"
+    result = InventoryResult(
+        documents=(_document("VCB/2024/Consolidated/a.txt", "a" * 64),),
+        issues=(),
+    )
+    write_manifest(result, path)
+
+    snapshot = read_manifest(path)
+
+    assert snapshot.inventory == result
+    assert snapshot.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "{}\n",
+        '{"record_type":"unknown"}\n',
+        '{"record_type":"document","unexpected":true}\n',
+        "not-json\n",
+    ],
+)
+def test_read_manifest_rejects_invalid_rows_with_safe_line_number(
+    tmp_path: Path, line: str
+) -> None:
+    path = tmp_path / "documents.jsonl"
+    path.write_text(line, encoding="utf-8")
+    with pytest.raises(DatasetBuildError, match="manifest line 1"):
+        read_manifest(path)
+
