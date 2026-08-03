@@ -50,7 +50,7 @@ def test_document_record_round_trip_preserves_vietnamese_unicode() -> None:
     payload = valid_document_payload()
     unicode_path = (
         "financial_statements/AAA/2015/"
-        "BÃ¡o cÃ¡o tÃ i chÃ­nh há»£p nháº¥t/report.txt"
+        "Báo cáo tài chính hợp nhất/report.txt"
     )
     payload["relative_path"] = unicode_path
 
