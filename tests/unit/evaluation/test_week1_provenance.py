@@ -115,3 +115,55 @@ def test_evaluate_table_usability_shape_mismatch() -> None:
     assert final_tas[0].usable is False
     assert len(final_tas[0].failures) == 1
     assert final_tas[0].failures[0].code == "shape_mismatch"
+
+
+def test_sample_is_deterministic_stratified_and_table_capped() -> None:
+    from collections import Counter
+
+    from financial_report_qa.evaluation.week1_contracts import SAMPLING_VERSION, CellAudit
+    from financial_report_qa.evaluation.week1_sampling import select_audit_cells
+
+    doc_id = "doc_" + "a" * 64
+    tbl_1 = stable_table_id(doc_id, 10, 20)
+    tbl_2 = stable_table_id(doc_id, 30, 40)
+
+    candidates: list[CellAudit] = []
+    for i in range(20):
+        tbl = tbl_1 if i < 10 else tbl_2
+        candidates.append(
+            CellAudit(
+                annotation_schema_version="1",
+                sampling_version=SAMPLING_VERSION,
+                cell_id=f"cell_{i}",
+                doc_id=doc_id,
+                relative_path="VCB/2024/report.txt",
+                company_code="VCB",
+                report_year=2024,
+                annotation_id="exp_1",
+                statement_type="balance_sheet",
+                table_id=tbl,
+                row_idx=i % 5,
+                col_idx=i // 5,
+                row_label_raw="Label",
+                column_label_raw="Col",
+                value_raw="100",
+                value_numeric=100.0,
+                period="2024",
+                unit="VND",
+                source_line_start=1,
+                source_line_end=2,
+                source_excerpt="Excerpt",
+                verified=True,
+                review_notes="",
+            )
+        )
+
+    cand_tuple = tuple(candidates)
+    selected = select_audit_cells(cand_tuple, sample_size=4, max_per_table=2)
+    reversed_selected = select_audit_cells(
+        tuple(reversed(cand_tuple)), sample_size=4, max_per_table=2
+    )
+
+    assert selected == reversed_selected
+    assert len({item.cell_id for item in selected}) == 4
+    assert max(Counter(item.table_id for item in selected).values()) <= 2

@@ -31,6 +31,7 @@ from financial_report_qa.evaluation.week1_provenance import (
     evaluate_table_usability,
     generate_cell_audits,
 )
+from financial_report_qa.evaluation.week1_sampling import select_audit_cells
 
 
 def evaluate_week1_gate(
@@ -99,8 +100,54 @@ def evaluate_week1_gate(
         expected_tables_tuple, pilot_extracted_tables
     )
 
-    # Provenance auditing phase
-    cell_audits = generate_cell_audits(dataset, corpus_dir, expected_tables_tuple, matched_tables)
+    # Automated provenance auditing phase & deterministic cell sampling
+    all_cell_audits = generate_cell_audits(
+        dataset, corpus_dir, expected_tables_tuple, matched_tables
+    )
+    sample_size = min(30, len(all_cell_audits)) if len(all_cell_audits) > 0 else 30
+    expected_sample = select_audit_cells(all_cell_audits, sample_size=sample_size)
+
+    cell_audit_csv_path = annotation_dir / "cell-audit.csv"
+    if not cell_audit_csv_path.is_file():
+        raise Week1GateInputError(f"Missing cell-audit.csv in {annotation_dir}")
+
+    audit_rows = read_csv_rows(cell_audit_csv_path, CELL_AUDIT_COLUMNS)
+    if len(audit_rows) != len(expected_sample):
+        raise Week1GateInputError(
+            f"cell-audit.csv row count mismatch: found {len(audit_rows)}, "
+            f"expected {len(expected_sample)}"
+        )
+
+    expected_sample_by_id = {ca.cell_id: ca for ca in expected_sample}
+    user_audits: list[CellAudit] = []
+
+    for r in audit_rows:
+        cell_id = r["cell_id"]
+        if cell_id not in expected_sample_by_id:
+            raise Week1GateInputError(f"Unexpected cell_id '{cell_id}' in cell-audit.csv")
+
+        exp_ca = expected_sample_by_id[cell_id]
+        v_str = (r.get("verified") or "").strip().lower()
+        if v_str == "true":
+            v_bool: bool | None = True
+        elif v_str == "false":
+            v_bool = False
+        else:
+            raise Week1GateInputError(
+                f"Unverified or invalid verified status for cell_id '{cell_id}' "
+                f"in cell-audit.csv: '{r.get('verified')}'"
+            )
+
+        user_audits.append(
+            exp_ca.model_copy(
+                update={
+                    "verified": v_bool,
+                    "review_notes": r.get("review_notes", ""),
+                }
+            )
+        )
+
+    cell_audits = tuple(user_audits)
 
     # Final usability evaluation
     final_assessments = evaluate_table_usability(initial_assessments, matched_tables, cell_audits)

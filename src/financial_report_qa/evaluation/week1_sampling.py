@@ -2,6 +2,7 @@
 
 import hashlib
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 from financial_report_qa.core.errors import Week1GateInputError
@@ -9,6 +10,7 @@ from financial_report_qa.evaluation.week1_contracts import (
     EXPECTED_TABLE_COLUMNS,
     PILOT_DOCUMENT_COLUMNS,
     SAMPLING_VERSION,
+    CellAudit,
     PilotDocument,
     PilotMetadata,
     read_csv_rows,
@@ -23,6 +25,70 @@ def stable_rank(namespace: str, *parts: object) -> str:
     """Return a deterministic, namespaced rank digest."""
     payload = "\n".join((SAMPLING_VERSION, namespace, *(str(part) for part in parts)))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def select_audit_cells(
+    candidates: tuple[CellAudit, ...],
+    sample_size: int = 30,
+    max_per_table: int = 2,
+) -> tuple[CellAudit, ...]:
+    """Select a deterministic 30-cell stratified sample for manual provenance audit."""
+    if len(candidates) < sample_size:
+        raise Week1GateInputError(
+            f"Not enough eligible cells for manual audit: found {len(candidates)}, "
+            f"required {sample_size}"
+        )
+
+    buckets: dict[tuple[str, int, str], list[CellAudit]] = {}
+    for cell in candidates:
+        bucket_key = (cell.company_code, cell.report_year, str(cell.statement_type))
+        buckets.setdefault(bucket_key, []).append(cell)
+
+    bucket_keys = sorted(
+        buckets.keys(),
+        key=lambda k: stable_rank("cell_stratum", k[0], k[1], k[2]),
+    )
+
+    for k in bucket_keys:
+        buckets[k].sort(key=lambda c: stable_rank("audit_cell", c.cell_id))
+
+    table_counts: Counter[str] = Counter()
+    selected: list[CellAudit] = []
+    selected_ids: set[str] = set()
+
+    while len(selected) < sample_size:
+        progress = False
+        for k in bucket_keys:
+            for cell in buckets[k]:
+                if cell.cell_id not in selected_ids and table_counts[cell.table_id] < max_per_table:
+                    excerpt = cell.source_excerpt
+                    if len(excerpt) > 500:
+                        excerpt = excerpt[:497] + "..."
+                    cell_sample = cell.model_copy(
+                        update={
+                            "verified": None,
+                            "review_notes": "",
+                            "source_excerpt": excerpt,
+                        }
+                    )
+                    selected.append(cell_sample)
+                    selected_ids.add(cell.cell_id)
+                    table_counts[cell.table_id] += 1
+                    progress = True
+                    break
+            if len(selected) == sample_size:
+                break
+        if not progress:
+            break
+
+    if len(selected) < sample_size:
+        raise Week1GateInputError(
+            f"Not enough eligible cells for manual audit: found {len(selected)}, "
+            f"required {sample_size}"
+        )
+
+    selected.sort(key=lambda a: (a.annotation_id, a.row_idx, a.col_idx, a.cell_id))
+    return tuple(selected)
 
 
 def select_pilot_documents(

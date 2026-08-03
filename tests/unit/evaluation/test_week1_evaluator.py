@@ -91,6 +91,17 @@ def test_evaluate_and_publish_week1_gate(tmp_path: Path) -> None:
     doc_file.parent.mkdir(parents=True, exist_ok=True)
     doc_file.write_text("Header\n" + "Asset 100\n" * 15, encoding="utf-8")
 
+    from financial_report_qa.evaluation.week1_cli import sample_cells_workflow
+    from financial_report_qa.evaluation.week1_contracts import CELL_AUDIT_COLUMNS, read_csv_rows
+
+    sample_cells_workflow(dataset, corpus_dir, annotation_dir)
+
+    audit_csv = annotation_dir / "cell-audit.csv"
+    rows = read_csv_rows(audit_csv, CELL_AUDIT_COLUMNS)
+    for r in rows:
+        r["verified"] = "true"
+    write_csv_rows(audit_csv, CELL_AUDIT_COLUMNS, rows, allow_identical=True)
+
     result, assessments, cell_audits = evaluate_week1_gate(dataset, corpus_dir, annotation_dir)
 
     assert result.document_count == 1
