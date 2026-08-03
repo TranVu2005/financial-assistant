@@ -186,6 +186,7 @@ def test_inventory_main_writes_manifest_and_prints_counts(
     assert "Empty:     1" in output
     assert "Duplicate: 0" in output
     assert "Issues:    0" in output
+    assert f"Manifest:  {manifest.resolve()}" in output
 
 
 def test_inventory_main_reports_expected_failure_without_traceback(
@@ -203,4 +204,15 @@ def test_inventory_main_reports_expected_failure_without_traceback(
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "inventory root" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_inventory_main_returns_2_for_missing_required_argument(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(["--root", "data/raw/vifinqa", "--repo-id", "org/vifinqa"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "the following arguments are required: --revision" in captured.err
     assert "Traceback" not in captured.err

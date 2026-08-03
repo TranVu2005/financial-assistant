@@ -222,7 +222,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Build and publish a ViFinQA inventory manifest."""
     from financial_report_qa.data.manifests import write_manifest
 
-    args = _parser().parse_args(argv)
+    try:
+        args = _parser().parse_args(argv)
+    except SystemExit as error:
+        return 0 if error.code == 0 else 2
     try:
         result = build_inventory(
             args.root,
