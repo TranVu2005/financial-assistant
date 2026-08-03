@@ -19,6 +19,20 @@
 - Không fine-tune trước khi baseline dữ liệu, retrieval, compiler và bộ đánh giá đã ổn định.
 - Không xây authentication, multi-user, hệ thống phân quyền hay backend production trong tháng này.
 - Mỗi ngày kết thúc bằng một phiên bản chạy được; không để nhánh chính ở trạng thái hỏng.
+- Dataset làm việc hiện tại là ViFinQA tại `data/raw`; raw data chỉ đọc và không commit vào Git.
+
+---
+
+## 0. Trạng thái dữ liệu hiện tại — 2026-08-03
+
+- [x] Đã tải đầy đủ snapshot `AIGuruTinix/ViFinQA` vào `data/raw` và đối chiếu cây tệp với Hugging Face: 1.977/1.977 tệp, không thiếu hoặc thừa.
+- [x] Snapshot gồm 1.973 báo cáo TXT, 1.012 câu hỏi JSONL và bảng ánh xạ 100 mã cổ phiếu.
+- [x] Dữ liệu báo cáo nằm tại `data/raw/financial_statements/<TICKER>/<YEAR>/<DOCUMENT>/*.txt` và câu hỏi nằm tại `data/raw/questions/questions.jsonl`.
+- [ ] Thay hoàn toàn notebook legacy bằng `notebooks/01_dataset_profile.ipynb` dành riêng cho ViFinQA.
+- [ ] Chạy notebook từ đầu đến cuối, lưu thống kê và xác nhận các mốc 1.973 báo cáo, 1.012 câu hỏi, 100 công ty.
+- [ ] Dùng kết quả profiling để khóa contract inventory, ingestion và normalization trước khi xây index.
+
+Giới hạn cần giữ rõ: bản phát hành này chỉ có câu hỏi, không có đáp án, chương trình tính, gold evidence hoặc train/dev/test chính thức. Các nhãn phát triển phải là dữ liệu nội bộ và không được mô tả là nhãn chính thức của ViFinQA.
 
 ---
 
@@ -364,19 +378,18 @@ execution:
 
 ---
 
-## 5. Kế hoạch thu thập dataset ngay sau đây
+## 5. Dataset ViFinQA và kế hoạch dữ liệu kế tiếp
 
-### 5.1. Mục tiêu theo tầng
+### 5.1. Snapshot đang sử dụng
 
-| Tầng | Quy mô | Mục đích | Thời hạn |
+| Thành phần | Quy mô | Đường dẫn | Vai trò |
 |---|---:|---|---|
-| Smoke | 5 báo cáo, ít nhất 1 bản scan | Kiểm tra pipeline | Ngày 2 |
-| Pilot | 5 doanh nghiệp × 3 năm ≈ 15 báo cáo | Xây schema và baseline | Ngày 6 |
-| Representative | 20 doanh nghiệp × 3 năm ≈ 60 báo cáo | Retrieval, QA, demo | Ngày 14 |
-| Expansion | 20–30 doanh nghiệp × 3–5 năm | Tăng độ phủ nếu tự động hóa ổn | Ngày 21–24 |
-| Official | Toàn bộ dữ liệu ban tổ chức cung cấp | Đánh giá/nộp bài | Ngay khi nhận |
+| Báo cáo OCR TXT | 1.973 tệp | `data/raw/financial_statements/` | Corpus truy hồi và trích bảng |
+| Câu hỏi tiếng Việt | 1.012 dòng | `data/raw/questions/questions.jsonl` | Phân tích intent và benchmark question-only |
+| Danh mục doanh nghiệp | 100 mã | `data/raw/code_stock.csv` | Chuẩn hóa mã và tên công ty |
+| Dataset card | 1 tệp | `data/raw/README.md` | Contract, nguồn, license và giới hạn |
 
-Chọn doanh nghiệp từ nhiều ngành: ngân hàng, chứng khoán, bảo hiểm, sản xuất, bán lẻ, bất động sản, năng lượng. Trong pilot phải có cả báo cáo hợp nhất/riêng, PDF text/scan, bảng có cột nhiều kỳ và thuyết minh.
+Notebook profiling phải quét metadata của toàn bộ báo cáo nhưng chỉ đọc nội dung một mẫu xác định bằng seed và giới hạn byte. Không mở rộng thu thập PDF trước khi hoàn tất inventory và xác định khoảng trống thực sự của snapshot này.
 
 ### 5.2. Manifest tài liệu
 
@@ -527,11 +540,11 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 2 — Collector và inventory
 
-- [ ] Thu thập tầng Smoke và bắt đầu Pilot.
-- [ ] Cài checksum, nhận diện trùng, version và quarantine.
-- [ ] Viết báo cáo inventory JSON/Markdown.
-- [ ] Test với URL giả/mất kết nối, file trùng, PDF hỏng và PDF có mật khẩu.
-- **Đầu ra:** 5 PDF hợp lệ có manifest đầy đủ; không có file raw bị ghi đè.
+- [x] Tải và xác minh đầy đủ snapshot ViFinQA trong `data/raw`.
+- [ ] Chạy notebook profile cho báo cáo, câu hỏi và danh mục công ty.
+- [ ] Xác định đường dẫn lỗi, file rỗng, ID câu hỏi thiếu/trùng và ticker không khớp.
+- [ ] Chốt schema inventory/manifest từ bằng chứng profiling; raw snapshot không bị ghi đè.
+- **Đầu ra:** notebook thực thi thành công, hiển thị đúng 1.973 báo cáo, 1.012 câu hỏi và 100 công ty.
 
 #### Ngày 3 — PDF routing và trích xuất thô
 
