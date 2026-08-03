@@ -98,6 +98,8 @@ def test_table_record_rejects_mismatched_stable_id() -> None:
         ("column_count", -1),
         ("quality_score", -0.01),
         ("quality_score", 1.01),
+        ("quality_score", True),
+        ("quality_score", "0.9"),
     ],
 )
 def test_table_record_rejects_invalid_shape_or_provenance(

@@ -52,7 +52,7 @@ class TableRecord(BaseModel):
     line_end: int = Field(strict=True, ge=1)
     row_count: int = Field(strict=True, ge=0)
     column_count: int = Field(strict=True, ge=0)
-    quality_score: float = Field(ge=0, le=1)
+    quality_score: float = Field(strict=True, ge=0, le=1)
     csv_path: str | None
 
     @model_validator(mode="after")

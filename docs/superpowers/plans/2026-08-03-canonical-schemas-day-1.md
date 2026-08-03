@@ -520,6 +520,8 @@ def test_table_record_rejects_mismatched_stable_id() -> None:
         ("column_count", -1),
         ("quality_score", -0.01),
         ("quality_score", 1.01),
+        ("quality_score", True),
+        ("quality_score", "0.9"),
     ],
 )
 def test_table_record_rejects_invalid_shape_or_provenance(
@@ -571,7 +573,7 @@ class TableRecord(BaseModel):
     line_end: int = Field(strict=True, ge=1)
     row_count: int = Field(strict=True, ge=0)
     column_count: int = Field(strict=True, ge=0)
-    quality_score: float = Field(ge=0, le=1)
+    quality_score: float = Field(strict=True, ge=0, le=1)
     csv_path: str | None
 
     @model_validator(mode="after")
