@@ -27,62 +27,58 @@ def assess_table_matching(
     extracted_tables: tuple[TableRecord, ...],
 ) -> tuple[tuple[TableAssessment, ...], dict[str, TableRecord]]:
     """Match expected annotated tables against extracted candidates and produce assessments."""
-    {tbl.table_id: tbl for tbl in extracted_tables}
-
     # Group extracted candidate tables by doc_id
     extracted_by_doc: dict[str, list[TableRecord]] = {}
     for tbl in extracted_tables:
         extracted_by_doc.setdefault(tbl.doc_id, []).append(tbl)
 
-    assessments: list[TableAssessment] = []
+    # Group expected tables by doc_id
+    expected_by_doc: dict[str, list[ExpectedTable]] = {}
+    for exp in expected_tables:
+        expected_by_doc.setdefault(exp.doc_id, []).append(exp)
+
     matched_extracted: dict[str, TableRecord] = {}
 
+    for doc_id, doc_expected in expected_by_doc.items():
+        candidates = extracted_by_doc.get(doc_id, [])
+        if not candidates:
+            continue
+
+        pairs: list[tuple[tuple[int, float, int], str, str, ExpectedTable, TableRecord]] = []
+        for exp in doc_expected:
+            exp_span = exp.line_end - exp.line_start + 1
+            for c in candidates:
+                overlap_num = max(
+                    0, min(c.line_end, exp.line_end) - max(c.line_start, exp.line_start) + 1
+                )
+                if overlap_num > 0:
+                    is_exact = int(
+                        c.line_start == exp.line_start and c.line_end == exp.line_end
+                    )
+                    overlap_ratio = overlap_num / exp_span
+                    dist = -abs(c.line_start - exp.line_start) - abs(c.line_end - exp.line_end)
+                    score = (is_exact, overlap_ratio, dist)
+                    pairs.append((score, c.table_id, exp.annotation_id, exp, c))
+
+        # Sort descending by score, tie-break ascending by table_id and annotation_id
+        pairs.sort(key=lambda p: (-p[0][0], -p[0][1], -p[0][2], p[1], p[2]))
+
+        assigned_exp: set[str] = set()
+        assigned_cand: set[str] = set()
+
+        for _, _, _, exp, c in pairs:
+            if exp.annotation_id not in assigned_exp and c.table_id not in assigned_cand:
+                assigned_exp.add(exp.annotation_id)
+                assigned_cand.add(c.table_id)
+                matched_extracted[exp.annotation_id] = c
+
+    # Build final assessments in order of expected_tables input
+    assessments: list[TableAssessment] = []
     for exp in expected_tables:
-        candidates = extracted_by_doc.get(exp.doc_id, [])
-
-        # Priority 1: Exact span match (line_start and line_end match)
-        exact_matches = [
-            c for c in candidates if c.line_start == exp.line_start and c.line_end == exp.line_end
-        ]
-
-        matched_candidate: TableRecord | None = None
-        if len(exact_matches) == 1:
-            matched_candidate = exact_matches[0]
-        elif len(exact_matches) > 1:
-            # Tie-break by statement_type match if exact span has multiple candidates
-            type_matches = [
-                c
-                for c in exact_matches
-                if (c.statement_type or "").lower() == exp.statement_type.lower()
-            ]
-            if len(type_matches) == 1:
-                matched_candidate = type_matches[0]
-            else:
-                exact_matches.sort(key=lambda c: c.table_id)
-                matched_candidate = exact_matches[0]
-
-        # Priority 2: Overlapping span match (if no exact span match)
-        if matched_candidate is None:
-            overlaps = [
-                c
-                for c in candidates
-                if max(c.line_start, exp.line_start) <= min(c.line_end, exp.line_end)
-            ]
-            if len(overlaps) == 1:
-                matched_candidate = overlaps[0]
-            elif len(overlaps) > 1:
-                # Pick maximum overlap length
-                def overlap_len(c: TableRecord) -> int:
-                    return min(c.line_end, exp.line_end) - max(c.line_start, exp.line_start) + 1
-
-                overlaps.sort(key=lambda c: (-overlap_len(c), c.table_id))
-                matched_candidate = overlaps[0]
+        matched_candidate = matched_extracted.get(exp.annotation_id)
 
         if matched_candidate is not None:
             matched_id = matched_candidate.table_id
-            matched_extracted[exp.annotation_id] = matched_candidate
-
-            # Compute overlap
             overlap_num = max(
                 0,
                 min(matched_candidate.line_end, exp.line_end)

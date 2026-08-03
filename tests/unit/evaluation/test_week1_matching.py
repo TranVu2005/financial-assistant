@@ -76,3 +76,70 @@ def test_assess_table_matching_exact_and_missing() -> None:
     assert assessments[1].usable is False
 
     assert matched == {"exp_001": extracted_tbl}
+
+
+def _table(
+    table_id: str,
+    doc_id: str,
+    line_start: int,
+    line_end: int,
+    statement_type: str = "balance_sheet",
+) -> TableRecord:
+    return TableRecord(
+        table_id=table_id,
+        doc_id=doc_id,
+        title_raw="Table",
+        statement_type=statement_type,
+        unit_raw="VND",
+        unit_normalized="VND",
+        line_start=line_start,
+        line_end=line_end,
+        row_count=5,
+        column_count=3,
+        quality_score=1.0,
+        csv_path=None,
+    )
+
+
+def _annotation(
+    annotation_id: str,
+    doc_id: str,
+    line_start: int,
+    line_end: int,
+    statement_type: str = "balance_sheet",
+) -> ExpectedTable:
+    return ExpectedTable(
+        annotation_schema_version="1",
+        annotation_id=annotation_id,
+        doc_id=doc_id,
+        relative_path="VCB/2024/Consolidated/report.txt",
+        statement_type=statement_type,  # type: ignore[arg-type]
+        line_start=line_start,
+        line_end=line_end,
+        row_count=5,
+        column_count=3,
+        unit_normalized="VND",
+        expected_periods=("2024",),
+        notes="",
+    )
+
+
+def test_matcher_prefers_best_span_even_when_candidates_overlap() -> None:
+    doc_id = "doc_" + "a" * 64
+    ann = _annotation("ann_1", doc_id, 10, 19)
+    weaker = _table(stable_table_id(doc_id, 10, 17), doc_id, 10, 17)
+    exact = _table(stable_table_id(doc_id, 10, 19), doc_id, 10, 19)
+    assessments, matched = assess_table_matching((ann,), (weaker, exact))
+    assert assessments[0].table_id == exact.table_id
+
+
+def test_matcher_never_reuses_one_observed_table() -> None:
+    doc_id = "doc_" + "a" * 64
+    ann1 = _annotation("ann_a", doc_id, 10, 20)
+    ann2 = _annotation("ann_b", doc_id, 12, 22)
+    tbl_only = _table(stable_table_id(doc_id, 10, 20), doc_id, 10, 20)
+    assessments, matched = assess_table_matching((ann1, ann2), (tbl_only,))
+    assigned_count = sum(1 for a in assessments if a.table_id is not None)
+    assert assigned_count == 1
+    assert len(matched) == 1
+
