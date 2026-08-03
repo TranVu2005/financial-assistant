@@ -70,6 +70,23 @@ def test_detector_rejects_invalid_html_regions(
     assert [item.reason for item in result.rejected] == [reason]
 
 
+def test_detector_rejects_multiline_nested_html_through_outer_close(tmp_path: Path) -> None:
+    source = (
+        "<table>\n"
+        "<table>\n"
+        "<tr><td>1</td></tr></table>\n"
+        "</table>\n"
+    )
+    result = detect_table_candidates(decoded(tmp_path, source))
+
+    assert result.candidates == ()
+    assert len(result.rejected) == 1
+    rejected = result.rejected[0]
+    assert rejected.reason == "nested_html_table"
+    assert rejected.raw_source == source
+    assert (rejected.line_start, rejected.line_end) == (1, 4)
+
+
 def test_detector_splits_sibling_tables_on_one_line(tmp_path: Path) -> None:
     source = (
         "<table><tr><td>A</td><td>1</td></tr></table>"
@@ -116,6 +133,16 @@ def test_fallback_accepts_only_consistent_financial_rows(tmp_path: Path) -> None
 
 def test_fallback_rejects_ragged_table_like_rows(tmp_path: Path) -> None:
     source = "Chá»‰ tiÃªu  2024  2023\nDoanh thu  100\nLá»£i nhuáº­n  20  10\n"
+    result = detect_table_candidates(decoded(tmp_path, source))
+
+    assert result.candidates == ()
+    assert [item.reason for item in result.rejected] == ["ragged_structured_rows"]
+
+
+def test_fallback_rejects_rows_with_different_non_empty_column_counts(
+    tmp_path: Path,
+) -> None:
+    source = "Head\t2024\t\nA\t1\t2\nB\t3\t4\n"
     result = detect_table_candidates(decoded(tmp_path, source))
 
     assert result.candidates == ()

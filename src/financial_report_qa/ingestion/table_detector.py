@@ -13,8 +13,6 @@ from financial_report_qa.ingestion.provenance import (
     TableCandidate,
 )
 
-_OPEN_TABLE_RE = re.compile(r"<table\b", re.IGNORECASE)
-_CLOSE_TABLE_RE = re.compile(r"</table\s*>", re.IGNORECASE)
 _TAB_SPLIT_RE = re.compile(r"\t+")
 _SPACE_SPLIT_RE = re.compile(r" {2,}")
 _HEADER_SIGNALS = ("mÃ£ sá»‘", "chá»‰ tiÃªu", "thuyáº¿t minh", "nÄƒm", "ká»³", "Ä‘Æ¡n vá»‹", "Ä‘vt")
@@ -67,71 +65,63 @@ def _extend_to_line_ending(text: str, end: int) -> int:
 
 
 def _html_events(document: DecodedDocument) -> list[DetectionEvent]:
-    offsets = _line_offsets(document)
     events: list[DetectionEvent] = []
-    for block in document.blocks:
-        if block.kind != "table":
-            continue
-        block_start = offsets[block.line_start - 1]
-        depth = 0
-        region_start = 0
-        nested = False
-        for token in _TABLE_TOKEN_RE.finditer(block.text):
-            is_close = token.group().startswith("</")
-            if not is_close:
-                if depth == 0:
-                    region_start = token.start()
-                    nested = False
-                else:
-                    nested = True
-                depth += 1
-                continue
+    depth = 0
+    region_start = 0
+    nested = False
+    for token in _TABLE_TOKEN_RE.finditer(document.text):
+        is_close = token.group().startswith("</")
+        if not is_close:
             if depth == 0:
-                continue
-            depth -= 1
-            if depth != 0:
-                continue
-            source_end = _extend_to_line_ending(block.text, token.end())
-            source_start = block_start + region_start
-            raw_source = block.text[region_start:source_end]
-            line_start = _line_number_for_offset(document, source_start)
-            line_end = _line_number_for_offset(document, block_start + source_end - 1)
-            if nested:
-                item: DetectionItem = RejectedCandidate(
-                    ordinal=0,
-                    kind="html",
-                    raw_source=raw_source,
-                    line_start=line_start,
-                    line_end=line_end,
-                    reason="nested_html_table",
-                )
+                region_start = token.start()
+                nested = False
             else:
-                item = TableCandidate(
+                nested = True
+            depth += 1
+            continue
+        if depth == 0:
+            continue
+        depth -= 1
+        if depth != 0:
+            continue
+        source_end = _extend_to_line_ending(document.text, token.end())
+        raw_source = document.text[region_start:source_end]
+        line_start = _line_number_for_offset(document, region_start)
+        line_end = _line_number_for_offset(document, source_end - 1)
+        if nested:
+            item: DetectionItem = RejectedCandidate(
+                ordinal=0,
+                kind="html",
+                raw_source=raw_source,
+                line_start=line_start,
+                line_end=line_end,
+                reason="nested_html_table",
+            )
+        else:
+            item = TableCandidate(
+                ordinal=0,
+                kind="html",
+                raw_source=raw_source,
+                line_start=line_start,
+                line_end=line_end,
+                confidence=1.0,
+                evidence=("html_table_marker",),
+            )
+        events.append((region_start, item))
+    if depth:
+        events.append(
+            (
+                region_start,
+                RejectedCandidate(
                     ordinal=0,
                     kind="html",
-                    raw_source=raw_source,
-                    line_start=line_start,
-                    line_end=line_end,
-                    confidence=1.0,
-                    evidence=("html_table_marker",),
-                )
-            events.append((source_start, item))
-        if depth:
-            source_start = block_start + region_start
-            raw_source = block.text[region_start:]
-            events.append(
-                (
-                    source_start,
-                    RejectedCandidate(
-                        ordinal=0,
-                        kind="html",
-                        raw_source=raw_source,
-                        line_start=_line_number_for_offset(document, source_start),
-                        line_end=block.line_end,
-                        reason="unclosed_html_table",
-                    ),
-                )
+                    raw_source=document.text[region_start:],
+                    line_start=_line_number_for_offset(document, region_start),
+                    line_end=document.lines[-1].number,
+                    reason="unclosed_html_table",
+                ),
             )
+        )
     return events
 
 
@@ -154,7 +144,8 @@ def _structured_event(
     )
     delimiters = {delimiter for delimiter, _ in rows}
     counts = {len(cells) for _, cells in rows}
-    if len(delimiters) != 1 or len(counts) != 1:
+    non_empty_counts = {sum(cell != "" for cell in cells) for _, cells in rows}
+    if len(delimiters) != 1 or len(counts) != 1 or len(non_empty_counts) != 1:
         item: DetectionItem = RejectedCandidate(
             ordinal=0,
             kind="structured_text",
