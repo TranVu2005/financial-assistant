@@ -5,11 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from financial_report_qa.ingestion.provenance import ExtractionResult
+from financial_report_qa.ingestion.provenance import ExtractionResult, stable_cell_id
 from financial_report_qa.ingestion.table_detector import detect_table_candidates
 from financial_report_qa.ingestion.table_extractor import extract_candidates
 from financial_report_qa.ingestion.txt_reader import read_document
 from financial_report_qa.schemas.documents import DocumentRecord, stable_document_id
+from financial_report_qa.schemas.tables import stable_table_id
 
 
 def extract(tmp_path: Path, source: str) -> ExtractionResult:
@@ -258,5 +259,65 @@ def test_does_not_merge_different_headers(tmp_path: Path) -> None:
         "<table><tr><th>Mã số</th><th>2023</th></tr>"
         "<tr><td>B</td><td>2</td></tr></table>\n"
     )
+
+    assert len(extract(tmp_path, source).tables) == 2
+
+
+def test_three_page_merge_rebuilds_ids_rows_and_span_placements(tmp_path: Path) -> None:
+    header = (
+        '<tr><th rowspan="2">Metric</th><th colspan="2">Year</th></tr>'
+        "<tr><th>2024</th><th>2023</th></tr>"
+    )
+    source = (
+        "INCOME STATEMENT\n"
+        f"<table>{header}"
+        '<tr><td rowspan="2">Revenue</td><td>100</td><td>90</td></tr>'
+        '<tr><td colspan="2">Audited</td></tr></table>\n'
+        "===== PAGE 2 =====\n"
+        "INCOME STATEMENT\n"
+        f"<table>{header}<tr><td>Expense</td><td>50</td><td>40</td></tr></table>\n"
+        "===== PAGE 3 =====\n"
+        "INCOME STATEMENT\n"
+        f"<table>{header}<tr><td>Profit</td><td>20</td><td>10</td></tr></table>\n"
+    )
+
+    result = extract(tmp_path, source)
+
+    assert len(result.tables) == 1
+    extracted = result.tables[0]
+    expected_table_id = stable_table_id(result.doc_id, 2, 8)
+    assert extracted.table.table_id == expected_table_id
+    assert (extracted.table.row_count, extracted.table.column_count) == (6, 3)
+    assert [cell.value_raw for cell in extracted.cells].count("Metric") == 1
+    cells = {cell.value_raw: cell for cell in extracted.cells}
+    row_indices = {
+        value: cells[value].row_idx
+        for value in ("Revenue", "Audited", "Expense", "Profit")
+    }
+    assert row_indices == {
+        "Revenue": 2,
+        "Audited": 3,
+        "Expense": 4,
+        "Profit": 5,
+    }
+    assert cells["Revenue"].cell_id == stable_cell_id(expected_table_id, 2, 0)
+    assert cells["Audited"].cell_id == stable_cell_id(expected_table_id, 3, 1)
+    assert all(cell.table_id == expected_table_id for cell in extracted.cells)
+    placements = {
+        (placement.row_idx, placement.col_idx): placement.cell_id
+        for placement in extracted.placements
+    }
+    assert placements[(2, 0)] == placements[(3, 0)] == cells["Revenue"].cell_id
+    assert placements[(3, 1)] == placements[(3, 2)] == cells["Audited"].cell_id
+    assert placements[(4, 0)] == cells["Expense"].cell_id
+    assert placements[(5, 0)] == cells["Profit"].cell_id
+
+
+def test_does_not_merge_compatible_headers_across_prose(tmp_path: Path) -> None:
+    table = (
+        "<table><tr><th>Metric</th><th>2024</th></tr>"
+        "<tr><td>Revenue</td><td>100</td></tr></table>"
+    )
+    source = f"{table}\n===== PAGE 2 =====\nNarrative explanation\n{table}\n"
 
     assert len(extract(tmp_path, source).tables) == 2

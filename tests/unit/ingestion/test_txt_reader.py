@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -16,6 +17,10 @@ from financial_report_qa.ingestion.txt_reader import read_document
 from financial_report_qa.schemas.documents import DocumentRecord, stable_document_id
 
 RELATIVE_PATH = "AAA/2024/AAA_consolidated/Báo_cáo.txt"
+
+
+def _is_known_windows_symlink_privilege_error(error: OSError) -> bool:
+    return sys.platform == "win32" and getattr(error, "winerror", None) == 1314
 
 
 def write_record(
@@ -187,7 +192,13 @@ def test_read_document_rejects_symlink_that_escapes_snapshot_root(
     try:
         source.symlink_to(external)
     except OSError as error:
-        pytest.skip(f"platform cannot create file symlink: {type(error).__name__}")
+        if _is_known_windows_symlink_privilege_error(error):
+            pytest.skip("Windows file symlink privilege unavailable (winerror=1314)")
+        raise
 
     with pytest.raises(InvalidSourceDocumentError, match="escapes snapshot root"):
         read_document(root, record)
+
+
+def test_symlink_regression_does_not_hide_unexpected_os_errors() -> None:
+    assert not _is_known_windows_symlink_privilege_error(OSError("unexpected failure"))
