@@ -45,7 +45,7 @@ def _parse_vifinqa_path(path: Path, root: Path) -> _PathMetadata:
     parts = relative.parts
     if len(parts) != 4:
         raise ValueError("expected exactly ticker/year/document/file hierarchy")
-    ticker_raw, year_raw, document_name, _ = parts
+    ticker_raw, year_raw, document_name, filename = parts
     if not (2 <= len(ticker_raw) <= 10 and ticker_raw.isascii() and ticker_raw.isalnum()):
         raise ValueError("invalid ticker directory")
     if not (len(year_raw) == 4 and year_raw.isascii() and year_raw.isdecimal()):
@@ -53,6 +53,8 @@ def _parse_vifinqa_path(path: Path, root: Path) -> _PathMetadata:
     year = int(year_raw)
     if not 1900 <= year <= 2100:
         raise ValueError("invalid year directory")
+    if Path(filename).suffix.casefold() != ".txt":
+        raise ValueError("expected a .TXT file")
     normalized_name = document_name.casefold()
     scope: Literal["consolidated", "separate", "aggregated", "other"]
     if "consolidated" in normalized_name:

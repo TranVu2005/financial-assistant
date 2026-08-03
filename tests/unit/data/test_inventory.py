@@ -46,6 +46,22 @@ def test_parse_vifinqa_path_rejects_invalid_hierarchy(
         _parse_vifinqa_path(root / Path(relative), root)
 
 
+def test_parse_vifinqa_path_accepts_uppercase_txt_extension(tmp_path: Path) -> None:
+    root = tmp_path / "financial_statements"
+
+    metadata = _parse_vifinqa_path(root / "VCB" / "2024" / "report" / "source.TXT", root)
+
+    assert metadata.relative_path == "VCB/2024/report/source.TXT"
+
+
+@pytest.mark.parametrize("filename", ["source.pdf", "source"])
+def test_parse_vifinqa_path_rejects_non_txt_files(tmp_path: Path, filename: str) -> None:
+    root = tmp_path / "financial_statements"
+
+    with pytest.raises(ValueError, match="TXT"):
+        _parse_vifinqa_path(root / "VCB" / "2024" / "report" / filename, root)
+
+
 def test_inventory_models_are_frozen_and_forbid_unknown_fields() -> None:
     issue = InventoryIssue(
         relative_path="bad/year/report/file.txt",
