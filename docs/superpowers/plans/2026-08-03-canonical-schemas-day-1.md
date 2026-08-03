@@ -378,16 +378,17 @@ def valid_table_payload() -> dict[str, object]:
     }
 
 
-def test_stable_table_id_is_deterministic_and_span_sensitive() -> None:
-    first = stable_table_id(DOC_ID, 10, 25)
-    repeated = stable_table_id(DOC_ID, 10, 25)
-    different_span = stable_table_id(DOC_ID, 11, 25)
-    different_document = stable_table_id(stable_document_id("b" * 64), 10, 25)
+def test_stable_table_id_matches_hand_checked_sha256() -> None:
+    result = stable_table_id(DOC_ID, 10, 25)
 
-    assert first == repeated
-    assert first.startswith("tbl_")
-    assert len(first) == 68
-    assert len({first, different_span, different_document}) == 3
+    assert result == "tbl_32c57ec231bb937a8f18f8e625d660e1a38af5e9fd926b84cae1bcf797e9172c"
+
+
+def test_stable_table_id_changes_with_document_or_span() -> None:
+    base = "tbl_32c57ec231bb937a8f18f8e625d660e1a38af5e9fd926b84cae1bcf797e9172c"
+
+    assert stable_table_id(DOC_ID, 11, 25) != base
+    assert stable_table_id(stable_document_id("b" * 64), 10, 25) != base
 
 
 @pytest.mark.parametrize(
@@ -414,7 +415,8 @@ Run:
 
 ```bash
 uv run --frozen --no-sync pytest -q \
-  tests/unit/schemas/test_tables.py::test_stable_table_id_is_deterministic_and_span_sensitive \
+  tests/unit/schemas/test_tables.py::test_stable_table_id_matches_hand_checked_sha256 \
+  tests/unit/schemas/test_tables.py::test_stable_table_id_changes_with_document_or_span \
   tests/unit/schemas/test_tables.py::test_stable_table_id_rejects_invalid_identity_or_span
 ```
 
