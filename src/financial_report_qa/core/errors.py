@@ -23,3 +23,16 @@ class SourceSnapshotMismatchError(SourceIngestionError):
 
 class SourceReadError(SourceIngestionError):
     """The verified relative source path could not be read."""
+
+
+class NormalizationError(FinancialReportQAError):
+    """A normalization contract or ruleset is invalid."""
+
+
+class DatasetBuildError(FinancialReportQAError):
+    """A canonical dataset could not be built or verified."""
+
+
+class DatasetPublicationError(DatasetBuildError):
+    """A verified dataset release could not be safely published."""
+
