@@ -1,6 +1,7 @@
 """Table matching and completeness evaluation logic for Week 1 Quality Gate."""
 
 import hashlib
+from fractions import Fraction
 
 from financial_report_qa.evaluation.week1_contracts import (
     ExpectedTable,
@@ -40,11 +41,12 @@ def assess_table_matching(
     matched_extracted: dict[str, TableRecord] = {}
 
     for doc_id, doc_expected in expected_by_doc.items():
-        candidates = extracted_by_doc.get(doc_id, [])
+        candidates = sorted(extracted_by_doc.get(doc_id, []), key=lambda c: c.table_id)
         if not candidates:
             continue
 
-        pairs: list[tuple[tuple[int, float, int], str, str, ExpectedTable, TableRecord]] = []
+        ordered_expected = sorted(doc_expected, key=lambda exp: exp.annotation_id)
+        pair_scores: dict[tuple[str, str], tuple[int, Fraction, int]] = {}
         for exp in doc_expected:
             exp_span = exp.line_end - exp.line_start + 1
             for c in candidates:
@@ -52,25 +54,69 @@ def assess_table_matching(
                     0, min(c.line_end, exp.line_end) - max(c.line_start, exp.line_start) + 1
                 )
                 if overlap_num > 0:
-                    is_exact = int(
-                        c.line_start == exp.line_start and c.line_end == exp.line_end
-                    )
-                    overlap_ratio = overlap_num / exp_span
+                    is_exact = int(c.line_start == exp.line_start and c.line_end == exp.line_end)
+                    overlap_ratio = Fraction(overlap_num, exp_span)
                     dist = -abs(c.line_start - exp.line_start) - abs(c.line_end - exp.line_end)
-                    score = (is_exact, overlap_ratio, dist)
-                    pairs.append((score, c.table_id, exp.annotation_id, exp, c))
+                    pair_scores[(exp.annotation_id, c.table_id)] = (
+                        is_exact,
+                        overlap_ratio,
+                        dist,
+                    )
 
-        # Sort descending by score, tie-break ascending by table_id and annotation_id
-        pairs.sort(key=lambda p: (-p[0][0], -p[0][1], -p[0][2], p[1], p[2]))
+        best_score: tuple[int, Fraction, int] | None = None
+        best_table_ids: tuple[str, ...] | None = None
+        best_assignment: dict[str, TableRecord] = {}
 
-        assigned_exp: set[str] = set()
-        assigned_cand: set[str] = set()
+        def search(
+            index: int,
+            used_table_ids: set[str],
+            assignment: dict[str, TableRecord],
+            total_score: tuple[int, Fraction, int],
+        ) -> None:
+            nonlocal best_assignment, best_score, best_table_ids
 
-        for _, _, _, exp, c in pairs:
-            if exp.annotation_id not in assigned_exp and c.table_id not in assigned_cand:
-                assigned_exp.add(exp.annotation_id)
-                assigned_cand.add(c.table_id)
-                matched_extracted[exp.annotation_id] = c
+            if index == len(ordered_expected):
+                table_ids = tuple(
+                    assignment[exp.annotation_id].table_id
+                    for exp in ordered_expected
+                    if exp.annotation_id in assignment
+                )
+                if (
+                    best_score is None
+                    or total_score > best_score
+                    or (total_score == best_score and table_ids < (best_table_ids or ()))
+                ):
+                    best_score = total_score
+                    best_table_ids = table_ids
+                    best_assignment = dict(assignment)
+                return
+
+            exp = ordered_expected[index]
+            search(index + 1, used_table_ids, assignment, total_score)
+
+            for candidate in candidates:
+                if candidate.table_id in used_table_ids:
+                    continue
+                score = pair_scores.get((exp.annotation_id, candidate.table_id))
+                if score is None:
+                    continue
+                used_table_ids.add(candidate.table_id)
+                assignment[exp.annotation_id] = candidate
+                search(
+                    index + 1,
+                    used_table_ids,
+                    assignment,
+                    (
+                        total_score[0] + score[0],
+                        total_score[1] + score[1],
+                        total_score[2] + score[2],
+                    ),
+                )
+                assignment.pop(exp.annotation_id)
+                used_table_ids.remove(candidate.table_id)
+
+        search(0, set(), {}, (0, Fraction(0, 1), 0))
+        matched_extracted.update(best_assignment)
 
     # Build final assessments in order of expected_tables input
     assessments: list[TableAssessment] = []
@@ -85,17 +131,10 @@ def assess_table_matching(
                 - max(matched_candidate.line_start, exp.line_start)
                 + 1,
             )
-            overlap_den = (
-                max(matched_candidate.line_end, exp.line_end)
-                - min(matched_candidate.line_start, exp.line_start)
-                + 1
-            )
+            overlap_den = exp.line_end - exp.line_start + 1
 
             failures: list[FailureEvent] = []
-            if (
-                matched_candidate.line_start != exp.line_start
-                or matched_candidate.line_end != exp.line_end
-            ):
+            if overlap_num * 100 < overlap_den * 80:
                 failures.append(
                     FailureEvent(
                         code="span_mismatch",

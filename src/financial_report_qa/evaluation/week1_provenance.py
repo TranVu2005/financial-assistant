@@ -11,6 +11,7 @@ from financial_report_qa.evaluation.week1_contracts import (
     TableAssessment,
 )
 from financial_report_qa.evaluation.week1_dataset import GateDataset
+from financial_report_qa.ingestion.provenance import stable_cell_id
 from financial_report_qa.schemas import CellRecord, TableRecord
 
 
@@ -76,9 +77,19 @@ def generate_cell_audits(
 
         lines = doc_lines_cache[exp.doc_id]
         cells = dataset.cells_by_table_id.get(table.table_id, ())
+        seen_coordinates: set[tuple[int, int]] = set()
 
         for cell in cells:
-            verified, excerpt, _ = audit_cell_provenance(cell, lines)
+            verified, excerpt, failures = audit_cell_provenance(cell, lines)
+            if cell.cell_id != stable_cell_id(cell.table_id, cell.row_idx, cell.col_idx):
+                failures.append("invalid_provenance")
+            if cell.source_line_start < table.line_start or cell.source_line_end > table.line_end:
+                failures.append("invalid_provenance")
+            coordinate = (cell.row_idx, cell.col_idx)
+            if coordinate in seen_coordinates:
+                failures.append("invalid_provenance")
+            seen_coordinates.add(coordinate)
+            verified = not failures
 
             audits.append(
                 CellAudit(
@@ -159,8 +170,10 @@ def evaluate_table_usability(
                 )
             )
 
-        # Check unit mismatch
-        if (matched_tbl.unit_normalized or "").lower() != ta.annotation.unit_normalized.lower():
+        # Check unit mismatch only when the annotation declares an expected unit.
+        if ta.annotation.unit_normalized and (
+            (matched_tbl.unit_normalized or "").lower() != ta.annotation.unit_normalized.lower()
+        ):
             failures.append(
                 FailureEvent(
                     code="unit_mismatch",
@@ -170,8 +183,33 @@ def evaluate_table_usability(
                 )
             )
 
-        # Check cell audit failures (unverified provenance)
+        # Check cell-level automated provenance and normalization completeness.
         ann_audits = audits_by_ann.get(ta.annotation.annotation_id, [])
+        non_numeric_cells = [ca for ca in ann_audits if ca.value_numeric is None]
+        if non_numeric_cells:
+            failures.append(
+                FailureEvent(
+                    code="no_numeric_value",
+                    doc_id=ta.annotation.doc_id,
+                    annotation_id=ta.annotation.annotation_id,
+                    table_id=matched_tbl.table_id,
+                )
+            )
+
+        expected_periods = set(ta.annotation.expected_periods)
+        period_mismatch_cells = [
+            ca for ca in ann_audits if ca.period and ca.period not in expected_periods
+        ]
+        if period_mismatch_cells:
+            failures.append(
+                FailureEvent(
+                    code="period_mismatch",
+                    doc_id=ta.annotation.doc_id,
+                    annotation_id=ta.annotation.annotation_id,
+                    table_id=matched_tbl.table_id,
+                )
+            )
+
         unverified_cells = [ca for ca in ann_audits if ca.verified is False]
         if unverified_cells:
             failures.append(

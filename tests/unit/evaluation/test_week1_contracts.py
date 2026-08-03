@@ -101,4 +101,3 @@ def test_csv_reader_rejects_contract_drift(tmp_path: Path, raw: bytes) -> None:
     path.write_bytes(raw)
     with pytest.raises(Week1GateInputError):
         read_csv_rows(path, EXPECTED_TABLE_COLUMNS)
-

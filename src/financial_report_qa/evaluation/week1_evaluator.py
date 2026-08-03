@@ -1,7 +1,6 @@
 """Evaluator orchestrator and report publication for Week 1 Quality Gate."""
 
 import hashlib
-from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +19,7 @@ from financial_report_qa.evaluation.week1_contracts import (
     PilotDocument,
     PilotMetadata,
     TableAssessment,
+    percentage_passes,
     read_csv_rows,
     write_canonical_json,
     write_csv_rows,
@@ -104,8 +104,7 @@ def evaluate_week1_gate(
     all_cell_audits = generate_cell_audits(
         dataset, corpus_dir, expected_tables_tuple, matched_tables
     )
-    sample_size = min(30, len(all_cell_audits)) if len(all_cell_audits) > 0 else 30
-    expected_sample = select_audit_cells(all_cell_audits, sample_size=sample_size)
+    expected_sample = select_audit_cells(all_cell_audits, sample_size=30)
 
     cell_audit_csv_path = annotation_dir / "cell-audit.csv"
     if not cell_audit_csv_path.is_file():
@@ -120,14 +119,29 @@ def evaluate_week1_gate(
 
     expected_sample_by_id = {ca.cell_id: ca for ca in expected_sample}
     user_audits: list[CellAudit] = []
+    seen_cell_ids: set[str] = set()
 
     for r in audit_rows:
         cell_id = r["cell_id"]
+        if cell_id in seen_cell_ids:
+            raise Week1GateInputError(f"Duplicate cell_id '{cell_id}' in cell-audit.csv")
+        seen_cell_ids.add(cell_id)
         if cell_id not in expected_sample_by_id:
             raise Week1GateInputError(f"Unexpected cell_id '{cell_id}' in cell-audit.csv")
 
         exp_ca = expected_sample_by_id[cell_id]
-        v_str = (r.get("verified") or "").strip().lower()
+        expected_row = {
+            key: "" if value is None else str(value)
+            for key, value in exp_ca.model_dump(mode="json").items()
+            if key not in {"verified", "review_notes"}
+        }
+        actual_row = {key: r[key] for key in expected_row}
+        if actual_row != expected_row:
+            raise Week1GateInputError(
+                f"Immutable audit fields changed for cell_id '{cell_id}' in cell-audit.csv"
+            )
+
+        v_str = (r.get("verified") or "").strip()
         if v_str == "true":
             v_bool: bool | None = True
         elif v_str == "false":
@@ -150,7 +164,9 @@ def evaluate_week1_gate(
     cell_audits = tuple(user_audits)
 
     # Final usability evaluation
-    final_assessments = evaluate_table_usability(initial_assessments, matched_tables, cell_audits)
+    final_assessments = evaluate_table_usability(
+        initial_assessments, matched_tables, all_cell_audits
+    )
 
     # Metrics & Gate Checks calculation
     total_exp = len(expected_tables_tuple)
@@ -174,72 +190,11 @@ def evaluate_week1_gate(
 
     sampled_cell_count = len(cell_audits)
     verified_cell_count = sum(1 for ca in cell_audits if ca.verified is True)
-    audited_cell_count = sum(1 for ca in cell_audits if ca.verified is not None)
-
-    matched_rate_pct = int(
-        (
-            Decimal(total_matched) * Decimal(100) / Decimal(total_exp if total_exp > 0 else 1)
-        ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    )
-    usable_rate_pct = (
-        int(
-            (Decimal(total_usable) * Decimal(100) / Decimal(total_matched)).quantize(
-                Decimal("1"), rounding=ROUND_HALF_UP
-            )
-        )
-        if total_matched > 0
-        else 0
-    )
-    prov_rate_pct = int(
-        (
-            Decimal(verified_cell_count)
-            * Decimal(100)
-            / Decimal(sampled_cell_count if sampled_cell_count > 0 else 1)
-        ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    )
-    audit_comp_pct = int(
-        (
-            Decimal(audited_cell_count)
-            * Decimal(100)
-            / Decimal(sampled_cell_count if sampled_cell_count > 0 else 1)
-        ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    )
-
-    checks = (
-        GateCheck(
-            name="matching_rate",
-            passed=matched_rate_pct >= 80,
-            numerator=total_matched,
-            denominator=total_exp,
-            threshold_percent=80,
-        ),
-        GateCheck(
-            name="usability_rate",
-            passed=total_matched > 0 and usable_rate_pct >= 75,
-            numerator=total_usable,
-            denominator=total_matched,
-            threshold_percent=75,
-        ),
-        GateCheck(
-            name="cell_provenance_rate",
-            passed=prov_rate_pct >= 95,
-            numerator=verified_cell_count,
-            denominator=sampled_cell_count,
-            threshold_percent=95,
-        ),
-        GateCheck(
-            name="cell_audit_completion",
-            passed=audit_comp_pct == 100,
-            numerator=audited_cell_count,
-            denominator=sampled_cell_count,
-            threshold_percent=100,
-        ),
-    )
-
-    gate_passed = all(c.passed for c in checks)
-    pareto_rows = compute_pareto_analysis(final_assessments)
+    accepted_cell_count = len(all_cell_audits)
+    provenance_valid_cell_count = sum(1 for ca in all_cell_audits if ca.verified is True)
 
     statement_metrics: dict[str, dict[str, Any]] = {}
+    min_statement_count = 30
     for st in ("balance_sheet", "income_statement", "cash_flow_statement"):
         st_exp = [ta for ta in final_assessments if ta.annotation.statement_type == st]
         st_matched = [ta for ta in st_exp if ta.table_id is not None]
@@ -251,6 +206,86 @@ def evaluate_week1_gate(
         }
 
     stratum_metrics: dict[str, dict[str, Any]] = {}
+    eligible_strata = 0
+    passing_strata = 0
+    by_stratum: dict[tuple[str, int, str], list[TableAssessment]] = {}
+    pilot_doc_by_id = {doc.doc_id: doc for doc in pilot_docs}
+    for ta in final_assessments:
+        doc = pilot_doc_by_id.get(ta.annotation.doc_id)
+        if doc is None:
+            continue
+        by_stratum.setdefault(
+            (doc.company_code, doc.report_year, ta.annotation.statement_type), []
+        ).append(ta)
+
+    for key in sorted(by_stratum):
+        rows = by_stratum[key]
+        annotated = len(rows)
+        usable = sum(1 for ta in rows if ta.usable)
+        included = annotated >= 10
+        passed = percentage_passes(usable, annotated, 70) if included else None
+        stratum_key = f"{key[0]}:{key[1]}:{key[2]}"
+        stratum_metrics[stratum_key] = {
+            "annotated_count": annotated,
+            "usable_count": usable,
+            "included": included,
+            "passed": passed,
+        }
+        if included:
+            eligible_strata += 1
+            if passed:
+                passing_strata += 1
+
+    checks = (
+        GateCheck(
+            name="pilot_document_count",
+            passed=len(pilot_docs) == 60,
+            numerator=len(pilot_docs),
+            denominator=60,
+            threshold_percent=100,
+        ),
+        GateCheck(
+            name="statement_type_coverage",
+            passed=all(
+                metrics["expected_count"] >= min_statement_count
+                for metrics in statement_metrics.values()
+            ),
+            numerator=min(metrics["expected_count"] for metrics in statement_metrics.values()),
+            denominator=min_statement_count,
+            threshold_percent=100,
+        ),
+        GateCheck(
+            name="overall_table_usability",
+            passed=percentage_passes(total_usable, total_exp, 85),
+            numerator=total_usable,
+            denominator=total_exp,
+            threshold_percent=85,
+        ),
+        GateCheck(
+            name="accepted_cell_provenance",
+            passed=accepted_cell_count > 0 and provenance_valid_cell_count == accepted_cell_count,
+            numerator=provenance_valid_cell_count,
+            denominator=accepted_cell_count,
+            threshold_percent=100,
+        ),
+        GateCheck(
+            name="manual_cell_audit",
+            passed=sampled_cell_count == 30 and verified_cell_count == 30,
+            numerator=verified_cell_count,
+            denominator=30,
+            threshold_percent=100,
+        ),
+        GateCheck(
+            name="eligible_strata_usability",
+            passed=eligible_strata == 0 or passing_strata == eligible_strata,
+            numerator=passing_strata,
+            denominator=eligible_strata,
+            threshold_percent=70,
+        ),
+    )
+
+    gate_passed = all(c.passed for c in checks)
+    pareto_rows = compute_pareto_analysis(final_assessments)
 
     result = GateResult(
         sampling_version=SAMPLING_VERSION,
@@ -280,19 +315,29 @@ def publish_gate_artifacts(
     cell_audits: tuple[CellAudit, ...],
     output_dir: Path,
 ) -> None:
-    """Publish canonical gate evaluation reports and audit artifacts."""
+    """Publish canonical gate evaluation reports."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    _ = cell_audits
+    expected_artifacts = {"gate-result.json", "gate-report.md", "pareto-errors.csv"}
+    existing_artifacts = {path.name for path in output_dir.iterdir() if path.is_file()}
+    extra_artifacts = sorted(existing_artifacts - expected_artifacts)
+    if extra_artifacts:
+        raise Week1GateInputError(
+            "Refusing to publish into report directory with unexpected artifacts: "
+            + ", ".join(extra_artifacts)
+        )
 
     # Write gate-result.json
     write_canonical_json(output_dir / "gate-result.json", result.model_dump(mode="json"))
 
-    # Write cell-audit.csv
-    audit_rows = [ca.model_dump(mode="json") for ca in cell_audits]
-    write_csv_rows(output_dir / "cell-audit.csv", CELL_AUDIT_COLUMNS, audit_rows)
-
     # Write pareto-errors.csv
     pareto_rows = [p.model_dump(mode="json") for p in result.pareto_rows]
-    write_csv_rows(output_dir / "pareto-errors.csv", PARETO_CSV_COLUMNS, pareto_rows)
+    write_csv_rows(
+        output_dir / "pareto-errors.csv",
+        PARETO_CSV_COLUMNS,
+        pareto_rows,
+        allow_identical=True,
+    )
 
     status_str = "PASSED" if result.passed else "FAILED"
     md_lines = [
@@ -346,4 +391,3 @@ def publish_gate_artifacts(
 
     content = "\n".join(md_lines)
     (output_dir / "gate-report.md").write_text(content, encoding="utf-8")
-    (output_dir / "evaluation_report.md").write_text(content, encoding="utf-8")

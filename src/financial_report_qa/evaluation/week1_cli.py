@@ -89,8 +89,7 @@ def sample_cells_workflow(
         dataset, corpus_dir, expected_tables_tuple, matched_tables
     )
 
-    sample_size = min(30, len(all_cell_audits)) if len(all_cell_audits) > 0 else 30
-    sampled_cells = select_audit_cells(all_cell_audits, sample_size=sample_size)
+    sampled_cells = select_audit_cells(all_cell_audits, sample_size=30)
 
     audit_rows = [ca.model_dump(mode="json") for ca in sampled_cells]
     for r in audit_rows:

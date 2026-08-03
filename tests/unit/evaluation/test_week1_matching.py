@@ -143,3 +143,28 @@ def test_matcher_never_reuses_one_observed_table() -> None:
     assert assigned_count == 1
     assert len(matched) == 1
 
+
+def test_matcher_uses_global_optimum_not_greedy_pair_order() -> None:
+    doc_id = "doc_" + "a" * 64
+    ann_a = _annotation("ann_a", doc_id, 10, 19)
+    ann_b = _annotation("ann_b", doc_id, 15, 24)
+    tbl_a = _table(stable_table_id(doc_id, 10, 19), doc_id, 10, 19)
+    tbl_b = _table(stable_table_id(doc_id, 15, 24), doc_id, 15, 24)
+
+    assessments, _ = assess_table_matching((ann_a, ann_b), (tbl_b, tbl_a))
+
+    assert [a.table_id for a in assessments] == [tbl_a.table_id, tbl_b.table_id]
+
+
+def test_matcher_accepts_partial_span_overlap_at_eighty_percent() -> None:
+    doc_id = "doc_" + "a" * 64
+    ann = _annotation("ann_1", doc_id, 10, 19)
+    tbl = _table(stable_table_id(doc_id, 10, 17), doc_id, 10, 17)
+
+    assessments, _ = assess_table_matching((ann,), (tbl,))
+
+    assert assessments[0].table_id == tbl.table_id
+    assert assessments[0].overlap_numerator == 8
+    assert assessments[0].overlap_denominator == 10
+    assert assessments[0].usable is True
+    assert assessments[0].failures == ()

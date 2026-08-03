@@ -16,9 +16,7 @@ from financial_report_qa.core.errors import Week1GateInputError
 SAMPLING_VERSION = "week1-pilot-v1"
 ANNOTATION_SCHEMA_VERSION = "1"
 
-StatementType = Literal[
-    "balance_sheet", "income_statement", "cash_flow_statement"
-]
+StatementType = Literal["balance_sheet", "income_statement", "cash_flow_statement"]
 
 GateFailureCode = Literal[
     "missing_table",
@@ -279,9 +277,14 @@ class GateResult(BaseModel):
     passed: bool
 
 
-def read_csv_rows(
-    path: Path, expected_columns: Sequence[str]
-) -> tuple[dict[str, str], ...]:
+def percentage_passes(numerator: int, denominator: int, threshold_percent: int) -> bool:
+    """Evaluate percentage thresholds with exact integer arithmetic."""
+    if denominator <= 0:
+        return False
+    return numerator * 100 >= denominator * threshold_percent
+
+
+def read_csv_rows(path: Path, expected_columns: Sequence[str]) -> tuple[dict[str, str], ...]:
     if not path.is_file():
         raise Week1GateInputError(f"CSV file not found: {path.name}")
     raw_bytes = path.read_bytes()
@@ -351,9 +354,7 @@ def write_csv_rows(
 
 def write_canonical_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    content_bytes = orjson.dumps(
-        payload, option=orjson.OPT_SORT_KEYS | orjson.OPT_APPEND_NEWLINE
-    )
+    content_bytes = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS | orjson.OPT_APPEND_NEWLINE)
     tmp_path = path.parent / f".tmp_{path.name}"
     try:
         with open(tmp_path, "wb") as f:

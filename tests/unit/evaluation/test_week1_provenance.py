@@ -1,11 +1,16 @@
 """Unit tests for cell provenance auditing and table usability evaluation."""
 
 from decimal import Decimal
+from pathlib import Path
+
+from test_week1_dataset import _write_release
 
 from financial_report_qa.evaluation.week1_contracts import ExpectedTable, TableAssessment
+from financial_report_qa.evaluation.week1_dataset import load_gate_dataset
 from financial_report_qa.evaluation.week1_provenance import (
     audit_cell_provenance,
     evaluate_table_usability,
+    generate_cell_audits,
 )
 from financial_report_qa.schemas import CellRecord, TableRecord, stable_table_id
 
@@ -63,6 +68,33 @@ def test_audit_cell_provenance_invalid_span() -> None:
     verified, excerpt, failures = audit_cell_provenance(cell, doc_lines)
     assert verified is False
     assert failures == ["invalid_provenance"]
+
+
+def test_generate_cell_audits_rejects_noncanonical_cell_id(tmp_path: Path) -> None:
+    manifest_path, release_path, document, table, cell = _write_release(tmp_path)
+    dataset = load_gate_dataset(manifest_path, release_path)
+    dataset.cells_by_table_id[table.table_id] = (cell.model_copy(update={"cell_id": "bad"}),)
+    corpus_dir = tmp_path / "corpus"
+    doc_path = corpus_dir / document.relative_path
+    doc_path.parent.mkdir(parents=True)
+    doc_path.write_text("Header\n" + "Asset 100\n" * 15, encoding="utf-8")
+    expected = ExpectedTable(
+        annotation_schema_version="1",
+        annotation_id="ann_001",
+        doc_id=document.doc_id,
+        relative_path=document.relative_path,
+        statement_type="balance_sheet",
+        line_start=table.line_start,
+        line_end=table.line_end,
+        row_count=table.row_count,
+        column_count=table.column_count,
+        unit_normalized="VND",
+        expected_periods=("2024",),
+    )
+
+    audits = generate_cell_audits(dataset, corpus_dir, (expected,), {"ann_001": table})
+
+    assert audits[0].verified is False
 
 
 def test_evaluate_table_usability_shape_mismatch() -> None:
