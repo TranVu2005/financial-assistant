@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import argparse
 import codecs
 import hashlib
+import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from financial_report_qa.core.errors import FinancialReportQAError
 from financial_report_qa.schemas.documents import (
     DocumentRecord,
     Sha256Digest,
@@ -200,3 +204,48 @@ def build_inventory(
             )
         )
     return InventoryResult(documents=tuple(documents), issues=tuple(issues))
+
+
+DEFAULT_MANIFEST_PATH = Path("data/manifests/documents.jsonl")
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Inventory an immutable ViFinQA snapshot.")
+    parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--repo-id", required=True)
+    parser.add_argument("--revision", required=True)
+    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST_PATH)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Build and publish a ViFinQA inventory manifest."""
+    from financial_report_qa.data.manifests import write_manifest
+
+    args = _parser().parse_args(argv)
+    try:
+        result = build_inventory(
+            args.root,
+            repo_id=args.repo_id,
+            revision=args.revision,
+        )
+        write_manifest(result, args.manifest)
+    except (FinancialReportQAError, OSError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    counts = {status: 0 for status in ("ready", "empty", "duplicate")}
+    for document in result.documents:
+        if document.inventory_status in counts:
+            counts[document.inventory_status] += 1
+    print(f"Documents: {len(result.documents)}")
+    print(f"Ready:     {counts['ready']}")
+    print(f"Empty:     {counts['empty']}")
+    print(f"Duplicate: {counts['duplicate']}")
+    print(f"Issues:    {len(result.issues)}")
+    print(f"Manifest:  {args.manifest.resolve()}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

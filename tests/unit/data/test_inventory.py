@@ -11,6 +11,7 @@ from financial_report_qa.data.inventory import (
     InventoryResult,
     _parse_vifinqa_path,
     build_inventory,
+    main,
 )
 
 
@@ -157,3 +158,49 @@ def test_inventory_models_are_frozen_and_forbid_unknown_fields() -> None:
         InventoryIssue.model_validate({**issue.model_dump(), "unexpected": True})
     with pytest.raises(ValidationError, match="frozen"):
         setattr(result, "issues", ())
+
+
+def test_inventory_main_writes_manifest_and_prints_counts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "financial_statements"
+    _write_report(root, "AAA/2024/Consolidated/ready.txt", b"ready")
+    _write_report(root, "AAA/2024/Consolidated/empty.txt", b"")
+    manifest = tmp_path / "manifests" / "documents.jsonl"
+
+    exit_code = main(
+        [
+            "--root", str(root),
+            "--repo-id", "org/vifinqa",
+            "--revision", "abc123",
+            "--manifest", str(manifest),
+        ]
+    )
+
+    assert exit_code == 0
+    assert manifest.exists()
+    output = capsys.readouterr().out
+    assert "Documents: 2" in output
+    assert "Ready:     1" in output
+    assert "Empty:     1" in output
+    assert "Duplicate: 0" in output
+    assert "Issues:    0" in output
+
+
+def test_inventory_main_reports_expected_failure_without_traceback(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "--root", str(tmp_path / "missing"),
+            "--repo-id", "org/vifinqa",
+            "--revision", "abc123",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "inventory root" in captured.err
+    assert "Traceback" not in captured.err
