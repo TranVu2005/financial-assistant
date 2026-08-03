@@ -36,3 +36,20 @@ class DatasetBuildError(FinancialReportQAError):
 class DatasetPublicationError(DatasetBuildError):
     """A verified dataset release could not be safely published."""
 
+
+class Week1GateError(FinancialReportQAError):
+    """Base class for expected Week 1 gate workflow failures."""
+
+
+class Week1GateInputError(Week1GateError):
+    """Gate inputs, annotations, or release identity are invalid."""
+
+
+class Week1GateSourceError(Week1GateError):
+    """A source document cannot be re-verified against the manifest."""
+
+
+class Week1GatePublicationError(Week1GateError):
+    """Gate artifacts cannot be safely verified or published."""
+
+
