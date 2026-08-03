@@ -20,3 +20,19 @@ def test_download_data_forwards_arguments_without_starting_transfer() -> None:
 
     assert exit_code == 0
     assert received == ["--target", "data/raw/example"]
+
+
+def test_inventory_data_forwards_arguments() -> None:
+    received: list[str] = []
+
+    def fake_inventory_main(argv: Sequence[str] | None = None) -> int:
+        received.extend(argv or ())
+        return 0
+
+    exit_code = main(
+        ["inventory-data", "--root", "data/raw/vifinqa"],
+        inventory_main_fn=fake_inventory_main,
+    )
+
+    assert exit_code == 0
+    assert received == ["--root", "data/raw/vifinqa"]
