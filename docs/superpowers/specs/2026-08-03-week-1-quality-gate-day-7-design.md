@@ -142,11 +142,13 @@ The committed annotation root is `data/qa/week1_pilot/`. It contains:
 - `dataset_fingerprint`;
 - `source_manifest_sha256`;
 - `document_count` fixed at `60`;
-- SHA-256 digests of each completed annotation CSV.
+- `pilot_documents_sha256`, which seals the generated document selection.
 
 It contains no timestamp, absolute path, hostname, or reviewer identity. Human review
 identity and process evidence belong in version-control history rather than canonical
-data.
+data. The metadata file is immutable after `prepare`. `gate-result.json` records the exact
+SHA-256 digests of the completed `expected-tables.csv` and `cell-audit.csv` used for the
+decision, avoiding mutation of annotations during evaluation.
 
 `prepare` refuses to overwrite a non-empty annotation directory. Regeneration requires a
 new annotation version or an explicitly empty target, preventing accidental loss of
