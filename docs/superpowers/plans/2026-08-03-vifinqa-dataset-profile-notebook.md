@@ -517,7 +517,7 @@ Expected: exit code 0 and no traceback or error output in the notebook.
 Run:
 
 ```powershell
-uv run --frozen --no-sync python -c "import json,pathlib; n=json.loads(pathlib.Path('notebooks/01_dataset_profile.ipynb').read_text(encoding='utf-8')); outputs=[o for c in n['cells'] for o in c.get('outputs',[])]; assert not [o for o in outputs if o.get('output_type')=='error']; text=' '.join(str(o.get('text',''))+str(o.get('data',{}).get('text/plain','')) for o in outputs); assert all(x in text for x in ['1,973','1,012','100']); print('executed counts: OK')"
+uv run --frozen --no-sync python -c "import json,pathlib; n=json.loads(pathlib.Path('notebooks/01_dataset_profile.ipynb').read_text(encoding='utf-8')); outputs=[o for c in n['cells'] for o in c.get('outputs',[])]; assert not [o for o in outputs if o.get('output_type')=='error']; rendered=json.dumps(outputs,ensure_ascii=False); assert all(x in rendered for x in ['1,973','1,012','100']); print('executed counts: OK')"
 ```
 
 Expected: `executed counts: OK`.
