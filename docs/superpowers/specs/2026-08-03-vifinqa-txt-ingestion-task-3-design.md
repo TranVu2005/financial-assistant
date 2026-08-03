@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-03
 
-**Status:** Approved in conversation; pending written-spec review
+**Status:** Approved
 
 ## Goal
 
@@ -275,10 +275,13 @@ No numeric punctuation, signs, dash values, units, labels, or dates are normaliz
 
 ## Headers, Titles, Units, and Continuations
 
-The header band is the maximal prefix of at most three logical rows for which fewer than
-half of populated non-first cells are numeric-looking. Non-empty distinct header texts
-are composed top-to-bottom per column with `\n`; this composed raw string becomes
-`column_label_raw` for data cells. Header source cells remain in the extraction result.
+The header band is the maximal prefix of at most three logical rows. An HTML row belongs
+to the band when all populated placements refer to `th` source cells (including a header
+cell continued by `rowspan`) or fewer than half of populated non-first cells are
+numeric-looking. The first structured-text row also belongs when it contains a controlled
+header signal. Non-empty distinct header texts are composed top-to-bottom per column with
+`\n`; this composed raw string becomes `column_label_raw` for data cells. Header source
+cells remain in the extraction result.
 
 `row_label_raw` for a data cell is the first populated source-cell text in that logical
 row. Canonical label fields remain `None`.
