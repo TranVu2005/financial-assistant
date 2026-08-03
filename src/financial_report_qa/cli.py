@@ -29,6 +29,11 @@ def _parser() -> argparse.ArgumentParser:
         add_help=False,
         help="Inventory a ViFinQA TXT snapshot and write its manifest.",
     )
+    commands.add_parser(
+        "week1-gate",
+        add_help=False,
+        help="Prepare pilot annotations or evaluate Week 1 Quality Gate.",
+    )
     return parser
 
 
@@ -45,6 +50,10 @@ def main(
         return download_main_fn(remaining)
     if parsed.command == "inventory-data":
         return inventory_main_fn(remaining)
+    if parsed.command == "week1-gate":
+        from financial_report_qa.evaluation.week1_cli import main as week1_main
+
+        return week1_main(remaining)
     raise AssertionError("argparse accepted an unknown command")
 
 
