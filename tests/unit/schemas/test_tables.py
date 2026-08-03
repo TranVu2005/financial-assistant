@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 from pydantic import ValidationError
 
 from financial_report_qa.schemas.documents import stable_document_id
-from financial_report_qa.schemas.tables import TableRecord, stable_table_id
+from financial_report_qa.schemas.tables import CellRecord, TableRecord, stable_table_id
 
 
 DOC_ID = stable_document_id("a" * 64)
@@ -119,3 +121,75 @@ def test_table_record_rejects_extra_fields() -> None:
 
     with pytest.raises(ValidationError, match="unexpected"):
         TableRecord.model_validate(payload)
+
+
+def valid_cell_payload() -> dict[str, object]:
+    return {
+        "cell_id": "cell-table-001-r2-c3",
+        "table_id": stable_table_id(DOC_ID, 10, 25),
+        "row_idx": 2,
+        "col_idx": 3,
+        "row_label_raw": "  Lợi nhuận sau thuế  ",
+        "row_label_canonical": "profit_after_tax",
+        "column_label_raw": "Năm 2022",
+        "column_label_canonical": "2022",
+        "value_raw": "  1.234,50  ",
+        "value_numeric": Decimal("1234.50"),
+        "period": "2022",
+        "unit": "VND_million",
+        "source_line_start": 18,
+        "source_line_end": 19,
+        "extraction_confidence": 0.9,
+    }
+
+
+def test_cell_record_round_trip_preserves_raw_text_and_decimal() -> None:
+    record = CellRecord.model_validate(valid_cell_payload())
+    restored = CellRecord.model_validate_json(record.model_dump_json())
+
+    assert restored == record
+    assert restored.row_label_raw == "  Lợi nhuận sau thuế  "
+    assert restored.value_raw == "  1.234,50  "
+    assert restored.value_numeric == Decimal("1234.50")
+
+
+def test_cell_record_requires_nullable_canonical_fields() -> None:
+    payload = valid_cell_payload()
+    payload.pop("period")
+
+    with pytest.raises(ValidationError, match="period"):
+        CellRecord.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("row_idx", -1),
+        ("col_idx", -1),
+        ("source_line_start", 0),
+        ("source_line_start", 20),
+        ("source_line_end", 17),
+        ("extraction_confidence", -0.01),
+        ("extraction_confidence", 1.01),
+        ("extraction_confidence", True),
+        ("extraction_confidence", "0.9"),
+        ("table_id", "invalid"),
+    ],
+)
+def test_cell_record_rejects_invalid_coordinates_or_provenance(
+    field: str,
+    value: object,
+) -> None:
+    payload = valid_cell_payload()
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        CellRecord.model_validate(payload)
+
+
+def test_cell_record_rejects_extra_fields() -> None:
+    payload = valid_cell_payload()
+    payload["unexpected"] = True
+
+    with pytest.raises(ValidationError, match="unexpected"):
+        CellRecord.model_validate(payload)

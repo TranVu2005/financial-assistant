@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from decimal import Decimal
 from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -62,4 +63,32 @@ class TableRecord(BaseModel):
         expected_id = stable_table_id(self.doc_id, self.line_start, self.line_end)
         if self.table_id != expected_id:
             raise ValueError("table_id must match doc_id and source-line span")
+        return self
+
+
+class CellRecord(BaseModel):
+    """Immutable raw/canonical value and provenance for one table cell."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    cell_id: NonEmptyString
+    table_id: TableId
+    row_idx: int = Field(strict=True, ge=0)
+    col_idx: int = Field(strict=True, ge=0)
+    row_label_raw: str | None
+    row_label_canonical: NonEmptyString | None
+    column_label_raw: str | None
+    column_label_canonical: NonEmptyString | None
+    value_raw: str
+    value_numeric: Decimal | None
+    period: NonEmptyString | None
+    unit: NonEmptyString | None
+    source_line_start: int = Field(strict=True, ge=1)
+    source_line_end: int = Field(strict=True, ge=1)
+    extraction_confidence: float = Field(strict=True, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_source_span(self) -> Self:
+        """Reject reversed or zero-based line provenance."""
+        _validate_line_span(self.source_line_start, self.source_line_end)
         return self
