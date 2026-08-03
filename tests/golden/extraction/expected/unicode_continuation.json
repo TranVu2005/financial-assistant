@@ -1,0 +1,14 @@
+{
+  "table_count": 1,
+  "rejection_codes": [],
+  "tables": [
+    {
+      "line_start": 3,
+      "line_end": 6,
+      "row_count": 3,
+      "column_count": 2,
+      "values": ["Chỉ tiêu", "2024", "Doanh thu thuần", "(1.234,50)", "Lợi nhuận", "20"],
+      "evidence": ["html_table_marker", "continued_across_page"]
+    }
+  ]
+}

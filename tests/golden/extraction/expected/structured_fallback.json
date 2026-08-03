@@ -1,0 +1,14 @@
+{
+  "table_count": 1,
+  "rejection_codes": [],
+  "tables": [
+    {
+      "line_start": 1,
+      "line_end": 3,
+      "row_count": 3,
+      "column_count": 3,
+      "values": ["Chỉ tiêu", "2024", "2023", "Doanh thu", "1.000", "900", "Lợi nhuận", "100", "80"],
+      "evidence": ["consistent_columns", "financial_header", "numeric_density"]
+    }
+  ]
+}
