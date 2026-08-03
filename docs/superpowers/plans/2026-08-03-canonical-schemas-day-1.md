@@ -451,7 +451,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Annotated, Self
 
 from pydantic import (
@@ -573,7 +573,15 @@ def test_table_record_rejects_extra_fields() -> None:
 
 @pytest.mark.parametrize(
     "csv_path",
-    ["", "   ", "/generated/table.csv", "../escape.csv", r"tables\\table.csv"],
+    [
+        "",
+        "   ",
+        "/generated/table.csv",
+        "C:/generated/table.csv",
+        "c:/generated/table.csv",
+        "../escape.csv",
+        r"tables\\table.csv",
+    ],
 )
 def test_table_record_rejects_invalid_csv_paths(csv_path: str) -> None:
     payload = valid_table_payload()
@@ -639,6 +647,7 @@ class TableRecord(BaseModel):
             not value
             or value != value.strip()
             or path.is_absolute()
+            or PureWindowsPath(value).drive
             or "\\" in value
             or ".." in path.parts
             or not path.parts

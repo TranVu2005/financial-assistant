@@ -130,7 +130,15 @@ def test_table_record_rejects_extra_fields() -> None:
 
 @pytest.mark.parametrize(
     "csv_path",
-    ["", "   ", "/generated/table.csv", "../escape.csv", r"tables\\table.csv"],
+    [
+        "",
+        "   ",
+        "/generated/table.csv",
+        "C:/generated/table.csv",
+        "c:/generated/table.csv",
+        "../escape.csv",
+        r"tables\\table.csv",
+    ],
 )
 def test_table_record_rejects_invalid_csv_paths(csv_path: str) -> None:
     payload = valid_table_payload()

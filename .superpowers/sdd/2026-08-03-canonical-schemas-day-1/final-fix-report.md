@@ -111,3 +111,77 @@ were needed for the frozen behavior.
 None for the requested scope. Git commands emit a benign sandbox warning about an
 unreadable global ignore file (`C:\Users\Admin\.config\git\ignore`); it did not
 affect the diff, status, tests, linting, or type checking.
+
+## Exception Fix Round
+
+Authorized follow-up finding: `PurePosixPath.is_absolute()` does not recognize a
+Windows drive-qualified path expressed with POSIX separators. The `csv_path`
+validator now rejects any `PureWindowsPath(value).drive`, preserving valid POSIX
+relative paths and explicit `None`.
+
+RED command:
+
+```powershell
+uv run --frozen --no-sync pytest -q tests/unit/schemas/test_tables.py::test_table_record_rejects_invalid_csv_paths
+```
+
+RED output (exit 1):
+
+```text
+...FF..                                                                  [100%]
+2 failed, 5 passed in 0.33s
+```
+
+The two expected failures were
+`C:/generated/table.csv` and `c:/generated/table.csv`, both accepted before the
+drive guard was added.
+
+GREEN command:
+
+```powershell
+uv run --frozen --no-sync pytest -q tests/unit/schemas/test_tables.py::test_table_record_rejects_invalid_csv_paths
+```
+
+GREEN output (exit 0):
+
+```text
+.......                                                                  [100%]
+7 passed in 0.36s
+```
+
+Final gate commands and outputs:
+
+```powershell
+uv run --frozen --no-sync pytest -q tests/unit/schemas
+```
+
+```text
+................................................................         [100%]
+64 passed in 0.30s
+```
+
+```powershell
+uv run --frozen --no-sync ruff check src/financial_report_qa/schemas tests/unit/schemas
+```
+
+```text
+All checks passed!
+```
+
+```powershell
+uv run --frozen --no-sync mypy --strict src/financial_report_qa/schemas tests/unit/schemas
+```
+
+```text
+Success: no issues found in 5 source files
+```
+
+```powershell
+uv run --frozen --no-sync pytest -q
+```
+
+```text
+........................................................................ [ 79%]
+...................                                                      [100%]
+91 passed in 1.10s
+```
