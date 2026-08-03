@@ -49,6 +49,11 @@ def evaluate_week1_gate(
     if meta.annotation_schema_version != ANNOTATION_SCHEMA_VERSION:
         raise Week1GateInputError(f"Unsupported schema version: {meta.annotation_schema_version}")
 
+    if meta.dataset_fingerprint != dataset.dataset_fingerprint:
+        raise Week1GateInputError("dataset fingerprint mismatch")
+    if meta.source_manifest_sha256 != dataset.source_manifest_sha256:
+        raise Week1GateInputError("source manifest fingerprint mismatch")
+
     docs_csv_path = annotation_dir / "pilot-documents.csv"
     doc_rows = read_csv_rows(docs_csv_path, PILOT_DOCUMENT_COLUMNS)
     docs_sha256 = hashlib.sha256(docs_csv_path.read_bytes()).hexdigest()

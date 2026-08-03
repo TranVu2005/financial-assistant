@@ -1,11 +1,13 @@
-"""Unit tests for gate evaluation and publication workflow."""
-
+import json
 from pathlib import Path
 
+import pytest
 from test_week1_dataset import _write_release
 
+from financial_report_qa.core.errors import Week1GateInputError
 from financial_report_qa.evaluation.week1_contracts import (
     EXPECTED_TABLE_COLUMNS,
+    write_canonical_json,
     write_csv_rows,
 )
 from financial_report_qa.evaluation.week1_dataset import load_gate_dataset
@@ -14,6 +16,44 @@ from financial_report_qa.evaluation.week1_evaluator import (
     publish_gate_artifacts,
 )
 from financial_report_qa.evaluation.week1_sampling import prepare_pilot
+
+
+def test_evaluate_rejects_dataset_fingerprint_mismatch(tmp_path: Path) -> None:
+    manifest_path, release_path, document, table, cell = _write_release(tmp_path)
+    dataset = load_gate_dataset(manifest_path, release_path)
+
+    annotation_dir = tmp_path / "annotations"
+    prepare_pilot(dataset, annotation_dir, company_count=1, documents_per_company=1)
+
+    metadata_path = annotation_dir / "pilot-metadata.json"
+    meta_data = json.loads(metadata_path.read_text(encoding="utf-8"))
+    meta_data["dataset_fingerprint"] = "0" * 64
+    write_canonical_json(metadata_path, meta_data)
+
+    corpus_dir = tmp_path / "corpus"
+    corpus_dir.mkdir()
+
+    with pytest.raises(Week1GateInputError, match="dataset fingerprint mismatch"):
+        evaluate_week1_gate(dataset, corpus_dir, annotation_dir)
+
+
+def test_evaluate_rejects_source_manifest_fingerprint_mismatch(tmp_path: Path) -> None:
+    manifest_path, release_path, document, table, cell = _write_release(tmp_path)
+    dataset = load_gate_dataset(manifest_path, release_path)
+
+    annotation_dir = tmp_path / "annotations"
+    prepare_pilot(dataset, annotation_dir, company_count=1, documents_per_company=1)
+
+    metadata_path = annotation_dir / "pilot-metadata.json"
+    meta_data = json.loads(metadata_path.read_text(encoding="utf-8"))
+    meta_data["source_manifest_sha256"] = "f" * 64
+    write_canonical_json(metadata_path, meta_data)
+
+    corpus_dir = tmp_path / "corpus"
+    corpus_dir.mkdir()
+
+    with pytest.raises(Week1GateInputError, match="source manifest fingerprint mismatch"):
+        evaluate_week1_gate(dataset, corpus_dir, annotation_dir)
 
 
 def test_evaluate_and_publish_week1_gate(tmp_path: Path) -> None:
