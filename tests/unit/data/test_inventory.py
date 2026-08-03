@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,88 @@ from financial_report_qa.data.inventory import (
     InventoryIssue,
     InventoryResult,
     _parse_vifinqa_path,
+    build_inventory,
 )
+
+
+def _write_report(root: Path, relative: str, content: bytes) -> Path:
+    path = root / Path(relative)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return path
+
+
+def test_build_inventory_hashes_unicode_utf8_and_preserves_source(tmp_path: Path) -> None:
+    root = tmp_path / "financial_statements"
+    content = "Báº£ng cÃ¢n Ä‘á»‘i káº¿ toÃ¡n".encode()
+    source = _write_report(root, "VCB/2024/Consolidated/BÃ¡o cÃ¡o.TXT", content)
+    before = source.read_bytes()
+
+    result = build_inventory(root, repo_id="org/vifinqa", revision="abc123")
+
+    assert result.issues == ()
+    assert len(result.documents) == 1
+    record = result.documents[0]
+    assert record.relative_path == "VCB/2024/Consolidated/BÃ¡o cÃ¡o.TXT"
+    assert record.sha256 == hashlib.sha256(content).hexdigest()
+    assert record.file_size_bytes == len(content)
+    assert record.encoding == "utf-8"
+    assert record.inventory_status == "ready"
+    assert source.read_bytes() == before
+
+
+def test_build_inventory_distinguishes_bom_empty_duplicate_and_issue(tmp_path: Path) -> None:
+    root = tmp_path / "financial_statements"
+    shared = b"doanh thu"
+    _write_report(root, "AAA/2023/Separate/a.txt", shared)
+    _write_report(root, "AAA/2023/Separate/b.txt", shared)
+    _write_report(root, "AAA/2023/Separate/bom.txt", b"\xef\xbb\xbf" + "ná»£".encode())
+    _write_report(root, "AAA/2023/Separate/empty.txt", b"")
+    _write_report(root, "AAA/2023/Separate/bad.txt", b"\xff\xfe")
+    _write_report(root, "bad/year/path.txt", b"valid bytes")
+
+    result = build_inventory(root, repo_id="org/vifinqa", revision="abc123")
+    by_path = {record.relative_path: record for record in result.documents}
+
+    assert by_path["AAA/2023/Separate/a.txt"].inventory_status == "ready"
+    duplicate = by_path["AAA/2023/Separate/b.txt"]
+    assert duplicate.inventory_status == "duplicate"
+    assert duplicate.notes == ("duplicate_of=AAA/2023/Separate/a.txt",)
+    assert by_path["AAA/2023/Separate/bom.txt"].encoding == "utf-8-sig"
+    assert by_path["AAA/2023/Separate/empty.txt"].inventory_status == "empty"
+    assert {issue.relative_path for issue in result.issues} == {
+        "AAA/2023/Separate/bad.txt",
+        "bad/year/path.txt",
+    }
+
+
+def test_build_inventory_is_deterministic_and_ignores_non_txt(tmp_path: Path) -> None:
+    root = tmp_path / "financial_statements"
+    _write_report(root, "ZZZ/2022/Aggregated/z.txt", b"z")
+    _write_report(root, "AAA/2022/Other/a.txt", b"a")
+    _write_report(root, "AAA/2022/Other/ignored.csv", b"csv")
+
+    first = build_inventory(root, repo_id="org/vifinqa", revision="abc123")
+    second = build_inventory(root, repo_id="org/vifinqa", revision="abc123")
+
+    assert first == second
+    assert [record.relative_path for record in first.documents] == [
+        "AAA/2022/Other/a.txt",
+        "ZZZ/2022/Aggregated/z.txt",
+    ]
+
+
+@pytest.mark.parametrize("root_state", ["missing", "file"])
+def test_build_inventory_rejects_non_directory_root(
+    tmp_path: Path,
+    root_state: str,
+) -> None:
+    root = tmp_path / "financial_statements"
+    if root_state == "file":
+        root.write_text("not a directory", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError, match="inventory root"):
+        build_inventory(root, repo_id="org/vifinqa", revision="abc123")
 
 
 def test_parse_vifinqa_path_preserves_unicode_and_extracts_metadata(tmp_path: Path) -> None:

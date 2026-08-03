@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import codecs
+import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from financial_report_qa.schemas.documents import DocumentRecord, Sha256Digest
+from financial_report_qa.schemas.documents import (
+    DocumentRecord,
+    Sha256Digest,
+    stable_document_id,
+)
+
+_CHUNK_SIZE = 1024 * 1024
+_UTF8_BOM = codecs.BOM_UTF8
 
 
 class InventoryIssue(BaseModel):
@@ -35,6 +45,43 @@ class _PathMetadata(NamedTuple):
     company_code: str
     report_year: int
     statement_scope: Literal["consolidated", "separate", "aggregated", "other"]
+
+
+@dataclass(frozen=True)
+class _FileInspection:
+    file_size_bytes: int
+    sha256: str
+    encoding: str | None
+    decode_error: str | None
+
+
+def _inspect_file(path: Path) -> _FileInspection:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        prefix = stream.read(len(_UTF8_BOM))
+        digest.update(prefix)
+        size += len(prefix)
+        encoding = "utf-8-sig" if prefix.startswith(_UTF8_BOM) else "utf-8"
+        decoder = codecs.getincrementaldecoder(encoding)(errors="strict")
+        decode_error = None
+        try:
+            decoder.decode(prefix)
+            while chunk := stream.read(_CHUNK_SIZE):
+                digest.update(chunk)
+                size += len(chunk)
+                decoder.decode(chunk)
+            decoder.decode(b"", final=True)
+        except UnicodeDecodeError as error:
+            decode_error = str(error)
+            while chunk := stream.read(_CHUNK_SIZE):
+                digest.update(chunk)
+                size += len(chunk)
+    return _FileInspection(size, digest.hexdigest(), encoding, decode_error)
+
+
+def _path_key(value: str) -> tuple[str, str]:
+    return value.casefold(), value
 
 
 def _parse_vifinqa_path(path: Path, root: Path) -> _PathMetadata:
@@ -66,3 +113,90 @@ def _parse_vifinqa_path(path: Path, root: Path) -> _PathMetadata:
     else:
         scope = "other"
     return _PathMetadata(relative.as_posix(), ticker_raw.upper(), year, scope)
+
+
+def build_inventory(
+    root: Path,
+    *,
+    repo_id: str,
+    revision: str,
+) -> InventoryResult:
+    if not root.is_dir():
+        raise FileNotFoundError(f"inventory root is not a directory: {root}")
+    if not repo_id.strip():
+        raise ValueError("repo_id must not be empty")
+    if not revision.strip():
+        raise ValueError("revision must not be empty")
+
+    paths = sorted(
+        (
+            path
+            for path in root.rglob("*")
+            if path.is_file() and path.suffix.casefold() == ".txt"
+        ),
+        key=lambda path: _path_key(path.relative_to(root).as_posix()),
+    )
+    documents: list[DocumentRecord] = []
+    issues: list[InventoryIssue] = []
+    primary_by_digest: dict[str, str] = {}
+
+    for path in paths:
+        relative_path = path.relative_to(root).as_posix()
+        try:
+            inspection = _inspect_file(path)
+        except OSError as error:
+            issues.append(
+                InventoryIssue(relative_path=relative_path, reason=f"read failure: {error}")
+            )
+            continue
+        try:
+            metadata = _parse_vifinqa_path(path, root)
+        except ValueError as error:
+            issues.append(
+                InventoryIssue(
+                    relative_path=relative_path,
+                    reason=str(error),
+                    file_size_bytes=inspection.file_size_bytes,
+                    sha256=inspection.sha256,
+                )
+            )
+            continue
+        if inspection.decode_error is not None:
+            issues.append(
+                InventoryIssue(
+                    relative_path=relative_path,
+                    reason=f"invalid UTF-8: {inspection.decode_error}",
+                    file_size_bytes=inspection.file_size_bytes,
+                    sha256=inspection.sha256,
+                )
+            )
+            continue
+
+        status: Literal["ready", "empty", "duplicate", "quarantine"]
+        if inspection.file_size_bytes == 0:
+            status = "empty"
+            notes: tuple[str, ...] = ()
+        elif inspection.sha256 in primary_by_digest:
+            status = "duplicate"
+            notes = (f"duplicate_of={primary_by_digest[inspection.sha256]}",)
+        else:
+            status = "ready"
+            notes = ()
+            primary_by_digest[inspection.sha256] = metadata.relative_path
+        documents.append(
+            DocumentRecord(
+                doc_id=stable_document_id(inspection.sha256),
+                repo_id=repo_id,
+                revision=revision,
+                relative_path=metadata.relative_path,
+                company_code=metadata.company_code,
+                report_year=metadata.report_year,
+                statement_scope=metadata.statement_scope,
+                sha256=inspection.sha256,
+                file_size_bytes=inspection.file_size_bytes,
+                encoding=inspection.encoding,
+                inventory_status=status,
+                notes=notes,
+            )
+        )
+    return InventoryResult(documents=tuple(documents), issues=tuple(issues))
