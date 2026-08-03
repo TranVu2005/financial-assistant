@@ -679,6 +679,8 @@ def test_cell_record_requires_nullable_canonical_fields() -> None:
         ("source_line_end", 17),
         ("extraction_confidence", -0.01),
         ("extraction_confidence", 1.01),
+        ("extraction_confidence", True),
+        ("extraction_confidence", "0.9"),
         ("table_id", "invalid"),
     ],
 )
@@ -741,7 +743,7 @@ class CellRecord(BaseModel):
     unit: NonEmptyString | None
     source_line_start: int = Field(strict=True, ge=1)
     source_line_end: int = Field(strict=True, ge=1)
-    extraction_confidence: float = Field(ge=0, le=1)
+    extraction_confidence: float = Field(strict=True, ge=0, le=1)
 
     @model_validator(mode="after")
     def validate_source_span(self) -> Self:
