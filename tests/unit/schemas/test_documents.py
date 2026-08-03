@@ -134,10 +134,13 @@ def test_schema_package_exports_only_approved_day_one_interfaces() -> None:
     expected = (
         "CellRecord",
         "DocumentRecord",
+        "NormalizationIssue",
+        "NormalizedDocument",
         "TableRecord",
         "stable_document_id",
         "stable_table_id",
     )
+
 
     assert schemas.__all__ == expected
     assert all(getattr(schemas, name) is not None for name in expected)
