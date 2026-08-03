@@ -5,9 +5,17 @@ from __future__ import annotations
 import hashlib
 import re
 from decimal import Decimal
+from pathlib import PurePosixPath
 from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 _DOC_ID_RE = re.compile(r"^doc_[0-9a-f]{64}$")
 _TABLE_ID_PATTERN = r"^tbl_[0-9a-f]{64}$"
@@ -31,6 +39,8 @@ def _validate_line_span(line_start: int, line_end: int) -> None:
 
 def stable_table_id(doc_id: str, line_start: int, line_end: int) -> str:
     """Return a deterministic ID for a table at a source-line span."""
+    if not isinstance(doc_id, str):
+        raise ValueError("doc_id must be a string")
     if _DOC_ID_RE.fullmatch(doc_id) is None:
         raise ValueError("doc_id must be a canonical document ID")
     _validate_line_span(line_start, line_end)
@@ -55,6 +65,24 @@ class TableRecord(BaseModel):
     column_count: int = Field(strict=True, ge=0)
     quality_score: float = Field(strict=True, ge=0, le=1)
     csv_path: str | None
+
+    @field_validator("csv_path")
+    @classmethod
+    def validate_csv_path(cls, value: str | None) -> str | None:
+        """Require generated artifact paths to be safe POSIX-relative paths."""
+        if value is None:
+            return None
+        path = PurePosixPath(value)
+        if (
+            not value
+            or value != value.strip()
+            or path.is_absolute()
+            or "\\" in value
+            or ".." in path.parts
+            or not path.parts
+        ):
+            raise ValueError("csv_path must be a safe POSIX relative path")
+        return value
 
     @model_validator(mode="after")
     def validate_identity_and_span(self) -> Self:

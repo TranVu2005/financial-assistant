@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import cast
 
 import pytest
 from pydantic import ValidationError
@@ -59,6 +60,11 @@ def test_stable_table_id_rejects_invalid_identity_or_span(
 ) -> None:
     with pytest.raises(ValueError):
         stable_table_id(doc_id, line_start, line_end)
+
+
+def test_stable_table_id_rejects_non_string_document_id_with_value_error() -> None:
+    with pytest.raises(ValueError, match="doc_id must be a string"):
+        stable_table_id(cast(str, None), 1, 1)
 
 
 def test_table_record_round_trip_preserves_raw_vietnamese_text() -> None:
@@ -120,6 +126,30 @@ def test_table_record_rejects_extra_fields() -> None:
 
     with pytest.raises(ValidationError, match="unexpected"):
         TableRecord.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "csv_path",
+    ["", "   ", "/generated/table.csv", "../escape.csv", r"tables\\table.csv"],
+)
+def test_table_record_rejects_invalid_csv_paths(csv_path: str) -> None:
+    payload = valid_table_payload()
+    payload["csv_path"] = csv_path
+
+    with pytest.raises(ValidationError, match="csv_path"):
+        TableRecord.model_validate(payload)
+
+
+def test_table_record_accepts_utf8_posix_csv_path_and_explicit_none() -> None:
+    payload = valid_table_payload()
+    csv_path = "tables/B\u1ea3ng c\u00e2n \u0111\u1ed1i.csv"
+    payload["csv_path"] = csv_path
+
+    assert TableRecord.model_validate(payload).csv_path == csv_path
+
+    payload["csv_path"] = None
+
+    assert TableRecord.model_validate(payload).csv_path is None
 
 
 def valid_cell_payload() -> dict[str, object]:
@@ -192,3 +222,20 @@ def test_cell_record_rejects_extra_fields() -> None:
 
     with pytest.raises(ValidationError, match="unexpected"):
         CellRecord.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("record", "field", "value"),
+    [
+        (TableRecord.model_validate(valid_table_payload()), "row_count", 99),
+        (CellRecord.model_validate(valid_cell_payload()), "row_idx", 99),
+    ],
+    ids=("table", "cell"),
+)
+def test_table_and_cell_records_reject_mutation(
+    record: TableRecord | CellRecord,
+    field: str,
+    value: int,
+) -> None:
+    with pytest.raises(ValidationError, match="frozen"):
+        setattr(record, field, value)

@@ -26,6 +26,8 @@ CompanyCode = Annotated[str, StringConstraints(pattern=r"^[A-Z0-9]{2,10}$")]
 
 def stable_document_id(sha256: str) -> str:
     """Return the canonical content-addressed ID for a SHA-256 digest."""
+    if not isinstance(sha256, str):
+        raise ValueError("sha256 must be a string")
     normalized = sha256.strip().lower()
     if _SHA256_RE.fullmatch(normalized) is None:
         raise ValueError("sha256 must contain exactly 64 hexadecimal characters")

@@ -55,6 +55,8 @@ Create `tests/unit/schemas/test_documents.py`:
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from pydantic import ValidationError
 
@@ -97,6 +99,11 @@ def test_stable_document_id_is_content_addressed_and_case_normalized() -> None:
 def test_stable_document_id_rejects_non_sha256_values(digest: str) -> None:
     with pytest.raises(ValueError, match="64 hexadecimal"):
         stable_document_id(digest)
+
+
+def test_stable_document_id_rejects_non_string_input_with_value_error() -> None:
+    with pytest.raises(ValueError, match="sha256 must be a string"):
+        stable_document_id(cast(str, None))
 ```
 
 - [ ] **Step 2: Run the ID tests and verify RED**
@@ -127,6 +134,8 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 def stable_document_id(sha256: str) -> str:
     """Return the canonical content-addressed ID for a SHA-256 digest."""
+    if not isinstance(sha256, str):
+        raise ValueError("sha256 must be a string")
     normalized = sha256.strip().lower()
     if _SHA256_RE.fullmatch(normalized) is None:
         raise ValueError("sha256 must contain exactly 64 hexadecimal characters")
@@ -268,6 +277,8 @@ CompanyCode = Annotated[str, StringConstraints(pattern=r"^[A-Z0-9]{2,10}$")]
 
 def stable_document_id(sha256: str) -> str:
     """Return the canonical content-addressed ID for a SHA-256 digest."""
+    if not isinstance(sha256, str):
+        raise ValueError("sha256 must be a string")
     normalized = sha256.strip().lower()
     if _SHA256_RE.fullmatch(normalized) is None:
         raise ValueError("sha256 must contain exactly 64 hexadecimal characters")
@@ -351,6 +362,8 @@ Create `tests/unit/schemas/test_tables.py`:
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from pydantic import ValidationError
 
@@ -407,6 +420,11 @@ def test_stable_table_id_rejects_invalid_identity_or_span(
 ) -> None:
     with pytest.raises(ValueError):
         stable_table_id(doc_id, line_start, line_end)
+
+
+def test_stable_table_id_rejects_non_string_document_id_with_value_error() -> None:
+    with pytest.raises(ValueError, match="doc_id must be a string"):
+        stable_table_id(cast(str, None), 1, 1)
 ```
 
 - [ ] **Step 2: Run the table ID tests and verify RED**
@@ -433,9 +451,17 @@ from __future__ import annotations
 
 import hashlib
 import re
+from pathlib import PurePosixPath
 from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 _DOC_ID_RE = re.compile(r"^doc_[0-9a-f]{64}$")
 _TABLE_ID_PATTERN = r"^tbl_[0-9a-f]{64}$"
@@ -459,10 +485,12 @@ def _validate_line_span(line_start: int, line_end: int) -> None:
 
 def stable_table_id(doc_id: str, line_start: int, line_end: int) -> str:
     """Return a deterministic ID for a table at a source-line span."""
+    if not isinstance(doc_id, str):
+        raise ValueError("doc_id must be a string")
     if _DOC_ID_RE.fullmatch(doc_id) is None:
         raise ValueError("doc_id must be a canonical document ID")
     _validate_line_span(line_start, line_end)
-    payload = f"{doc_id}\n{line_start}\n{line_end}".encode("utf-8")
+    payload = f"{doc_id}\n{line_start}\n{line_end}".encode()
     return f"tbl_{hashlib.sha256(payload).hexdigest()}"
 ```
 
@@ -541,6 +569,30 @@ def test_table_record_rejects_extra_fields() -> None:
 
     with pytest.raises(ValidationError, match="unexpected"):
         TableRecord.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "csv_path",
+    ["", "   ", "/generated/table.csv", "../escape.csv", r"tables\\table.csv"],
+)
+def test_table_record_rejects_invalid_csv_paths(csv_path: str) -> None:
+    payload = valid_table_payload()
+    payload["csv_path"] = csv_path
+
+    with pytest.raises(ValidationError, match="csv_path"):
+        TableRecord.model_validate(payload)
+
+
+def test_table_record_accepts_utf8_posix_csv_path_and_explicit_none() -> None:
+    payload = valid_table_payload()
+    csv_path = "tables/B\u1ea3ng c\u00e2n \u0111\u1ed1i.csv"
+    payload["csv_path"] = csv_path
+
+    assert TableRecord.model_validate(payload).csv_path == csv_path
+
+    payload["csv_path"] = None
+
+    assert TableRecord.model_validate(payload).csv_path is None
 ```
 
 - [ ] **Step 6: Run the table record tests and verify RED**
@@ -575,6 +627,24 @@ class TableRecord(BaseModel):
     column_count: int = Field(strict=True, ge=0)
     quality_score: float = Field(strict=True, ge=0, le=1)
     csv_path: str | None
+
+    @field_validator("csv_path")
+    @classmethod
+    def validate_csv_path(cls, value: str | None) -> str | None:
+        """Require generated artifact paths to be safe POSIX-relative paths."""
+        if value is None:
+            return None
+        path = PurePosixPath(value)
+        if (
+            not value
+            or value != value.strip()
+            or path.is_absolute()
+            or "\\" in value
+            or ".." in path.parts
+            or not path.parts
+        ):
+            raise ValueError("csv_path must be a safe POSIX relative path")
+        return value
 
     @model_validator(mode="after")
     def validate_identity_and_span(self) -> Self:
@@ -701,6 +771,23 @@ def test_cell_record_rejects_extra_fields() -> None:
 
     with pytest.raises(ValidationError, match="unexpected"):
         CellRecord.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("record", "field", "value"),
+    [
+        (TableRecord.model_validate(valid_table_payload()), "row_count", 99),
+        (CellRecord.model_validate(valid_cell_payload()), "row_idx", 99),
+    ],
+    ids=("table", "cell"),
+)
+def test_table_and_cell_records_reject_mutation(
+    record: TableRecord | CellRecord,
+    field: str,
+    value: int,
+) -> None:
+    with pytest.raises(ValidationError, match="frozen"):
+        setattr(record, field, value)
 ```
 
 - [ ] **Step 2: Run the cell tests and verify RED**

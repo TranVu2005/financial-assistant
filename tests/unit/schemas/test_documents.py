@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from pydantic import ValidationError
 
@@ -43,6 +45,11 @@ def test_stable_document_id_is_content_addressed_and_case_normalized() -> None:
 def test_stable_document_id_rejects_non_sha256_values(digest: str) -> None:
     with pytest.raises(ValueError, match="64 hexadecimal"):
         stable_document_id(digest)
+
+
+def test_stable_document_id_rejects_non_string_input_with_value_error() -> None:
+    with pytest.raises(ValueError, match="sha256 must be a string"):
+        stable_document_id(cast(str, None))
 
 
 def test_document_record_round_trip_preserves_vietnamese_unicode() -> None:
