@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from html.parser import HTMLParser
 
@@ -23,7 +24,10 @@ _EXPANSION_LIMIT = 100_000
 _NUMERIC_VALUE_RE = re.compile(r"\(?[+-]?[0-9][0-9., ]*%?\)?$")
 _TAB_SPLIT_RE = re.compile(r"\t+")
 _SPACE_SPLIT_RE = re.compile(r" {2,}")
+_PAGE_MARKER_RE = re.compile(r"^===== PAGE [1-9][0-9]* =====$")
 _UNIT_MARKERS = (
+    "đơn vị tính",
+    "đơn vị",
     "\u00c4\u2018\u00c6\u00a1n v\u00e1\u00bb\u2039",
     "\u00c4\u2018\u00c6\u00a1n v\u00e1\u00bb\u2039 t\u00c3\u00adnh",
     "\u00c4\u2018vt",
@@ -82,13 +86,19 @@ class _ViFinQATableParser(HTMLParser):
 
     @staticmethod
     def _span(attrs: list[tuple[str, str | None]], name: str) -> int:
-        value = dict(attrs).get(name)
-        if value is None:
+        attributes = dict(attrs)
+        if name not in attributes:
             return 1
-        if re.fullmatch(r"[1-9][0-9]*", value) is None:
+        value = attributes[name]
+        if value is None or re.fullmatch(r"[1-9][0-9]*", value) is None:
             reason: RejectionCode = "invalid_span_value"
             raise _ExtractionFailure(reason)
-        return int(value)
+        if len(value) > len(str(_EXPANSION_LIMIT)):
+            raise _ExtractionFailure("expansion_limit_exceeded")
+        span = int(value)
+        if span > _EXPANSION_LIMIT:
+            raise _ExtractionFailure("expansion_limit_exceeded")
+        return span
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.casefold()
@@ -275,29 +285,62 @@ def _header_row_count(
     return count
 
 
+def _metadata_key(value: str) -> str:
+    return unicodedata.normalize("NFKC", value).casefold()
+
+
+def _contains_unit_marker(value: str) -> bool:
+    normalized = _metadata_key(value)
+    return any(_metadata_key(marker) in normalized for marker in _UNIT_MARKERS)
+
+
+def _is_predominantly_numeric(value: str) -> bool:
+    compact = [character for character in value if not character.isspace()]
+    if not compact:
+        return False
+    numeric = sum(character.isdigit() or character in ".,()-+%" for character in compact)
+    return numeric * 2 >= len(compact)
+
+
 def _nearby_metadata(
-    document: DecodedDocument, candidate: TableCandidate
+    document: DecodedDocument,
+    candidate: TableCandidate,
+    raw_cells: list[_RawCell],
 ) -> tuple[str | None, str | None]:
     prior_lines = document.lines[max(0, candidate.line_start - 4) : candidate.line_start - 1]
-    eligible = [
-        line.text.strip()
-        for line in prior_lines
-        if (
-            line.text.strip()
-            and "<table" not in line.text.casefold()
-            and "</table" not in line.text.casefold()
-        )
-    ]
-    title_raw = eligible[-1] if eligible else None
-    source_lines = (*prior_lines, *document.lines[candidate.line_start - 1 : candidate.line_end])
-    unit_raw = next(
+    excluded_lines = {
+        line_number
+        for block in document.blocks
+        if block.kind in {"table", "page_marker"}
+        for line_number in range(block.line_start, block.line_end + 1)
+    }
+    title_raw = next(
         (
             line.text.strip()
-            for line in source_lines
-            if any(marker in line.text.casefold() for marker in _UNIT_MARKERS)
+            for line in reversed(prior_lines)
+            if (
+                line.number not in excluded_lines
+                and len(line.text) <= 200
+                and not _PAGE_MARKER_RE.fullmatch(line.text)
+                and not _is_predominantly_numeric(line.text)
+                and line.text.strip()
+            )
         ),
         None,
     )
+    unit_raw = next(
+        (cell.text for cell in raw_cells if _contains_unit_marker(cell.text)),
+        None,
+    )
+    if unit_raw is None:
+        unit_raw = next(
+            (
+                line.text.strip()
+                for line in prior_lines
+                if line.number not in excluded_lines and _contains_unit_marker(line.text)
+            ),
+            None,
+        )
     return title_raw, unit_raw
 
 
@@ -314,13 +357,14 @@ def _materialize_table(
         for raw_cell in row:
             while (row_idx, next_col) in grid:
                 next_col += 1
+            placement_count = raw_cell.rowspan * raw_cell.colspan
+            if placement_count > _EXPANSION_LIMIT - len(grid):
+                raise _ExtractionFailure("expansion_limit_exceeded")
             coordinates = [
                 (covered_row, covered_col)
                 for covered_row in range(row_idx, row_idx + raw_cell.rowspan)
                 for covered_col in range(next_col, next_col + raw_cell.colspan)
             ]
-            if len(grid) + len(coordinates) > _EXPANSION_LIMIT:
-                raise _ExtractionFailure("expansion_limit_exceeded")
             if any(coordinate in grid for coordinate in coordinates):
                 raise _ExtractionFailure("span_collision")
             token = len(raw_cells)
@@ -334,7 +378,7 @@ def _materialize_table(
 
     row_count = max(row_idx for row_idx, _ in grid) + 1
     column_count = max(col_idx for _, col_idx in grid) + 1
-    title_raw, unit_raw = _nearby_metadata(document, candidate)
+    title_raw, unit_raw = _nearby_metadata(document, candidate, raw_cells)
     table_id = stable_table_id(document.document.doc_id, candidate.line_start, candidate.line_end)
     table = TableRecord(
         table_id=table_id,

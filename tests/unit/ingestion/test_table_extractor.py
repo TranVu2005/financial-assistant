@@ -131,3 +131,91 @@ def test_ragged_html_rows_use_absent_placements_not_invented_cells(tmp_path: Pat
     assert (table.table.row_count, table.table.column_count) == (2, 2)
     assert len(table.cells) == 3
     assert len(table.placements) == 3
+
+
+@pytest.mark.parametrize(
+    ("attribute", "reason"),
+    [
+        ("colspan", "invalid_span_value"),
+        ('colspan="' + ("9" * 4_301) + '"', "expansion_limit_exceeded"),
+    ],
+)
+def test_invalid_or_huge_span_rejects_before_grid_expansion(
+    tmp_path: Path,
+    attribute: str,
+    reason: str,
+) -> None:
+    source = (
+        f"<table><tr><td {attribute}>bad</td></tr></table>\n"
+        "<table><tr><td>good</td><td>1</td></tr></table>\n"
+    )
+
+    result = extract(tmp_path, source)
+
+    assert [item.reason for item in result.rejected] == [reason]
+    assert [[cell.value_raw for cell in table.cells] for table in result.tables] == [
+        ["good", "1"]
+    ]
+
+
+@pytest.mark.parametrize(
+    "prior_line",
+    [
+        "===== PAGE 1 =====",
+        "2024  2023  2022",
+        "x" * 201,
+    ],
+)
+def test_title_skips_ineligible_nearest_prior_lines(
+    tmp_path: Path, prior_line: str
+) -> None:
+    source = f"Eligible title\n{prior_line}\n<table><tr><td>A</td><td>1</td></tr></table>\n"
+
+    result = extract(tmp_path, source)
+
+    assert result.tables[0].table.title_raw == "Eligible title"
+
+
+def test_title_excludes_prior_table_content(tmp_path: Path) -> None:
+    source = (
+        "<table>\n"
+        "<tr><td>Prior table label</td><td>1</td></tr>\n"
+        "</table>\n"
+        "<table><tr><td>New table</td><td>2</td></tr></table>\n"
+    )
+
+    result = extract(tmp_path, source)
+
+    assert len(result.tables) == 2
+    assert result.tables[1].table.title_raw is None
+
+
+def test_html_unit_marker_returns_decoded_cell_text(tmp_path: Path) -> None:
+    source = (
+        "<table><tr><th>Đơn vị: triệu đồng</th><th>2024</th></tr>"
+        "<tr><td>A</td><td>1</td></tr></table>\n"
+    )
+
+    result = extract(tmp_path, source)
+
+    assert result.tables[0].table.unit_raw == "Đơn vị: triệu đồng"
+
+
+def test_extracts_validated_structured_text_with_line_provenance(tmp_path: Path) -> None:
+    source = "Metric\t2024\t2023\nRevenue\t1.000\t900\nProfit\t100\t80\n"
+
+    table = extract(tmp_path, source).tables[0]
+
+    assert (table.table.row_count, table.table.column_count) == (3, 3)
+    assert [cell.value_raw for cell in table.cells] == [
+        "Metric",
+        "2024",
+        "2023",
+        "Revenue",
+        "1.000",
+        "900",
+        "Profit",
+        "100",
+        "80",
+    ]
+    assert (table.cells[-1].source_line_start, table.cells[-1].source_line_end) == (3, 3)
