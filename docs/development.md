@@ -76,3 +76,16 @@ docker run --rm financial-report-qa:local --help
 ```
 
 Không mount dataset hoặc chạy model trong image nền tảng này.
+
+## Local ViFinQA ingestion smoke
+
+Set the immutable revision printed by the downloader, then run:
+
+```powershell
+if ([string]::IsNullOrWhiteSpace($env:VIFINQA_REVISION) -or $env:VIFINQA_REVISION -eq "main") { throw "Set VIFINQA_REVISION to the immutable revision printed by the downloader" }
+uv run --frozen --no-sync python scripts/smoke_ingestion.py --root data/raw/financial_statements --repo-id tinixai/ViFinQA --revision $env:VIFINQA_REVISION
+```
+
+This command uses local data only, does not write to `data/raw`, and is not part of the
+hermetic unit-test gate. It inventories ready documents, reports deterministic extraction
+counts, and repeats a bounded sample to detect non-deterministic models.

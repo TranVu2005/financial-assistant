@@ -172,3 +172,22 @@ def test_missing_source_is_a_safe_read_error(tmp_path: Path) -> None:
 
     with pytest.raises(SourceReadError, match=RELATIVE_PATH):
         read_document(tmp_path, record)
+
+
+def test_read_document_rejects_symlink_that_escapes_snapshot_root(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "snapshot"
+    content = b"external source"
+    record = write_record(root, content)
+    source = root / Path(RELATIVE_PATH)
+    source.unlink()
+    external = tmp_path / "external.txt"
+    external.write_bytes(content)
+    try:
+        source.symlink_to(external)
+    except OSError as error:
+        pytest.skip(f"platform cannot create file symlink: {type(error).__name__}")
+
+    with pytest.raises(InvalidSourceDocumentError, match="escapes snapshot root"):
+        read_document(root, record)

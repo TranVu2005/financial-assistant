@@ -1,0 +1,6 @@
+Đơn vị tính: triệu đồng
+BẢNG KẾT QUẢ KINH DOANH
+<table><tr><th>Chỉ tiêu</th><th>2024</th></tr><tr><td>Doanh thu thuần</td><td>(1.234,50)</td></tr></table>
+===== PAGE 2 =====
+BẢNG KẾT QUẢ KINH DOANH
+<table><tr><th>Chỉ tiêu</th><th>2024</th></tr><tr><td>Lợi nhuận</td><td>20</td></tr></table>

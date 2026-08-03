@@ -6,6 +6,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from pathlib import Path
 
 from financial_report_qa.ingestion.provenance import (
     CellPlacement,
@@ -18,6 +19,9 @@ from financial_report_qa.ingestion.provenance import (
     TableCandidate,
     stable_cell_id,
 )
+from financial_report_qa.ingestion.table_detector import detect_table_candidates
+from financial_report_qa.ingestion.txt_reader import read_document
+from financial_report_qa.schemas.documents import DocumentRecord
 from financial_report_qa.schemas.tables import CellRecord, TableRecord, stable_table_id
 
 _EXPANSION_LIMIT = 100_000
@@ -31,6 +35,15 @@ _UNIT_MARKERS = (
     "\u00c4\u2018\u00c6\u00a1n v\u00e1\u00bb\u2039",
     "\u00c4\u2018\u00c6\u00a1n v\u00e1\u00bb\u2039 t\u00c3\u00adnh",
     "\u00c4\u2018vt",
+)
+_UNICODE_HEADER_SIGNALS = (
+    "mã số",
+    "chỉ tiêu",
+    "thuyết minh",
+    "năm",
+    "kỳ",
+    "đơn vị",
+    "đvt",
 )
 
 
@@ -250,6 +263,26 @@ def _parse_structured(document: DecodedDocument, candidate: TableCandidate) -> _
     return _RawTable(rows=tuple(rows))
 
 
+def _with_unicode_header_evidence(
+    candidate: TableCandidate,
+    raw_table: _RawTable,
+) -> TableCandidate:
+    if candidate.kind != "structured_text" or "financial_header" in candidate.evidence:
+        return candidate
+    first_row = " ".join(cell.text for cell in raw_table.rows[0])
+    normalized = _normalized_header(first_row)
+    if not any(signal in normalized for signal in _UNICODE_HEADER_SIGNALS):
+        return candidate
+    evidence = list(candidate.evidence)
+    insertion = (
+        evidence.index("numeric_density")
+        if "numeric_density" in evidence
+        else len(evidence)
+    )
+    evidence.insert(insertion, "financial_header")
+    return candidate.model_copy(update={"evidence": tuple(evidence)})
+
+
 def _is_numeric_looking(value: str) -> bool:
     stripped = value.strip()
     return stripped == "-" or _NUMERIC_VALUE_RE.fullmatch(stripped) is not None
@@ -467,6 +500,173 @@ def _rejected(candidate: TableCandidate, reason: RejectionCode) -> RejectedCandi
     )
 
 
+def _normalized_header(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def _header_row_count_from_table(extracted: ExtractedTable) -> int:
+    data_rows = [cell.row_idx for cell in extracted.cells if cell.row_label_raw is not None]
+    if data_rows:
+        return min(data_rows)
+    return extracted.table.row_count if extracted.cells else 0
+
+
+def _column_headers(
+    extracted: ExtractedTable,
+    header_rows: int,
+    *,
+    normalize: bool,
+) -> tuple[str, ...]:
+    cells_by_id = {cell.cell_id: cell for cell in extracted.cells}
+    placements = {(item.row_idx, item.col_idx): item.cell_id for item in extracted.placements}
+    headers: list[str] = []
+    for col_idx in range(extracted.table.column_count):
+        values: list[str] = []
+        for row_idx in range(header_rows):
+            cell_id = placements.get((row_idx, col_idx))
+            if cell_id is None:
+                continue
+            value = cells_by_id[cell_id].value_raw
+            value = _normalized_header(value) if normalize else value.strip()
+            if value and value not in values:
+                values.append(value)
+        headers.append("\n".join(values))
+    return tuple(headers)
+
+
+def _has_compatible_separator(
+    document: DecodedDocument,
+    first: ExtractedTable,
+    second: ExtractedTable,
+) -> bool:
+    if second.table.line_start - first.table.line_end > 20:
+        return False
+    separator = document.lines[first.table.line_end : second.table.line_start - 1]
+    non_blank = [line.text.strip() for line in separator if line.text.strip()]
+    page_markers = [value for value in non_blank if _PAGE_MARKER_RE.fullmatch(value)]
+    if len(page_markers) != 1:
+        return False
+    other = [value for value in non_blank if not _PAGE_MARKER_RE.fullmatch(value)]
+    if not other:
+        return True
+    return (
+        len(other) == 1
+        and first.table.title_raw is not None
+        and _normalized_header(other[0]) == _normalized_header(first.table.title_raw)
+    )
+
+
+def _merge_pair(first: ExtractedTable, second: ExtractedTable) -> ExtractedTable:
+    first_header_rows = _header_row_count_from_table(first)
+    second_header_rows = _header_row_count_from_table(second)
+    merged_line_start = first.table.line_start
+    merged_line_end = second.table.line_end
+    merged_table_id = stable_table_id(
+        first.table.doc_id,
+        merged_line_start,
+        merged_line_end,
+    )
+    confidence = min(first.table.quality_score, second.table.quality_score)
+    row_offset = first.table.row_count - second_header_rows
+    row_count = first.table.row_count + second.table.row_count - second_header_rows
+    merged_table = TableRecord(
+        table_id=merged_table_id,
+        doc_id=first.table.doc_id,
+        title_raw=first.table.title_raw,
+        statement_type=None,
+        unit_raw=first.table.unit_raw or second.table.unit_raw,
+        unit_normalized=None,
+        line_start=merged_line_start,
+        line_end=merged_line_end,
+        row_count=row_count,
+        column_count=first.table.column_count,
+        quality_score=confidence,
+        csv_path=None,
+    )
+    first_headers = _column_headers(first, first_header_rows, normalize=False)
+    retained: list[tuple[CellRecord, int, int]] = [
+        (cell, cell.row_idx, cell.col_idx) for cell in first.cells
+    ]
+    retained.extend(
+        (cell, cell.row_idx + row_offset, cell.col_idx)
+        for cell in second.cells
+        if cell.row_idx >= second_header_rows
+    )
+    cell_ids: dict[tuple[int, str], str] = {}
+    cells: list[CellRecord] = []
+    first_ids = {cell.cell_id for cell in first.cells}
+    second_cells_by_id = {cell.cell_id: cell for cell in second.cells}
+    for cell, row_idx, col_idx in retained:
+        source_number = 0 if cell.cell_id in first_ids else 1
+        cell_id = stable_cell_id(merged_table_id, row_idx, col_idx)
+        cell_ids[(source_number, cell.cell_id)] = cell_id
+        is_header = row_idx < first_header_rows
+        column_label = None if is_header else first_headers[col_idx] or cell.column_label_raw
+        cells.append(
+            cell.model_copy(
+                update={
+                    "cell_id": cell_id,
+                    "table_id": merged_table_id,
+                    "row_idx": row_idx,
+                    "col_idx": col_idx,
+                    "column_label_raw": column_label,
+                    "extraction_confidence": confidence,
+                }
+            )
+        )
+    placements: list[CellPlacement] = []
+    for source_number, extracted in enumerate((first, second)):
+        for placement in extracted.placements:
+            if source_number == 1:
+                source_cell = second_cells_by_id[placement.cell_id]
+                if source_cell.row_idx < second_header_rows:
+                    continue
+                row_idx = placement.row_idx + row_offset
+            else:
+                row_idx = placement.row_idx
+            placements.append(
+                CellPlacement(
+                    row_idx=row_idx,
+                    col_idx=placement.col_idx,
+                    cell_id=cell_ids[(source_number, placement.cell_id)],
+                )
+            )
+    evidence = tuple(
+        dict.fromkeys((*first.evidence, *second.evidence, "continued_across_page"))
+    )
+    return ExtractedTable(
+        table=merged_table,
+        cells=tuple(cells),
+        placements=tuple(sorted(placements, key=lambda item: (item.row_idx, item.col_idx))),
+        evidence=evidence,
+    )
+
+
+def _merge_continuations(
+    document: DecodedDocument,
+    tables: list[ExtractedTable],
+) -> tuple[ExtractedTable, ...]:
+    merged: list[ExtractedTable] = []
+    for table in tables:
+        if merged:
+            previous = merged[-1]
+            previous_header_rows = _header_row_count_from_table(previous)
+            current_header_rows = _header_row_count_from_table(table)
+            compatible = (
+                previous.table.column_count == table.table.column_count
+                and previous_header_rows > 0
+                and current_header_rows > 0
+                and _column_headers(previous, previous_header_rows, normalize=True)
+                == _column_headers(table, current_header_rows, normalize=True)
+                and _has_compatible_separator(document, previous, table)
+            )
+            if compatible:
+                merged[-1] = _merge_pair(previous, table)
+                continue
+        merged.append(table)
+    return tuple(merged)
+
+
 def extract_candidates(document: DecodedDocument, detection: DetectionResult) -> ExtractionResult:
     """Extract independently materialized tables, retaining candidate-level rejections."""
     tables: list[ExtractedTable] = []
@@ -478,12 +678,20 @@ def extract_candidates(document: DecodedDocument, detection: DetectionResult) ->
                 if candidate.kind == "html"
                 else _parse_structured(document, candidate)
             )
+            candidate = _with_unicode_header_evidence(candidate, raw_table)
             tables.append(_materialize_table(document, candidate, raw_table.rows))
         except _ExtractionFailure as error:
             rejected.append(_rejected(candidate, error.reason))
     return ExtractionResult(
         doc_id=document.document.doc_id,
         blocks=detection.blocks,
-        tables=tuple(tables),
+        tables=_merge_continuations(document, tables),
         rejected=tuple(sorted(rejected, key=lambda item: (item.line_start, item.ordinal))),
     )
+
+
+def extract_document(root: Path, document: DocumentRecord) -> ExtractionResult:
+    """Run verified reading, detection, and extraction for one ready document."""
+    decoded = read_document(root, document)
+    detection = detect_table_candidates(decoded)
+    return extract_candidates(decoded, detection)

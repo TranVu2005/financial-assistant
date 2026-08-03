@@ -219,3 +219,44 @@ def test_extracts_validated_structured_text_with_line_provenance(tmp_path: Path)
         "80",
     ]
     assert (table.cells[-1].source_line_start, table.cells[-1].source_line_end) == (3, 3)
+
+
+def test_merges_compatible_page_continuation_and_drops_repeated_header(
+    tmp_path: Path,
+) -> None:
+    source = (
+        "BẢNG KẾT QUẢ KINH DOANH\n"
+        "<table><tr><th>Chỉ tiêu</th><th>2024</th></tr>"
+        "<tr><td>Doanh thu</td><td>100</td></tr></table>\n"
+        "===== PAGE 2 =====\n"
+        "BẢNG KẾT QUẢ KINH DOANH\n"
+        "<table><tr><th>Chỉ tiêu</th><th>2024</th></tr>"
+        "<tr><td>Lợi nhuận</td><td>20</td></tr></table>\n"
+    )
+    result = extract(tmp_path, source)
+
+    assert len(result.tables) == 1
+    table = result.tables[0]
+    assert (table.table.line_start, table.table.line_end) == (2, 5)
+    assert (table.table.row_count, table.table.column_count) == (3, 2)
+    assert [cell.value_raw for cell in table.cells] == [
+        "Chỉ tiêu",
+        "2024",
+        "Doanh thu",
+        "100",
+        "Lợi nhuận",
+        "20",
+    ]
+    assert "continued_across_page" in table.evidence
+
+
+def test_does_not_merge_different_headers(tmp_path: Path) -> None:
+    source = (
+        "<table><tr><th>Chỉ tiêu</th><th>2024</th></tr>"
+        "<tr><td>A</td><td>1</td></tr></table>\n"
+        "===== PAGE 2 =====\n"
+        "<table><tr><th>Mã số</th><th>2023</th></tr>"
+        "<tr><td>B</td><td>2</td></tr></table>\n"
+    )
+
+    assert len(extract(tmp_path, source).tables) == 2
