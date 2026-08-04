@@ -1,9 +1,9 @@
 import hashlib
 import json
 import tempfile
-from decimal import Decimal
 from collections.abc import Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
 import orjson
@@ -151,9 +151,7 @@ def _source_table_id(
     line_end: int,
 ) -> str:
     payload = (
-        f"{relative_path}|{source_sha256}|{ordinal}|{line_start}|{line_end}".encode(
-            "utf-8"
-        )
+        f"{relative_path}|{source_sha256}|{ordinal}|{line_start}|{line_end}".encode()
     )
     return hashlib.sha256(payload).hexdigest()
 
@@ -444,7 +442,8 @@ def _validate_source_table_occurrences(
                 )
             if rejection_code is not None or duplicate_of_relative_path is not None:
                 raise DatasetBuildError(
-                    "canonical source table occurrences cannot carry rejection or duplicate metadata"
+                    "canonical source table occurrences cannot carry"
+                    " rejection or duplicate metadata"
                 )
         elif status == "rejected":
             if canonical_table_id is not None or rejection_code is None:
@@ -478,7 +477,8 @@ def _duplicate_primary_relative_path(document: DocumentRecord) -> str:
     ]
     if len(duplicate_notes) != 1 or not duplicate_notes[0]:
         raise DatasetBuildError(
-            f"duplicate document must declare exactly one duplicate_of note: {document.relative_path}"
+            "duplicate document must declare exactly one"
+            f" duplicate_of note: {document.relative_path}"
         )
     return duplicate_notes[0]
 

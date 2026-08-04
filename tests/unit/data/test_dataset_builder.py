@@ -8,8 +8,8 @@ import pyarrow.parquet as pq
 
 from financial_report_qa.data.dataset_builder import (
     CELL_SCHEMA,
-    DatasetBuildConfig,
     SOURCE_TABLE_OCCURRENCE_SCHEMA,
+    DatasetBuildConfig,
     build_dataset,
     build_duplicate_source_table_occurrences,
     build_source_table_occurrences,
@@ -446,7 +446,14 @@ def test_build_source_table_occurrences_raises_on_html_candidate_without_outcome
         lines=(
             SourceLine(number=1, text="<table><tr><td>A</td></tr></table>", line_ending="\n"),
         ),
-        blocks=(TextBlock(kind="table", line_start=1, line_end=1, text="<table><tr><td>A</td></tr></table>"),),
+        blocks=(
+            TextBlock(
+                kind="table",
+                line_start=1,
+                line_end=1,
+                text="<table><tr><td>A</td></tr></table>",
+            ),
+        ),
     )
     detection = DetectionResult(
         candidates=(
@@ -594,12 +601,12 @@ def test_build_dataset_rejects_duplicate_sha_mismatch(tmp_path: Path) -> None:
 
 def test_validate_source_table_occurrences_rejects_unknown_status() -> None:
     """DatasetBuildError when occurrence row has an invalid status."""
-    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
-    from financial_report_qa.core.errors import DatasetBuildError
-
     import pytest
 
-    rows = [
+    from financial_report_qa.core.errors import DatasetBuildError
+    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
+
+    rows: list[dict[str, object]] = [
         {
             "source_table_id": "id1",
             "status": "invalid_status",
@@ -614,12 +621,12 @@ def test_validate_source_table_occurrences_rejects_unknown_status() -> None:
 
 def test_validate_source_table_occurrences_rejects_canonical_without_table_id() -> None:
     """DatasetBuildError when a canonical row is missing canonical_table_id."""
-    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
-    from financial_report_qa.core.errors import DatasetBuildError
-
     import pytest
 
-    rows = [
+    from financial_report_qa.core.errors import DatasetBuildError
+    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
+
+    rows: list[dict[str, object]] = [
         {
             "source_table_id": "id1",
             "status": "canonical",
@@ -634,12 +641,12 @@ def test_validate_source_table_occurrences_rejects_canonical_without_table_id() 
 
 def test_validate_source_table_occurrences_rejects_duplicate_without_path() -> None:
     """DatasetBuildError when a duplicate row is missing duplicate_of_relative_path."""
-    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
-    from financial_report_qa.core.errors import DatasetBuildError
-
     import pytest
 
-    rows = [
+    from financial_report_qa.core.errors import DatasetBuildError
+    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
+
+    rows: list[dict[str, object]] = [
         {
             "source_table_id": "id1",
             "status": "duplicate",
@@ -654,12 +661,12 @@ def test_validate_source_table_occurrences_rejects_duplicate_without_path() -> N
 
 def test_validate_source_table_occurrences_rejects_globally_non_unique_ids() -> None:
     """DatasetBuildError when two occurrence rows share the same source_table_id."""
-    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
-    from financial_report_qa.core.errors import DatasetBuildError
-
     import pytest
 
-    rows = [
+    from financial_report_qa.core.errors import DatasetBuildError
+    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
+
+    rows: list[dict[str, object]] = [
         {
             "source_table_id": "duplicate-id",
             "status": "canonical",
