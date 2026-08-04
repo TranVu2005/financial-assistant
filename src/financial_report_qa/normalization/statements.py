@@ -49,5 +49,9 @@ def normalize_statement_type(title_raw: str | None) -> Decision[str]:
     if not matched_families:
         return Decision(value=None)
     if len(matched_families) > 1:
+        if "notes" in matched_families and not key.startswith("thuyết minh"):
+            primary = matched_families - {"notes"}
+            if len(primary) == 1:
+                return Decision(value=next(iter(primary)))
         return Decision(value=None, issue_code="statement_conflict")
     return Decision(value=next(iter(matched_families)))

@@ -15,7 +15,8 @@ from financial_report_qa.normalization.periods import normalize_period
         ("31/12/2024", 2024, Decision(value="2024-12-31")),
         ("31-02-2024", 2024, Decision(value=None, issue_code="period_invalid")),
         ("12/11/24", 2024, Decision(value=None, issue_code="period_ambiguous")),
-        ("Tháng 12", 2024, Decision(value=None, issue_code="period_incomplete")),
+        ("Tháng 12", 2024, Decision(value="2024-12")),
+        ("Tháng", 2024, Decision(value=None, issue_code="period_incomplete")),
         ("Chỉ tiêu", 2024, Decision(value=None)),
     ],
 )

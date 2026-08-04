@@ -20,8 +20,19 @@ def normalize_period(raw: str, report_year: int) -> Decision[str]:
         return Decision(value=None)
 
     # Check 2-digit year date first
-    if _DATE_2DIGIT_YEAR_RE.match(key):
-        return Decision(value=None, issue_code="period_ambiguous")
+    m_2yr = _DATE_2DIGIT_YEAR_RE.match(key)
+    if m_2yr:
+        day_s, month_s, yy_s = m_2yr.groups()
+        day, month, yy = int(day_s), int(month_s), int(yy_s)
+        if day <= 12 and month <= 12:
+            return Decision(value=None, issue_code="period_ambiguous")
+        century = (report_year // 100) * 100
+        year = century + yy
+        try:
+            d = datetime.date(year, month, day)
+            return Decision(value=d.isoformat())
+        except ValueError:
+            return Decision(value=None, issue_code="period_invalid")
 
     # Check 4-digit year date (DD/MM/YYYY or DD-MM-YYYY)
     date_match = _DATE_4DIGIT_YEAR_RE.match(key)
@@ -48,8 +59,13 @@ def normalize_period(raw: str, report_year: int) -> Decision[str]:
         return Decision(value=year_match.group(1))
 
     # Check month only (or "tháng X")
-    if key.startswith("tháng ") or _MONTH_ONLY_RE.match(key):
-        # Ensure it wasn't matched as a plain year
+    m_month = re.match(r"^(?:tháng\s+)?(\d{1,2})$", key, re.IGNORECASE)
+    if m_month:
+        m_val = int(m_month.group(1))
+        if 1 <= m_val <= 12:
+            return Decision(value=f"{report_year}-{m_val:02d}")
+
+    if key.startswith("tháng") or key.startswith("quý") or key.startswith("năm"):
         return Decision(value=None, issue_code="period_incomplete")
 
     return Decision(value=None)

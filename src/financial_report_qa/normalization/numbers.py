@@ -31,7 +31,7 @@ def _resolve_single_separator(integer: str, separator: str) -> str | None:
     left, right = groups
     if len(right) == 3 and left.isdigit() and 1 <= len(left) <= 3:
         return left + right
-    if len(right) in {1, 2} and left.isdigit() and right.isdigit():
+    if len(right) != 3 and left.isdigit() and right.isdigit():
         return f"{left}.{right}"
     return None
 
@@ -46,6 +46,12 @@ def parse_number(raw: str) -> NumberDecision:
     # 2. Check missing markers
     if s_lower in MISSING_MARKERS:
         return NumberDecision(value=None, issue_code="number_missing")
+
+    # OCR cleanup for trailing O/o as 0 or trailing sentence point
+    if (s.endswith("O") or s.endswith("o")) and re.search(r"\d", s):
+        s = s[:-1] + "0"
+    if (s.endswith(".") or s.endswith(",")) and len(s) > 1 and s[-2].isdigit():
+        s = s[:-1].strip()
 
     unit_hint: Literal["percent"] | None = None
 

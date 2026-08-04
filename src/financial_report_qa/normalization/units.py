@@ -45,6 +45,12 @@ _RAW_UNIT_ALIASES: dict[str, CanonicalUnit] = validate_aliases(
         "billion vnd": "VND_billion",
         "1.000.000.000 vnd": "VND_billion",
         "1,000,000,000 vnd": "VND_billion",
+        "vnđ": "VND",
+        "đồng vn": "VND",
+        "nghìn vnđ": "VND_thousand",
+        "ngàn vnđ": "VND_thousand",
+        "triệu vnđ": "VND_million",
+        "tỷ vnđ": "VND_billion",
         "%": "percent",
         "phần trăm": "percent",
         "percent": "percent",
@@ -81,6 +87,15 @@ def normalize_unit(raw: str | None) -> Decision[CanonicalUnit]:
 
     stripped = _strip_prefix(key)
 
+    if (
+        re.match(r"^(?:năm|ngay|ngày|tháng|thang|quý|quy|q)?\s*\d{2,4}$", stripped, re.IGNORECASE)
+        or stripped.startswith("năm ")
+        or stripped.startswith("ngày ")
+        or stripped.startswith("tháng ")
+        or stripped.startswith("quý ")
+    ):
+        return Decision(value=None)
+
     if stripped in _RAW_UNIT_ALIASES:
         return Decision(value=_RAW_UNIT_ALIASES[stripped])
 
@@ -90,7 +105,6 @@ def normalize_unit(raw: str | None) -> Decision[CanonicalUnit]:
         inner = normalized_key(paren_match.group(1))
         if inner in _RAW_UNIT_ALIASES:
             return Decision(value=_RAW_UNIT_ALIASES[inner])
-
 
     return Decision(value=None, issue_code="unit_unknown")
 
@@ -124,6 +138,16 @@ def resolve_unit(
             has_unknown = True
 
     if len(units) > 1:
+        non_monetary = {u for u in units if u in ("percent", "ratio")}
+        if non_monetary:
+            if cell_hint is not None:
+                ch_dec = normalize_unit(cell_hint)
+                if ch_dec.value in non_monetary:
+                    return Decision(value=ch_dec.value)
+            if column_raw is not None:
+                cr_dec = normalize_unit(column_raw)
+                if cr_dec.value in non_monetary:
+                    return Decision(value=cr_dec.value)
         return Decision(value=None, issue_code="unit_conflict")
     if len(units) == 1:
         return Decision(value=next(iter(units)))

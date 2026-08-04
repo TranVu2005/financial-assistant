@@ -20,8 +20,32 @@ METRIC_ALIASES = validate_aliases(
         "Cash and cash equivalents": "cash_and_cash_equivalents",
         "Lưu chuyển tiền thuần từ hoạt động kinh doanh": "operating_cash_flow",
         "Net cash flows from operating activities": "operating_cash_flow",
+        "Lợi nhuận gộp": "gross_profit",
+        "Gross profit": "gross_profit",
+        "Doanh thu thuần": "net_revenue",
+        "Giá vốn hàng bán": "cost_of_goods_sold",
+        "Cost of goods sold": "cost_of_goods_sold",
+        "Chi phí bán hàng": "selling_expenses",
+        "Chi phí quản lý doanh nghiệp": "general_administration_expenses",
+        "Lợi nhuận thuần từ hoạt động kinh doanh": "net_operating_profit",
+        "Chi phí thuế TNDN hiện hành": "current_income_tax_expense",
+        "Chi phí thuế thu nhập doanh nghiệp hiện hành": "current_income_tax_expense",
     }
 )
+
+_NON_METRIC_PATTERNS = {
+    "stt",
+    "số tt",
+    "chỉ tiêu",
+    "mã số",
+    "thuyết minh",
+    "ghi chú",
+    "tổng cộng",
+    "cộng",
+    "a. tài sản",
+    "b. nợ phải trả",
+    "c. vốn chủ sở hữu",
+}
 
 
 def normalize_metric(raw: str | None) -> Decision[str]:
@@ -29,7 +53,7 @@ def normalize_metric(raw: str | None) -> Decision[str]:
         return Decision(value=None)
 
     key = normalized_key(raw)
-    if not key:
+    if not key or key in _NON_METRIC_PATTERNS:
         return Decision(value=None)
 
     canonical = METRIC_ALIASES.get(key)

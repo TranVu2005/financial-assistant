@@ -8,6 +8,7 @@ from financial_report_qa.ingestion.provenance import ExtractedTable, ExtractionR
 from financial_report_qa.normalization._shared import (
     RULESET_VERSION,
     issue_sort_key,
+    normalized_key,
 )
 from financial_report_qa.normalization.companies import normalize_company
 from financial_report_qa.normalization.metrics import normalize_metric
@@ -148,6 +149,11 @@ def normalize_extraction(
             is_value_candidate = (
                 cell.row_label_raw is not None
                 and cell.value_raw != cell.row_label_raw
+                and (
+                    not cell.column_label_raw
+                    or normalized_key(cell.column_label_raw)
+                    not in {"stt", "mã số", "thuyết minh", "code", "note", "notes"}
+                )
             )
 
             val_num = None
@@ -158,16 +164,19 @@ def normalize_extraction(
                 if num_dec.value is not None:
                     val_num = num_dec.value
                 elif num_dec.issue_code is not None:
-                    issues.append(
-                        _issue(
-                            code=num_dec.issue_code,
-                            field="number",
-                            document=document,
-                            table_id=table_id,
-                            cell_id=cell.cell_id,
-                            raw_value=cell.value_raw,
+                    if num_dec.issue_code == "number_missing" and metric_val is None:
+                        pass
+                    else:
+                        issues.append(
+                            _issue(
+                                code=num_dec.issue_code,
+                                field="number",
+                                document=document,
+                                table_id=table_id,
+                                cell_id=cell.cell_id,
+                                raw_value=cell.value_raw,
+                            )
                         )
-                    )
 
                 unit_dec = resolve_unit(
                     cell_hint=num_dec.unit_hint,

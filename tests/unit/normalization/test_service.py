@@ -193,3 +193,65 @@ def test_normalize_extraction_keeps_values_from_first_row_without_headers() -> N
         cell.row_idx == 0 and cell.value_numeric == Decimal("125")
         for cell in result.extraction.tables[0].cells
     )
+
+
+def test_normalize_extraction_emits_true_issues() -> None:
+    """Verify true errors (invalid unit aliases, missing markers) generate issues."""
+    digest = "d" * 64
+    document = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path="VCB/2024/Consolidated/test_true_issues.txt",
+        company_code="VCB",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=1,
+        encoding="utf-8",
+        inventory_status="ready",
+    )
+    table_id = stable_table_id(document.doc_id, 1, 10)
+    metric = "Doanh thu thuần về bán hàng và cung cấp dịch vụ"
+    cell = CellRecord(
+        cell_id=stable_cell_id(table_id, 1, 1),
+        table_id=table_id,
+        row_idx=1,
+        col_idx=1,
+        row_label_raw=metric,
+        row_label_canonical=None,
+        column_label_raw="2024",
+        column_label_canonical=None,
+        value_raw="-",
+        value_numeric=None,
+        period=None,
+        unit=None,
+        source_line_start=1,
+        source_line_end=1,
+        extraction_confidence=1.0,
+    )
+    table = ExtractedTable(
+        table=TableRecord(
+            table_id=table_id,
+            doc_id=document.doc_id,
+            title_raw="Báo cáo kết quả hoạt động kinh doanh",
+            statement_type=None,
+            unit_raw="Đơn vị tính: vô danh",
+            unit_normalized=None,
+            line_start=1,
+            line_end=10,
+            row_count=2,
+            column_count=2,
+            quality_score=1.0,
+            csv_path=None,
+        ),
+        cells=(cell,),
+        placements=(),
+        evidence=("html_table_marker",),
+    )
+    extraction = ExtractionResult(doc_id=document.doc_id, blocks=(), tables=(table,), rejected=())
+    norm_doc = normalize_extraction(document, extraction)
+    issue_codes = {i.code for i in norm_doc.issues}
+    assert "unit_unknown" in issue_codes
+    assert "number_missing" in issue_codes
+

@@ -287,3 +287,13 @@ def test_normalization_audit_sample_and_baseline_cli(tmp_path: Path) -> None:
     assert data["release_fingerprint"] == "release-1"
     assert "metrics_by_issue" in data
     assert "unit_unknown" in data["metrics_by_issue"]
+    unit_unknown_metrics = data["metrics_by_issue"]["unit_unknown"]
+    assert float(unit_unknown_metrics["false_positive_rate"]) <= 0.10
+    true_rate = float(unit_unknown_metrics["true_issue_count"]) / float(
+        unit_unknown_metrics["sample_count"]
+    )
+    assert true_rate >= 0.90
+    md_content = baseline_md.read_text(encoding="utf-8")
+    assert "| `unit_unknown` | 3 | 3 | 0 | 0 | 0 | 1.0000 | 0.0000 |" in md_content
+
+
