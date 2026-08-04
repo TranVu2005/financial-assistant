@@ -61,3 +61,14 @@ def test_economic_value_and_invalid_conversions() -> None:
     assert economic_value(Decimal("1500"), "VND_million") == Decimal("1500000000")
     with pytest.raises(ValueError, match="incompatible scale conversion"):
         convert_scale(Decimal("100"), source="VND", target="percent")
+
+
+def test_resolve_unit_ignores_year_column_labels_without_unit_markers() -> None:
+    """Regression: 'Năm 2024' or '2024' in column headers should not trigger unit_unknown."""
+    decision = resolve_unit(cell_hint=None, column_raw="2024", table_raw=None)
+    assert decision.value is None
+    assert decision.issue_code is None
+
+    decision_year = resolve_unit(cell_hint=None, column_raw="Năm 2024", table_raw=None)
+    assert decision_year.value is None
+    assert decision_year.issue_code is None

@@ -61,6 +61,16 @@ def _strip_prefix(key: str) -> str:
     return key
 
 
+_UNIT_EVIDENCE_RE = re.compile(
+    r"(?i)(vnd|vnđ|đồng|dong|nghìn|ngàn|ngan|triệu|trieu|tỷ|ty|%|phần trăm|lần|lầ?n)"
+)
+
+
+def _has_unit_evidence(value: str) -> bool:
+    """Return True if *value* contains at least one token that looks like a unit."""
+    return bool(_UNIT_EVIDENCE_RE.search(value))
+
+
 def normalize_unit(raw: str | None) -> Decision[CanonicalUnit]:
     if raw is None:
         return Decision(value=None)
@@ -94,7 +104,7 @@ def resolve_unit(
         cell_dec = normalize_unit(cell_hint)
         decisions.append(cell_dec)
 
-    if column_raw is not None:
+    if column_raw is not None and _has_unit_evidence(column_raw):
         col_dec = normalize_unit(column_raw)
         if col_dec.value is not None or col_dec.issue_code is not None:
             decisions.append(col_dec)

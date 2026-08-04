@@ -148,7 +148,6 @@ def normalize_extraction(
             is_value_candidate = (
                 cell.row_label_raw is not None
                 and cell.value_raw != cell.row_label_raw
-                and cell.row_idx > 0
             )
 
             val_num = None
