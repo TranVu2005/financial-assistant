@@ -86,9 +86,7 @@ class NormalizationIssue(BaseModel):
     doc_id: str
     table_id: str | None
     cell_id: str | None
-    field: Literal[
-        "company", "period", "statement_type", "metric", "number", "unit"
-    ]
+    field: Literal["company", "period", "statement_type", "metric", "number", "unit"]
     raw_value: str | None
 
 

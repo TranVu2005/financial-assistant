@@ -18,8 +18,7 @@ def valid_document_payload() -> dict[str, object]:
         "repo_id": "AIGuruTinix/ViFinQA",
         "revision": "main",
         "relative_path": (
-            "financial_statements/AAA/2015/"
-            "AAA_financial_statements_2015_consolidated/report.txt"
+            "financial_statements/AAA/2015/AAA_financial_statements_2015_consolidated/report.txt"
         ),
         "company_code": "AAA",
         "report_year": 2015,
@@ -54,10 +53,7 @@ def test_stable_document_id_rejects_non_string_input_with_value_error() -> None:
 
 def test_document_record_round_trip_preserves_vietnamese_unicode() -> None:
     payload = valid_document_payload()
-    unicode_path = (
-        "financial_statements/AAA/2015/"
-        "Báo cáo tài chính hợp nhất/report.txt"
-    )
+    unicode_path = "financial_statements/AAA/2015/Báo cáo tài chính hợp nhất/report.txt"
     payload["relative_path"] = unicode_path
 
     record = DocumentRecord.model_validate(payload)
@@ -140,7 +136,6 @@ def test_schema_package_exports_only_approved_day_one_interfaces() -> None:
         "stable_document_id",
         "stable_table_id",
     )
-
 
     assert schemas.__all__ == expected
     assert all(getattr(schemas, name) is not None for name in expected)

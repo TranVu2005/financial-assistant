@@ -1,4 +1,7 @@
+# mypy: ignore-errors
 from decimal import Decimal
+
+import pytest
 
 from financial_report_qa.ingestion.provenance import (
     CellPlacement,
@@ -106,14 +109,13 @@ def test_normalize_extraction_populates_canonical_fields_and_preserves_raw() -> 
     assert values["(1.500)"].unit == "VND_million"
     assert values["(1.500)"].period == "2023"
     assert values["(1.500)"].row_label_canonical == "net_revenue"
-    assert values["(1.500)"].row_label_raw == (
-        "Doanh thu thuần về bán hàng và cung cấp dịch vụ"
-    )
+    assert values["(1.500)"].row_label_raw == ("Doanh thu thuần về bán hàng và cung cấp dịch vụ")
     assert normalized.extraction.blocks == result.blocks
     assert normalized.extraction.rejected == result.rejected
-    assert normalized.normalization_fingerprint == normalize_extraction(
-        document, result
-    ).normalization_fingerprint
+    assert (
+        normalized.normalization_fingerprint
+        == normalize_extraction(document, result).normalization_fingerprint
+    )
 
 
 def test_public_api_exports() -> None:
@@ -175,9 +177,7 @@ def test_normalize_extraction_keeps_values_from_first_row_without_headers() -> N
             csv_path=None,
         ),
         cells=cells,
-        placements=(
-            CellPlacement(row_idx=0, col_idx=0, cell_id=cells[0].cell_id),
-        ),
+        placements=(CellPlacement(row_idx=0, col_idx=0, cell_id=cells[0].cell_id),),
         evidence=("html_table_marker",),
     )
     extraction = ExtractionResult(
@@ -253,5 +253,261 @@ def test_normalize_extraction_emits_true_issues() -> None:
     norm_doc = normalize_extraction(document, extraction)
     issue_codes = {i.code for i in norm_doc.issues}
     assert "unit_unknown" in issue_codes
-    assert "number_missing" in issue_codes
 
+
+@pytest.fixture
+def normalization_fixture():
+    def _fixture(column_label="2024", value_raw="1000"):
+        digest = "e" * 64
+        document = DocumentRecord(
+            doc_id=stable_document_id(digest),
+            repo_id="org/vifinqa",
+            revision="rev-1",
+            relative_path="VCB/2024/Consolidated/report_fixture.txt",
+            company_code="VCB",
+            report_year=2024,
+            statement_scope="consolidated",
+            sha256=digest,
+            file_size_bytes=1,
+            encoding="utf-8",
+            inventory_status="ready",
+        )
+        table_id = stable_table_id(document.doc_id, 3, 6)
+        title = "Báo cáo kết quả hoạt động kinh doanh"
+        metric = "Doanh thu thuần về bán hàng và cung cấp dịch vụ"
+        source_cells = [
+            (0, 0, "Chỉ tiêu", None, "Chỉ tiêu", 4),
+            (0, 1, column_label, None, column_label, 4),
+            (1, 0, metric, metric, "Chỉ tiêu", 5),
+            (1, 1, value_raw, metric, column_label, 5),
+        ]
+        cells = tuple(
+            CellRecord(
+                cell_id=stable_cell_id(table_id, row_idx, col_idx),
+                table_id=table_id,
+                row_idx=row_idx,
+                col_idx=col_idx,
+                row_label_raw=row_label,
+                row_label_canonical=None,
+                column_label_raw=column_label,
+                column_label_canonical=None,
+                value_raw=value,
+                value_numeric=None,
+                period=None,
+                unit=None,
+                source_line_start=line,
+                source_line_end=line,
+                extraction_confidence=1.0,
+            )
+            for row_idx, col_idx, value, row_label, column_label, line in source_cells
+        )
+        table = ExtractedTable(
+            table=TableRecord(
+                table_id=table_id,
+                doc_id=document.doc_id,
+                title_raw=title,
+                statement_type=None,
+                unit_raw="Đơn vị tính: triệu đồng",
+                unit_normalized=None,
+                line_start=3,
+                line_end=6,
+                row_count=2,
+                column_count=2,
+                quality_score=1.0,
+                csv_path=None,
+            ),
+            cells=cells,
+            placements=tuple(
+                CellPlacement(row_idx=cell.row_idx, col_idx=cell.col_idx, cell_id=cell.cell_id)
+                for cell in cells
+            ),
+            evidence=("html_table_marker",),
+        )
+        extraction = ExtractionResult(
+            doc_id=document.doc_id,
+            blocks=(),
+            tables=(table,),
+            rejected=(),
+        )
+        return document, extraction
+
+    return _fixture
+
+
+def test_generic_column_header_emits_no_period_issue(normalization_fixture):
+    result = normalize_extraction(*normalization_fixture(column_label="Giá trị"))
+    assert not any(issue.field == "period" for issue in result.issues)
+
+
+def test_missing_marker_stays_null_without_number_issue(normalization_fixture):
+    result = normalize_extraction(*normalization_fixture(value_raw="-"))
+    cell = result.extraction.tables[0].cells[1]
+    assert cell.value_numeric is None
+    assert not any(issue.field == "number" for issue in result.issues)
+
+
+def test_malformed_numeric_candidate_keeps_number_invalid(normalization_fixture):
+    result = normalize_extraction(*normalization_fixture(value_raw="1.50.0"))
+    assert any(issue.code == "number_invalid" for issue in result.issues)
+
+
+@pytest.fixture
+def notes_fixture():
+    def _fixture(row_label="Diễn giải bổ sung"):
+        digest = "f" * 64
+        document = DocumentRecord(
+            doc_id=stable_document_id(digest),
+            repo_id="org/vifinqa",
+            revision="rev-1",
+            relative_path="VCB/2024/Consolidated/notes.txt",
+            company_code="VCB",
+            report_year=2024,
+            statement_scope="consolidated",
+            sha256=digest,
+            file_size_bytes=1,
+            encoding="utf-8",
+            inventory_status="ready",
+        )
+        table_id = stable_table_id(document.doc_id, 3, 6)
+        title = "Thuyết minh báo cáo tài chính"  # Unclassified statement type
+        source_cells = [
+            (0, 0, row_label, row_label, "Chỉ tiêu", 4),
+            (0, 1, "1000", row_label, "2024", 4),
+        ]
+        cells = tuple(
+            CellRecord(
+                cell_id=stable_cell_id(table_id, row_idx, col_idx),
+                table_id=table_id,
+                row_idx=row_idx,
+                col_idx=col_idx,
+                row_label_raw=row_label_str,
+                row_label_canonical=None,
+                column_label_raw=column_label,
+                column_label_canonical=None,
+                value_raw=value,
+                value_numeric=None,
+                period=None,
+                unit=None,
+                source_line_start=line,
+                source_line_end=line,
+                extraction_confidence=1.0,
+            )
+            for row_idx, col_idx, value, row_label_str, column_label, line in source_cells
+        )
+        table = ExtractedTable(
+            table=TableRecord(
+                table_id=table_id,
+                doc_id=document.doc_id,
+                title_raw=title,
+                statement_type=None,
+                unit_raw="Đơn vị tính: triệu đồng",
+                unit_normalized=None,
+                line_start=3,
+                line_end=6,
+                row_count=1,
+                column_count=2,
+                quality_score=1.0,
+                csv_path=None,
+            ),
+            cells=cells,
+            placements=tuple(
+                CellPlacement(row_idx=cell.row_idx, col_idx=cell.col_idx, cell_id=cell.cell_id)
+                for cell in cells
+            ),
+            evidence=("html_table_marker",),
+        )
+        extraction = ExtractionResult(
+            doc_id=document.doc_id,
+            blocks=(),
+            tables=(table,),
+            rejected=(),
+        )
+        return document, extraction
+
+    return _fixture
+
+
+@pytest.fixture
+def statement_fixture():
+    def _fixture(row_label="Chỉ tiêu chưa ánh xạ"):
+        digest = "ff" * 32
+        document = DocumentRecord(
+            doc_id=stable_document_id(digest),
+            repo_id="org/vifinqa",
+            revision="rev-1",
+            relative_path="VCB/2024/Consolidated/stmt.txt",
+            company_code="VCB",
+            report_year=2024,
+            statement_scope="consolidated",
+            sha256=digest,
+            file_size_bytes=1,
+            encoding="utf-8",
+            inventory_status="ready",
+        )
+        table_id = stable_table_id(document.doc_id, 3, 6)
+        title = "Báo cáo kết quả hoạt động kinh doanh"  # Income statement
+        source_cells = [
+            (0, 0, row_label, row_label, "Chỉ tiêu", 4),
+            (0, 1, "1000", row_label, "2024", 4),
+        ]
+        cells = tuple(
+            CellRecord(
+                cell_id=stable_cell_id(table_id, row_idx, col_idx),
+                table_id=table_id,
+                row_idx=row_idx,
+                col_idx=col_idx,
+                row_label_raw=row_label_str,
+                row_label_canonical=None,
+                column_label_raw=column_label,
+                column_label_canonical=None,
+                value_raw=value,
+                value_numeric=None,
+                period=None,
+                unit=None,
+                source_line_start=line,
+                source_line_end=line,
+                extraction_confidence=1.0,
+            )
+            for row_idx, col_idx, value, row_label_str, column_label, line in source_cells
+        )
+        table = ExtractedTable(
+            table=TableRecord(
+                table_id=table_id,
+                doc_id=document.doc_id,
+                title_raw=title,
+                statement_type=None,
+                unit_raw="Đơn vị tính: triệu đồng",
+                unit_normalized=None,
+                line_start=3,
+                line_end=6,
+                row_count=1,
+                column_count=2,
+                quality_score=1.0,
+                csv_path=None,
+            ),
+            cells=cells,
+            placements=tuple(
+                CellPlacement(row_idx=cell.row_idx, col_idx=cell.col_idx, cell_id=cell.cell_id)
+                for cell in cells
+            ),
+            evidence=("html_table_marker",),
+        )
+        extraction = ExtractionResult(
+            doc_id=document.doc_id,
+            blocks=(),
+            tables=(table,),
+            rejected=(),
+        )
+        return document, extraction
+
+    return _fixture
+
+
+def test_unknown_row_in_unclassified_notes_table_emits_no_metric_issue(notes_fixture):
+    result = normalize_extraction(*notes_fixture(row_label="Diễn giải bổ sung"))
+    assert not any(issue.code == "metric_unknown" for issue in result.issues)
+
+
+def test_unknown_row_in_financial_statement_keeps_metric_issue(statement_fixture):
+    result = normalize_extraction(*statement_fixture(row_label="Chỉ tiêu chưa ánh xạ"))
+    assert any(issue.code == "metric_unknown" for issue in result.issues)

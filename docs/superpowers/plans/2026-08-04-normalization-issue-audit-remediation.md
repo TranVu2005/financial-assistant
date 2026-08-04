@@ -115,10 +115,7 @@ Expected: FAIL because label interfaces are absent.
 ~~~python
 conclusive = true_issue_count + false_positive_count
 coverage = Decimal(conclusive) / Decimal(sample_count)
-false_positive_rate = (
-    Decimal(false_positive_count) / Decimal(conclusive)
-    if conclusive else None
-)
+false_positive_rate = Decimal(false_positive_count) / Decimal(conclusive) if conclusive else None
 ~~~
 
 - [ ] Step 4: Add a test with 4 samples: one true issue, one false positive, one uncertain and one unlabeled. Assert coverage 0.5, false-positive rate 0.5, uncertain 1 and unlabeled 1.
@@ -187,10 +184,12 @@ def test_period_evidence_rejects_generic_headers():
     assert has_period_evidence("2024") is True
     assert has_period_evidence("Tháng 12") is True
 
+
 def test_number_candidate_rejects_text_but_keeps_malformed_numeric_input():
     assert is_numeric_candidate("Thuyết minh") is False
     assert is_numeric_candidate("1.50.0") is True
     assert is_missing_number("—") is True
+
 
 def test_unit_evidence_rejects_year_header():
     assert has_unit_evidence("2024") is False
@@ -214,11 +213,13 @@ def test_generic_column_header_emits_no_period_issue(normalization_fixture):
     result = normalize_extraction(*normalization_fixture(column_label="Giá trị"))
     assert not any(issue.field == "period" for issue in result.issues)
 
+
 def test_missing_marker_stays_null_without_number_issue(normalization_fixture):
     result = normalize_extraction(*normalization_fixture(value_raw="-"))
     cell = result.extraction.tables[0].cells[1]
     assert cell.value_numeric is None
     assert not any(issue.field == "number" for issue in result.issues)
+
 
 def test_malformed_numeric_candidate_keeps_number_invalid(normalization_fixture):
     result = normalize_extraction(*normalization_fixture(value_raw="1.50.0"))
@@ -257,6 +258,7 @@ Expected: PASS; fixture table counts and table IDs are unchanged.
 def test_unknown_row_in_unclassified_notes_table_emits_no_metric_issue(notes_fixture):
     result = normalize_extraction(*notes_fixture(row_label="Diễn giải bổ sung"))
     assert not any(issue.code == "metric_unknown" for issue in result.issues)
+
 
 def test_unknown_row_in_financial_statement_keeps_metric_issue(statement_fixture):
     result = normalize_extraction(*statement_fixture(row_label="Chỉ tiêu chưa ánh xạ"))

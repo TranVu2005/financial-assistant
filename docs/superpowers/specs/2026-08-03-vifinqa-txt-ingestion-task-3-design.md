@@ -99,12 +99,15 @@ Focused modules also expose:
 ```python
 def read_document(root: Path, document: DocumentRecord) -> DecodedDocument: ...
 
+
 def detect_table_candidates(document: DecodedDocument) -> DetectionResult: ...
+
 
 def extract_candidates(
     document: DecodedDocument,
     detection: DetectionResult,
 ) -> ExtractionResult: ...
+
 
 def stable_cell_id(table_id: str, origin_row: int, origin_col: int) -> str: ...
 ```

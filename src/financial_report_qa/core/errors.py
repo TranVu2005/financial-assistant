@@ -55,5 +55,3 @@ class Week1GatePublicationError(Week1GateError):
 
 class QualityGateError(FinancialReportQAError):
     """A quality gate threshold or invariant was violated."""
-
-

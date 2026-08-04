@@ -154,9 +154,7 @@ def test_invalid_or_huge_span_rejects_before_grid_expansion(
     result = extract(tmp_path, source)
 
     assert [item.reason for item in result.rejected] == [reason]
-    assert [[cell.value_raw for cell in table.cells] for table in result.tables] == [
-        ["good", "1"]
-    ]
+    assert [[cell.value_raw for cell in table.cells] for table in result.tables] == [["good", "1"]]
 
 
 @pytest.mark.parametrize(
@@ -167,9 +165,7 @@ def test_invalid_or_huge_span_rejects_before_grid_expansion(
         "x" * 201,
     ],
 )
-def test_title_skips_ineligible_nearest_prior_lines(
-    tmp_path: Path, prior_line: str
-) -> None:
+def test_title_skips_ineligible_nearest_prior_lines(tmp_path: Path, prior_line: str) -> None:
     source = f"Eligible title\n{prior_line}\n<table><tr><td>A</td><td>1</td></tr></table>\n"
 
     result = extract(tmp_path, source)
@@ -291,8 +287,7 @@ def test_three_page_merge_rebuilds_ids_rows_and_span_placements(tmp_path: Path) 
     assert [cell.value_raw for cell in extracted.cells].count("Metric") == 1
     cells = {cell.value_raw: cell for cell in extracted.cells}
     row_indices = {
-        value: cells[value].row_idx
-        for value in ("Revenue", "Audited", "Expense", "Profit")
+        value: cells[value].row_idx for value in ("Revenue", "Audited", "Expense", "Profit")
     }
     assert row_indices == {
         "Revenue": 2,
@@ -315,8 +310,7 @@ def test_three_page_merge_rebuilds_ids_rows_and_span_placements(tmp_path: Path) 
 
 def test_does_not_merge_compatible_headers_across_prose(tmp_path: Path) -> None:
     table = (
-        "<table><tr><th>Metric</th><th>2024</th></tr>"
-        "<tr><td>Revenue</td><td>100</td></tr></table>"
+        "<table><tr><th>Metric</th><th>2024</th></tr><tr><td>Revenue</td><td>100</td></tr></table>"
     )
     source = f"{table}\n===== PAGE 2 =====\nNarrative explanation\n{table}\n"
 

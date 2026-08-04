@@ -14,6 +14,27 @@ _YEAR_RE = re.compile(r"^(?:năm\s+)?((?:19|20)\d{2})$", re.IGNORECASE)
 _MONTH_ONLY_RE = re.compile(r"^(?:tháng\s+)?(\d{1,2})$", re.IGNORECASE)
 
 
+def has_period_evidence(raw: str | None) -> bool:
+    if raw is None:
+        return False
+    key = normalized_key(raw)
+    if not key:
+        return False
+    if _DATE_2DIGIT_YEAR_RE.match(key):
+        return True
+    if _DATE_4DIGIT_YEAR_RE.match(key):
+        return True
+    if _QUARTER_RE.match(key):
+        return True
+    if _YEAR_RE.match(key):
+        return True
+    if re.match(r"^(?:tháng\s+)?(\d{1,2})$", key, re.IGNORECASE):
+        return True
+    if key.startswith("tháng") or key.startswith("quý") or key.startswith("năm"):
+        return True
+    return False
+
+
 def normalize_period(raw: str, report_year: int) -> Decision[str]:
     key = normalized_key(raw)
     if not key:

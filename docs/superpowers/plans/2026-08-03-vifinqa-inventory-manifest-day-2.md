@@ -69,9 +69,7 @@ def test_parse_vifinqa_path_preserves_unicode_and_extracts_metadata(tmp_path: Pa
 
     metadata = _parse_vifinqa_path(path, root)
 
-    assert metadata.relative_path == (
-        "vcb/2024/Báo cáo CONSOLIDATED/bảng cân đối.TXT"
-    )
+    assert metadata.relative_path == ("vcb/2024/Báo cáo CONSOLIDATED/bảng cân đối.TXT")
     assert metadata.company_code == "VCB"
     assert metadata.report_year == 2024
     assert metadata.statement_scope == "consolidated"
@@ -414,7 +412,9 @@ def build_inventory(
         try:
             inspection = _inspect_file(path)
         except OSError as error:
-            issues.append(InventoryIssue(relative_path=relative_path, reason=f"read failure: {error}"))
+            issues.append(
+                InventoryIssue(relative_path=relative_path, reason=f"read failure: {error}")
+            )
             continue
         try:
             metadata = _parse_vifinqa_path(path, root)
@@ -560,11 +560,15 @@ def test_write_manifest_sorts_all_paths_preserves_unicode_and_round_trips(
         "VCB/2024/Consolidated/Báo cáo.txt",
     ]
     assert rows[0]["record_type"] == "issue"
-    assert InventoryIssue.model_validate({k: v for k, v in rows[0].items() if k != "record_type"}) == issue
+    assert (
+        InventoryIssue.model_validate({k: v for k, v in rows[0].items() if k != "record_type"})
+        == issue
+    )
     assert rows[1]["record_type"] == "document"
-    assert DocumentRecord.model_validate(
-        {k: v for k, v in rows[1].items() if k != "record_type"}
-    ) == document
+    assert (
+        DocumentRecord.model_validate({k: v for k, v in rows[1].items() if k != "record_type"})
+        == document
+    )
 
 
 def test_write_manifest_is_byte_deterministic(tmp_path: Path) -> None:
@@ -732,10 +736,14 @@ def test_inventory_main_writes_manifest_and_prints_counts(
 
     exit_code = main(
         [
-            "--root", str(root),
-            "--repo-id", "org/vifinqa",
-            "--revision", "abc123",
-            "--manifest", str(manifest),
+            "--root",
+            str(root),
+            "--repo-id",
+            "org/vifinqa",
+            "--revision",
+            "abc123",
+            "--manifest",
+            str(manifest),
         ]
     )
 
@@ -755,9 +763,12 @@ def test_inventory_main_reports_expected_failure_without_traceback(
 ) -> None:
     exit_code = main(
         [
-            "--root", str(tmp_path / "missing"),
-            "--repo-id", "org/vifinqa",
-            "--revision", "abc123",
+            "--root",
+            str(tmp_path / "missing"),
+            "--repo-id",
+            "org/vifinqa",
+            "--revision",
+            "abc123",
         ]
     )
 

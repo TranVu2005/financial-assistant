@@ -11,8 +11,12 @@ import pyarrow.parquet as pq
 import yaml  # type: ignore[import-untyped]
 
 from financial_report_qa.evaluation.normalization_audit import (
+    AuditComparison,
     AuditSamplingConfig,
+    QualityGateError,
     build_issue_sample,
+    compare_releases,
+    enforce_quality_gate,
     evaluate_labels,
     load_and_validate_labels,
 )
@@ -70,6 +74,41 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=True,
         help="Target directory to publish baseline.json and baseline.md reports",
+    )
+
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Compare two releases and enforce quality gates.",
+    )
+    compare_parser.add_argument(
+        "--before",
+        type=Path,
+        required=True,
+        help="Path to before dataset release directory",
+    )
+    compare_parser.add_argument(
+        "--after",
+        type=Path,
+        required=True,
+        help="Path to after dataset release directory",
+    )
+    compare_parser.add_argument(
+        "--sample",
+        type=Path,
+        required=True,
+        help="Path to sampled Parquet dataset",
+    )
+    compare_parser.add_argument(
+        "--labels",
+        type=Path,
+        required=True,
+        help="Path to human labels CSV file",
+    )
+    compare_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Target directory to publish comparison.json and comparison.md reports",
     )
     return parser
 
@@ -130,13 +169,10 @@ def run_baseline_subcommand(sample_path: Path, labels_path: Path, output_dir: Pa
     report_data = {
         "release_fingerprint": release_fp,
         "metrics_by_issue": {
-            code: m.model_dump(mode="json")
-            for code, m in sorted(metrics_by_issue.items())
+            code: m.model_dump(mode="json") for code, m in sorted(metrics_by_issue.items())
         },
     }
-    json_path.write_text(
-        json.dumps(report_data, sort_keys=True, indent=2) + "\n", encoding="utf-8"
-    )
+    json_path.write_text(json.dumps(report_data, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 
     md_lines = [
         "# Normalization Issue Audit Baseline Report",
@@ -163,6 +199,101 @@ def run_baseline_subcommand(sample_path: Path, labels_path: Path, output_dir: Pa
     print(f"Baseline report published to {output_dir}")
 
 
+def run_compare_subcommand(
+    before_path: Path,
+    after_path: Path,
+    sample_path: Path,
+    labels_path: Path,
+    output_dir: Path,
+) -> None:
+    """Execute the release comparison and quality gate check command."""
+    comparison = compare_releases(before_path, after_path, sample_path, labels_path)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    json_path = output_dir / "comparison.json"
+    md_path = output_dir / "comparison.md"
+
+    passed = True
+    errors: list[str] = []
+
+    try:
+        enforce_quality_gate(comparison)
+    except QualityGateError as e:
+        passed = False
+        errors = str(e).split("; ")
+
+    comparison_with_status = AuditComparison(
+        before_fingerprint=comparison.before_fingerprint,
+        after_fingerprint=comparison.after_fingerprint,
+        before_table_count=comparison.before_table_count,
+        after_table_count=comparison.after_table_count,
+        before_issue_count=comparison.before_issue_count,
+        after_issue_count=comparison.after_issue_count,
+        coverage=comparison.coverage,
+        false_positive_rate=comparison.false_positive_rate,
+        passed=passed,
+        errors=tuple(errors),
+        metrics_by_code=comparison.metrics_by_code,
+    )
+
+    report_data = comparison_with_status.model_dump(mode="json")
+    json_path.write_text(json.dumps(report_data, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+    md_lines = [
+        "# Normalization Audit Comparison Report",
+        "",
+        f"**Before Release:** `{comparison.before_fingerprint}`",
+        f"**After Release:** `{comparison.after_fingerprint}`",
+        "",
+        f"**Passed Quality Gate:** `{'Yes' if passed else 'No'}`",
+    ]
+    if errors:
+        md_lines.append("")
+        md_lines.append("## Quality Gate Failures")
+        for err in errors:
+            md_lines.append(f"- {err}")
+
+    overall_fpr = (
+        f"{comparison.false_positive_rate:.4f}"
+        if comparison.false_positive_rate is not None
+        else "N/A"
+    )
+    md_lines.extend(
+        [
+            "",
+            "## Summary Metrics",
+            "",
+            f"- Before Table Count: {comparison.before_table_count}",
+            f"- After Table Count: {comparison.after_table_count}",
+            f"- Before Issue Count: {comparison.before_issue_count}",
+            f"- After Issue Count: {comparison.after_issue_count}",
+            f"- Sample Coverage: {comparison.coverage:.4f}",
+            f"- Overall False-Positive Rate: {overall_fpr}",
+            "",
+            "## Metrics by Issue",
+            "",
+            (
+                "| Issue Code | Sample Count | True Issue | False Positive | "
+                "Uncertain | Unlabeled | Conclusive Coverage | False Positive Rate |"
+            ),
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for code, m in sorted(comparison.metrics_by_code.items()):
+        fpr = f"{m.false_positive_rate:.4f}" if m.false_positive_rate is not None else "N/A"
+        md_lines.append(
+            f"| `{code}` | {m.sample_count} | {m.true_issue_count} | "
+            f"{m.false_positive_count} | {m.uncertain_count} | {m.unlabeled_count} | "
+            f"{m.conclusive_coverage:.4f} | {fpr} |"
+        )
+    md_lines.extend(["", ""])
+    md_path.write_text("\n".join(md_lines), encoding="utf-8")
+    print(f"Comparison report published to {output_dir}")
+
+    if not passed:
+        raise QualityGateError("; ".join(errors))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Main CLI entrypoint for normalization-audit."""
     parser = build_parser()
@@ -176,6 +307,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_sample_subcommand(args.release, args.output, args.config)
         elif args.subcommand == "baseline":
             run_baseline_subcommand(args.sample, args.labels, args.output_dir)
+        elif args.subcommand == "compare":
+            run_compare_subcommand(
+                args.before,
+                args.after,
+                args.sample,
+                args.labels,
+                args.output_dir,
+            )
         return 0
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)

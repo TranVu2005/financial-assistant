@@ -36,6 +36,8 @@ _UNIT_MARKERS = (
     "\u00c4\u2018\u00c6\u00a1n v\u00e1\u00bb\u2039 t\u00c3\u00adnh",
     "\u00c4\u2018vt",
 )
+
+
 class _ExtractionFailure(Exception):
     def __init__(self, reason: RejectionCode) -> None:
         self.reason = reason
@@ -612,9 +614,7 @@ def _merge_pair(first: ExtractedTable, second: ExtractedTable) -> ExtractedTable
                     cell_id=cell_ids[(source_number, placement.cell_id)],
                 )
             )
-    evidence = tuple(
-        dict.fromkeys((*first.evidence, *second.evidence, "continued_across_page"))
-    )
+    evidence = tuple(dict.fromkeys((*first.evidence, *second.evidence, "continued_across_page")))
     return ExtractedTable(
         table=merged_table,
         cells=tuple(cells),

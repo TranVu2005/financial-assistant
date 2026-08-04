@@ -39,7 +39,6 @@ def test_normalized_document_is_frozen_and_requires_matching_document() -> None:
         setattr(normalized, "ruleset_version", "changed")
 
 
-
 def test_normalized_document_rejects_mismatched_doc_id() -> None:
     document = _document()
     extraction = ExtractionResult(doc_id=f"doc_{'c' * 64}", blocks=(), tables=(), rejected=())

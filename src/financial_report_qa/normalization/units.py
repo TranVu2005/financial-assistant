@@ -4,9 +4,7 @@ from typing import Literal
 
 from financial_report_qa.normalization._shared import Decision, normalized_key, validate_aliases
 
-CanonicalUnit = Literal[
-    "VND", "VND_thousand", "VND_million", "VND_billion", "percent", "ratio"
-]
+CanonicalUnit = Literal["VND", "VND_thousand", "VND_million", "VND_billion", "percent", "ratio"]
 
 _MULTIPLIERS: dict[CanonicalUnit, Decimal] = {
     "VND": Decimal(1),
@@ -75,6 +73,27 @@ _UNIT_EVIDENCE_RE = re.compile(
 def _has_unit_evidence(value: str) -> bool:
     """Return True if *value* contains at least one token that looks like a unit."""
     return bool(_UNIT_EVIDENCE_RE.search(value))
+
+
+def has_unit_evidence(raw: str | None) -> bool:
+    if raw is None:
+        return False
+    key = normalized_key(raw)
+    if not key:
+        return False
+    for prefix in ("đơn vị tính:", "đơn vị:", "đvt:"):
+        if key.startswith(prefix):
+            return True
+    stripped = _strip_prefix(key)
+    if (
+        re.match(r"^(?:năm|ngay|ngày|tháng|thang|quý|quy|q)?\s*\d{2,4}$", stripped, re.IGNORECASE)
+        or stripped.startswith("năm ")
+        or stripped.startswith("ngày ")
+        or stripped.startswith("tháng ")
+        or stripped.startswith("quý ")
+    ):
+        return False
+    return _has_unit_evidence(stripped)
 
 
 def normalize_unit(raw: str | None) -> Decision[CanonicalUnit]:
@@ -165,9 +184,7 @@ def economic_value(value: Decimal, unit: CanonicalUnit) -> Decimal:
     return value * _MULTIPLIERS[unit]
 
 
-def convert_scale(
-    value: Decimal, source: CanonicalUnit, target: CanonicalUnit
-) -> Decimal:
+def convert_scale(value: Decimal, source: CanonicalUnit, target: CanonicalUnit) -> Decimal:
     if (source in _MONETARY_UNITS) != (target in _MONETARY_UNITS):
         raise ValueError("incompatible scale conversion")
     if source not in _MONETARY_UNITS and source != target:

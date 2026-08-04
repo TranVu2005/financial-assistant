@@ -679,9 +679,7 @@ _NOTES_HEADINGS = {
 def _safe_source_path(root: Path, document: DocumentRecord) -> Path:
     try:
         root_resolved = root.resolve()
-        source = (
-            root_resolved / Path(*PurePosixPath(document.relative_path).parts)
-        ).resolve()
+        source = (root_resolved / Path(*PurePosixPath(document.relative_path).parts)).resolve()
     except OSError as error:
         errno = "unknown" if error.errno is None else str(error.errno)
         raise SourceReadError(
@@ -816,11 +814,7 @@ Import `hashlib`, `Path`, `DecodedDocument`, `read_document`, `DocumentRecord`, 
 
 ```python
 def test_detector_prefers_closed_html_and_preserves_span(tmp_path: Path) -> None:
-    source = (
-        "Mở đầu\n"
-        "<table>\n<tr><td>Chỉ tiêu</td><td>2024</td></tr>\n</table>\n"
-        "Sau bảng\n"
-    )
+    source = "Mở đầu\n<table>\n<tr><td>Chỉ tiêu</td><td>2024</td></tr>\n</table>\nSau bảng\n"
     result = detect_table_candidates(decoded(tmp_path, source))
 
     assert len(result.candidates) == 1
@@ -852,8 +846,7 @@ def test_detector_rejects_invalid_html_regions(
 
 def test_detector_splits_sibling_tables_on_one_line(tmp_path: Path) -> None:
     source = (
-        "<table><tr><td>A</td><td>1</td></tr></table>"
-        "<table><tr><td>B</td><td>2</td></tr></table>\n"
+        "<table><tr><td>A</td><td>1</td></tr></table><table><tr><td>B</td><td>2</td></tr></table>\n"
     )
     result = detect_table_candidates(decoded(tmp_path, source))
 
@@ -868,11 +861,7 @@ Add exact structured and prose cases:
 
 ```python
 def test_fallback_accepts_only_consistent_financial_rows(tmp_path: Path) -> None:
-    source = (
-        "Chỉ tiêu\t2024\t2023\n"
-        "Doanh thu\t1.000\t900\n"
-        "Lợi nhuận\t100\t80\n"
-    )
+    source = "Chỉ tiêu\t2024\t2023\nDoanh thu\t1.000\t900\nLợi nhuận\t100\t80\n"
     result = detect_table_candidates(decoded(tmp_path, source))
 
     assert len(result.candidates) == 1
@@ -911,19 +900,11 @@ def test_fallback_rejects_delimited_rows_without_financial_evidence(tmp_path: Pa
     result = detect_table_candidates(decoded(tmp_path, source))
 
     assert result.candidates == ()
-    assert [item.reason for item in result.rejected] == [
-        "insufficient_structural_evidence"
-    ]
+    assert [item.reason for item in result.rejected] == ["insufficient_structural_evidence"]
 
 
 def test_fallback_caps_high_evidence_confidence_at_point_nine(tmp_path: Path) -> None:
-    source = (
-        "Chỉ tiêu\t2024\t2023\n"
-        "A\t10\t9\n"
-        "B\t8\t7\n"
-        "C\t6\t5\n"
-        "D\t4\t3\n"
-    )
+    source = "Chỉ tiêu\t2024\t2023\nA\t10\t9\nB\t8\t7\nC\t6\t5\nD\t4\t3\n"
     result = detect_table_candidates(decoded(tmp_path, source))
 
     assert result.candidates[0].confidence == 0.9
@@ -1165,10 +1146,7 @@ def test_span_collision_is_atomic(tmp_path: Path) -> None:
 
 
 def test_ragged_html_rows_use_absent_placements_not_invented_cells(tmp_path: Path) -> None:
-    source = (
-        "<table><tr><td>A</td><td>1</td></tr>"
-        "<tr><td>B</td></tr></table>\n"
-    )
+    source = "<table><tr><td>A</td><td>1</td></tr><tr><td>B</td></tr></table>\n"
     table = extract(tmp_path, source).tables[0]
 
     assert (table.table.row_count, table.table.column_count) == (2, 2)
@@ -1328,7 +1306,12 @@ def test_merges_compatible_page_continuation_and_drops_repeated_header(tmp_path:
     assert (table.table.line_start, table.table.line_end) == (2, 5)
     assert (table.table.row_count, table.table.column_count) == (3, 2)
     assert [cell.value_raw for cell in table.cells] == [
-        "Chỉ tiêu", "2024", "Doanh thu", "100", "Lợi nhuận", "20"
+        "Chỉ tiêu",
+        "2024",
+        "Doanh thu",
+        "100",
+        "Lợi nhuận",
+        "20",
     ]
     assert "continued_across_page" in table.evidence
 
@@ -1544,9 +1527,7 @@ def test_fixture_matches_hand_reviewed_golden_and_is_deterministic(
         inventory_status="ready",
         notes=(),
     )
-    expected = json.loads(
-        (base / "expected" / f"{case_name}.json").read_text(encoding="utf-8")
-    )
+    expected = json.loads((base / "expected" / f"{case_name}.json").read_text(encoding="utf-8"))
 
     first = extract_document(tmp_path, document)
     second = extract_document(tmp_path, document)
@@ -1603,9 +1584,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             repo_id=args.repo_id,
             revision=args.revision,
         )
-        ready = tuple(
-            item for item in inventory.documents if item.inventory_status == "ready"
-        )
+        ready = tuple(item for item in inventory.documents if item.inventory_status == "ready")
         table_count = 0
         cell_count = 0
         placement_count = 0
@@ -1617,9 +1596,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if index < args.repeat_sample:
                 repeated = extract_document(args.root, document)
                 if repeated != result:
-                    raise ValueError(
-                        f"non-deterministic extraction: {document.relative_path}"
-                    )
+                    raise ValueError(f"non-deterministic extraction: {document.relative_path}")
             table_count += len(result.tables)
             cell_count += sum(len(item.cells) for item in result.tables)
             placement_count += sum(len(item.placements) for item in result.tables)

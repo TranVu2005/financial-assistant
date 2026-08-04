@@ -165,18 +165,12 @@ def _structured_event(
 
     column_count = counts.pop()
     numeric_rows = sum(any(_is_numeric_looking(cell) for cell in cells[1:]) for _, cells in rows)
-    populated_values = tuple(
-        cell for _, cells in rows for cell in cells[1:] if cell
-    )
+    populated_values = tuple(cell for _, cells in rows for cell in cells[1:] if cell)
     numeric_cells = sum(_is_numeric_looking(cell) for cell in populated_values)
     density = (
-        Decimal(numeric_cells) / Decimal(len(populated_values))
-        if populated_values
-        else Decimal()
+        Decimal(numeric_cells) / Decimal(len(populated_values)) if populated_values else Decimal()
     )
-    normalized_rows = _normalized_text(
-        " ".join(cell for _, cells in rows for cell in cells)
-    )
+    normalized_rows = _normalized_text(" ".join(cell for _, cells in rows for cell in cells))
     header = any(signal in normalized_rows for signal in _HEADER_SIGNALS)
     has_density = density >= Decimal("0.5")
     if not 2 <= column_count <= 20 or numeric_rows < 2 or not (header or has_density):
@@ -255,9 +249,9 @@ def _structured_events(document: DecodedDocument) -> list[DetectionEvent]:
     return events
 
 
-def _with_ordinals(events: list[DetectionEvent]) -> tuple[
-    tuple[TableCandidate, ...], tuple[RejectedCandidate, ...]
-]:
+def _with_ordinals(
+    events: list[DetectionEvent],
+) -> tuple[tuple[TableCandidate, ...], tuple[RejectedCandidate, ...]]:
     candidates: list[TableCandidate] = []
     rejected: list[RejectedCandidate] = []
     for ordinal, (_, item) in enumerate(sorted(events, key=lambda event: event[0])):

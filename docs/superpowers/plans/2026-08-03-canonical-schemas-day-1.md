@@ -72,8 +72,7 @@ def valid_document_payload() -> dict[str, object]:
         "repo_id": "AIGuruTinix/ViFinQA",
         "revision": "main",
         "relative_path": (
-            "financial_statements/AAA/2015/"
-            "AAA_financial_statements_2015_consolidated/report.txt"
+            "financial_statements/AAA/2015/AAA_financial_statements_2015_consolidated/report.txt"
         ),
         "company_code": "AAA",
         "report_year": 2015,
@@ -160,10 +159,7 @@ from financial_report_qa.schemas.documents import DocumentRecord, stable_documen
 ```python
 def test_document_record_round_trip_preserves_vietnamese_unicode() -> None:
     payload = valid_document_payload()
-    unicode_path = (
-        "financial_statements/AAA/2015/"
-        "Báo cáo tài chính hợp nhất/report.txt"
-    )
+    unicode_path = "financial_statements/AAA/2015/Báo cáo tài chính hợp nhất/report.txt"
     payload["relative_path"] = unicode_path
 
     record = DocumentRecord.model_validate(payload)

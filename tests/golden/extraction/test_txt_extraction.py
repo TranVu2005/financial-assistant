@@ -60,9 +60,7 @@ def test_fixture_matches_hand_reviewed_golden_and_is_deterministic(
         inventory_status="ready",
         notes=(),
     )
-    expected = json.loads(
-        (base / "expected" / f"{case_name}.json").read_text(encoding="utf-8")
-    )
+    expected = json.loads((base / "expected" / f"{case_name}.json").read_text(encoding="utf-8"))
 
     first = extract_document(tmp_path, document)
     second = extract_document(tmp_path, document)

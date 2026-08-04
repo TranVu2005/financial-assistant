@@ -4,7 +4,7 @@ import csv
 import hashlib
 import json
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
@@ -200,9 +200,7 @@ def build_issue_sample(
             s_items.sort(key=lambda r: (str(r["selection_rank"]), str(r["sample_id"])))
             stratum_retained.extend(s_items[: config.max_per_stratum])
 
-        stratum_retained.sort(
-            key=lambda r: (str(r["selection_rank"]), str(r["sample_id"]))
-        )
+        stratum_retained.sort(key=lambda r: (str(r["selection_rank"]), str(r["sample_id"])))
 
         limit = config.issue_limits.get(issue_code)
         if limit is not None:
@@ -334,14 +332,10 @@ def evaluate_labels(
 
         conclusive = true_issue_count + false_positive_count
         conclusive_coverage = (
-            Decimal(conclusive) / Decimal(sample_count)
-            if sample_count > 0
-            else Decimal("0")
+            Decimal(conclusive) / Decimal(sample_count) if sample_count > 0 else Decimal("0")
         )
         false_positive_rate = (
-            Decimal(false_positive_count) / Decimal(conclusive)
-            if conclusive > 0
-            else None
+            Decimal(false_positive_count) / Decimal(conclusive) if conclusive > 0 else None
         )
 
         sorted_cause_counts = {k: cause_counts[k] for k in sorted(cause_counts)}
@@ -358,3 +352,252 @@ def evaluate_labels(
         )
 
     return metrics_by_code
+
+
+class QualityGateError(Exception):
+    pass
+
+
+class AuditComparison(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    before_fingerprint: str
+    after_fingerprint: str
+    before_table_count: int
+    after_table_count: int
+    before_issue_count: int
+    after_issue_count: int
+    coverage: Decimal
+    false_positive_rate: Decimal | None
+    passed: bool
+    errors: tuple[str, ...]
+    metrics_by_code: dict[str, IssueAuditMetrics] = Field(default_factory=dict)
+
+
+def compare_releases(
+    before_path: Path | str,
+    after_path: Path | str,
+    sample: Path | str | pa.Table,
+    labels: Path | str | Sequence[LabelRecord],
+) -> AuditComparison:
+    before_path = Path(before_path)
+    after_path = Path(after_path)
+
+    try:
+        before_tables_tbl = pq.read_table(before_path / "tables.parquet")  # type: ignore[no-untyped-call]
+        after_tables_tbl = pq.read_table(after_path / "tables.parquet")  # type: ignore[no-untyped-call]
+        before_issues_tbl = pq.read_table(before_path / "issues.parquet")  # type: ignore[no-untyped-call]
+        after_issues_tbl = pq.read_table(after_path / "issues.parquet")  # type: ignore[no-untyped-call]
+    except Exception as e:
+        raise ValueError(f"Failed to read release Parquet files: {e}") from e
+
+    before_table_ids = set(before_tables_tbl.column("table_id").to_pylist())
+    after_table_ids = set(after_tables_tbl.column("table_id").to_pylist())
+
+    if before_table_ids != after_table_ids:
+        raise QualityGateError("canonical table IDs changed")
+
+    try:
+        after_cells_tbl = pq.read_table(after_path / "cells.parquet")  # type: ignore[no-untyped-call]
+    except Exception as e:
+        raise ValueError(f"Failed to read cells.parquet: {e}") from e
+
+    after_cells_by_id = {
+        str(c["cell_id"]): c for c in after_cells_tbl.to_pylist() if c.get("cell_id") is not None
+    }
+    after_tables_by_id = {
+        str(t["table_id"]): t for t in after_tables_tbl.to_pylist() if t.get("table_id") is not None
+    }
+
+    if isinstance(sample, (str, Path)):
+        try:
+            sample_tbl = pq.read_table(Path(sample))  # type: ignore[no-untyped-call]
+        except Exception as e:
+            raise ValueError(f"Failed to read sample Parquet: {e}") from e
+    else:
+        sample_tbl = sample
+
+    for row in sample_tbl.to_pylist():
+        cell_id = row.get("cell_id")
+        if cell_id is None or cell_id == "" or str(cell_id) == "None":
+            table_id = row.get("table_id")
+            if table_id is not None and table_id != "" and str(table_id) != "None":
+                after_table = after_tables_by_id.get(str(table_id))
+                if after_table is None:
+                    raise QualityGateError("missing or changed source context")
+                if after_table.get("title_raw") != row.get("table_title_raw") or after_table.get(
+                    "unit_raw"
+                ) != row.get("table_unit_raw"):
+                    raise QualityGateError("missing or changed source context")
+            continue
+
+        after_cell = after_cells_by_id.get(str(cell_id))
+        if after_cell is None:
+            raise QualityGateError("missing or changed source context")
+
+        # Compare raw values
+        if (
+            after_cell.get("row_label_raw") != row.get("row_label_raw")
+            or after_cell.get("column_label_raw") != row.get("column_label_raw")
+            or after_cell.get("value_raw") != row.get("value_raw")
+        ):
+            raise QualityGateError("missing or changed source context")
+
+    if isinstance(labels, (str, Path)):
+        labels_list = load_and_validate_labels(sample_tbl, Path(labels))
+    else:
+        labels_list = tuple(labels)
+
+    sample_ids = {str(row["sample_id"]) for row in sample_tbl.to_pylist()}
+    labeled_ids = {lbl.sample_id for lbl in labels_list}
+
+    unresolved_ids = sample_ids - labeled_ids
+    if unresolved_ids:
+        raise QualityGateError("unresolved sample context")
+
+    after_issues_set = set()
+    for r in after_issues_tbl.to_pylist():
+        d_id = str(r.get("doc_id", ""))
+        t_id = str(r.get("table_id", "") or "None")
+        c_id = str(r.get("cell_id", "") or "None")
+        field = str(r.get("field", ""))
+        code = str(r.get("code", ""))
+        after_issues_set.add((d_id, t_id, c_id, field, code))
+
+    labels_by_id = {lbl.sample_id: lbl for lbl in labels_list}
+
+    rows_by_issue = defaultdict(list)
+    for row in sample_tbl.to_pylist():
+        rows_by_issue[str(row["issue_code"])].append(row)
+
+    metrics_by_code = {}
+    total_samples = len(sample_ids)
+    total_true = 0
+    total_fp = 0
+    total_uncertain = 0
+    total_unlabeled = 0
+
+    for issue_code, rows in sorted(rows_by_issue.items()):
+        sample_count = len(rows)
+        true_issue_count = 0
+        false_positive_count = 0
+        uncertain_count = 0
+        unlabeled_count = 0
+        cause_counts: dict[str, int] = defaultdict(int)
+
+        for row in rows:
+            s_id = str(row["sample_id"])
+            lbl = labels_by_id.get(s_id)
+            if lbl is None:
+                unlabeled_count += 1
+                total_unlabeled += 1
+            else:
+                cause_counts[lbl.cause_code] += 1
+                if lbl.label == "true_issue":
+                    true_issue_count += 1
+                    total_true += 1
+                elif lbl.label == "false_positive":
+                    # Check if STILL present in after release
+                    d_id = str(row.get("doc_id", ""))
+                    t_id = str(row.get("table_id", "") or "None")
+                    c_id = str(row.get("cell_id", "") or "None")
+                    field = str(row.get("field", ""))
+
+                    is_present = (d_id, t_id, c_id, field, issue_code) in after_issues_set
+                    if is_present:
+                        false_positive_count += 1
+                        total_fp += 1
+                    else:
+                        # Corrected! Does not count as false positive in numerator,
+                        # but remains in denominator.
+                        true_issue_count += 1
+                        total_true += 1
+                elif lbl.label == "uncertain":
+                    uncertain_count += 1
+                    total_uncertain += 1
+
+        conclusive = true_issue_count + false_positive_count
+        conclusive_coverage = (
+            Decimal(conclusive) / Decimal(sample_count) if sample_count > 0 else Decimal("0")
+        )
+        false_positive_rate = (
+            Decimal(false_positive_count) / Decimal(conclusive) if conclusive > 0 else None
+        )
+
+        sorted_cause_counts = {k: cause_counts[k] for k in sorted(cause_counts)}
+
+        metrics_by_code[issue_code] = IssueAuditMetrics(
+            sample_count=sample_count,
+            true_issue_count=true_issue_count,
+            false_positive_count=false_positive_count,
+            uncertain_count=uncertain_count,
+            unlabeled_count=unlabeled_count,
+            conclusive_coverage=conclusive_coverage,
+            false_positive_rate=false_positive_rate,
+            cause_counts=sorted_cause_counts,
+        )
+
+    conclusive = total_true + total_fp
+    coverage = Decimal(conclusive) / Decimal(total_samples) if total_samples > 0 else Decimal("0")
+    false_positive_rate = Decimal(total_fp) / Decimal(conclusive) if conclusive > 0 else None
+
+    try:
+        before_manifest = json.loads((before_path / "manifest.json").read_text(encoding="utf-8"))
+        before_fp = before_manifest.get("dataset_fingerprint", "")
+    except Exception:
+        before_fp = ""
+
+    try:
+        after_manifest = json.loads((after_path / "manifest.json").read_text(encoding="utf-8"))
+        after_fp = after_manifest.get("dataset_fingerprint", "")
+    except Exception:
+        after_fp = ""
+
+    return AuditComparison(
+        before_fingerprint=before_fp,
+        after_fingerprint=after_fp,
+        before_table_count=len(before_table_ids),
+        after_table_count=len(after_table_ids),
+        before_issue_count=len(before_issues_tbl),
+        after_issue_count=len(after_issues_tbl),
+        coverage=coverage,
+        false_positive_rate=false_positive_rate,
+        passed=True,
+        errors=(),
+        metrics_by_code=metrics_by_code,
+    )
+
+
+def enforce_quality_gate(
+    comparison: AuditComparison,
+    remediated_codes: Collection[str] = (),
+) -> None:
+    if comparison.after_table_count != 146011:
+        raise QualityGateError(
+            f"table count not equal to 146,011: got {comparison.after_table_count}"
+        )
+
+    if comparison.coverage < Decimal("0.90"):
+        raise QualityGateError(f"coverage below 0.90: got {comparison.coverage}")
+
+    # Check false-positive rate
+    # Check overall false-positive rate
+    if comparison.false_positive_rate is not None and comparison.false_positive_rate > Decimal(
+        "0.05"
+    ):
+        raise QualityGateError(
+            f"false-positive rate above 0.05: got {comparison.false_positive_rate}"
+        )
+
+    # Check remediated codes false-positive rates
+    codes_to_check = remediated_codes if remediated_codes else comparison.metrics_by_code.keys()
+    for code in codes_to_check:
+        m = comparison.metrics_by_code.get(code)
+        if (
+            m is not None
+            and m.false_positive_rate is not None
+            and m.false_positive_rate > Decimal("0.05")
+        ):
+            raise QualityGateError(
+                f"false-positive rate for {code} is {m.false_positive_rate}, expected <= 0.05"
+            )

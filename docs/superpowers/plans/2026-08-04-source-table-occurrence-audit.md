@@ -44,7 +44,8 @@
 
 ```python
 rows = build_source_table_occurrences(
-    decoded_document, detection_with_two_html_candidates,
+    decoded_document,
+    detection_with_two_html_candidates,
     extraction_with_one_merged_table_and_one_html_rejection,
     {(1, 10, 20): "table-1", (2, 21, 30): "table-1"},
 )
@@ -63,19 +64,23 @@ Expected: FAIL because the schema and function do not exist.
 - [ ] **Step 3: Add schema and deterministic identity**
 
 ```python
-SOURCE_TABLE_OCCURRENCE_SCHEMA = pa.schema([
-    pa.field("source_table_id", pa.string(), nullable=False),
-    pa.field("doc_id", pa.string(), nullable=False),
-    pa.field("relative_path", pa.string(), nullable=False),
-    pa.field("source_sha256", pa.string(), nullable=False),
-    pa.field("ordinal", pa.int32(), nullable=False),
-    pa.field("line_start", pa.int32(), nullable=False),
-    pa.field("line_end", pa.int32(), nullable=False),
-    pa.field("status", pa.string(), nullable=False),
-    pa.field("canonical_table_id", pa.string()),
-    pa.field("rejection_code", pa.string()),
-    pa.field("duplicate_of_relative_path", pa.string()),
-])
+SOURCE_TABLE_OCCURRENCE_SCHEMA = pa.schema(
+    [
+        pa.field("source_table_id", pa.string(), nullable=False),
+        pa.field("doc_id", pa.string(), nullable=False),
+        pa.field("relative_path", pa.string(), nullable=False),
+        pa.field("source_sha256", pa.string(), nullable=False),
+        pa.field("ordinal", pa.int32(), nullable=False),
+        pa.field("line_start", pa.int32(), nullable=False),
+        pa.field("line_end", pa.int32(), nullable=False),
+        pa.field("status", pa.string(), nullable=False),
+        pa.field("canonical_table_id", pa.string()),
+        pa.field("rejection_code", pa.string()),
+        pa.field("duplicate_of_relative_path", pa.string()),
+    ]
+)
+
+
 def _source_table_id(*, relative_path, source_sha256, ordinal, line_start, line_end):
     value = f"{relative_path}|{source_sha256}|{ordinal}|{line_start}|{line_end}"
     return sha256(value.encode("utf-8")).hexdigest()
@@ -157,7 +162,10 @@ assert occurrences.schema == SOURCE_TABLE_OCCURRENCE_SCHEMA
 assert occurrences.num_rows == 2
 assert set(occurrences.column("status").to_pylist()) == {"canonical"}
 assert manifest["source_table_occurrence_counts"] == {
-    "total": 2, "canonical": 2, "rejected": 0, "duplicate": 0,
+    "total": 2,
+    "canonical": 2,
+    "rejected": 0,
+    "duplicate": 0,
 }
 ```
 
@@ -224,7 +232,9 @@ Expected: FAIL because `normalize_unit("2024")` creates unknown-unit noise.
 
 Add private `_has_unit_evidence(value)` using:
 ```python
-re.compile(r"(?i)(vnd|vnÃ„â€˜|Ã„â€˜Ã¡Â»â€œng|dong|nghÃƒÂ¬n|ngÃƒÂ n|ngan|triÃ¡Â»â€¡u|trieu|tÃ¡Â»Â·|ty|%|phÃ¡ÂºÂ§n trÃ„Æ’m|lan|lÃ¡ÂºÂ§n)")
+re.compile(
+    r"(?i)(vnd|vnÃ„â€˜|Ã„â€˜Ã¡Â»â€œng|dong|nghÃƒÂ¬n|ngÃƒÂ n|ngan|triÃ¡Â»â€¡u|trieu|tÃ¡Â»Â·|ty|%|phÃ¡ÂºÂ§n trÃ„Æ’m|lan|lÃ¡ÂºÂ§n)"
+)
 ```
 Call `normalize_unit(column_raw)` only when this predicate is true. Preserve table/cell unit parsing and explicit unknown-unit errors.
 

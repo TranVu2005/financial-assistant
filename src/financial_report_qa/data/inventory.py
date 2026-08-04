@@ -138,11 +138,7 @@ def build_inventory(
         raise ValueError("revision must not be empty")
 
     paths = sorted(
-        (
-            path
-            for path in root.rglob("*")
-            if path.is_file() and path.suffix.casefold() == ".txt"
-        ),
+        (path for path in root.rglob("*") if path.is_file() and path.suffix.casefold() == ".txt"),
         key=lambda path: _path_key(path.relative_to(root).as_posix()),
     )
     documents: list[DocumentRecord] = []

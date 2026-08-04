@@ -128,9 +128,7 @@ def test_parse_vifinqa_path_preserves_unicode_and_extracts_metadata(tmp_path: Pa
 
     metadata = _parse_vifinqa_path(path, root)
 
-    assert metadata.relative_path == (
-        "vcb/2024/BÃ¡o cÃ¡o CONSOLIDATED/báº£ng cÃ¢n Ä‘á»‘i.TXT"
-    )
+    assert metadata.relative_path == ("vcb/2024/BÃ¡o cÃ¡o CONSOLIDATED/báº£ng cÃ¢n Ä‘á»‘i.TXT")
     assert metadata.company_code == "VCB"
     assert metadata.report_year == 2024
     assert metadata.statement_scope == "consolidated"
@@ -198,10 +196,14 @@ def test_inventory_main_writes_manifest_and_prints_counts(
 
     exit_code = main(
         [
-            "--root", str(root),
-            "--repo-id", "org/vifinqa",
-            "--revision", "abc123",
-            "--manifest", str(manifest),
+            "--root",
+            str(root),
+            "--repo-id",
+            "org/vifinqa",
+            "--revision",
+            "abc123",
+            "--manifest",
+            str(manifest),
         ]
     )
 
@@ -222,9 +224,12 @@ def test_inventory_main_reports_expected_failure_without_traceback(
 ) -> None:
     exit_code = main(
         [
-            "--root", str(tmp_path / "missing"),
-            "--repo-id", "org/vifinqa",
-            "--revision", "abc123",
+            "--root",
+            str(tmp_path / "missing"),
+            "--repo-id",
+            "org/vifinqa",
+            "--revision",
+            "abc123",
         ]
     )
 

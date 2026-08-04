@@ -37,9 +37,7 @@ def decoded(tmp_path: Path, text: str) -> DecodedDocument:
 
 def test_detector_prefers_closed_html_and_preserves_span(tmp_path: Path) -> None:
     source = (
-        "Má»Ÿ Ä‘áº§u\n"
-        "<table>\n<tr><td>Chá»‰ tiÃªu</td><td>2024</td></tr>\n</table>\n"
-        "Sau báº£ng\n"
+        "Má»Ÿ Ä‘áº§u\n<table>\n<tr><td>Chá»‰ tiÃªu</td><td>2024</td></tr>\n</table>\nSau báº£ng\n"
     )
     result = detect_table_candidates(decoded(tmp_path, source))
 
@@ -71,12 +69,7 @@ def test_detector_rejects_invalid_html_regions(
 
 
 def test_detector_rejects_multiline_nested_html_through_outer_close(tmp_path: Path) -> None:
-    source = (
-        "<table>\n"
-        "<table>\n"
-        "<tr><td>1</td></tr></table>\n"
-        "</table>\n"
-    )
+    source = "<table>\n<table>\n<tr><td>1</td></tr></table>\n</table>\n"
     result = detect_table_candidates(decoded(tmp_path, source))
 
     assert result.candidates == ()
@@ -89,8 +82,7 @@ def test_detector_rejects_multiline_nested_html_through_outer_close(tmp_path: Pa
 
 def test_detector_splits_sibling_tables_on_one_line(tmp_path: Path) -> None:
     source = (
-        "<table><tr><td>A</td><td>1</td></tr></table>"
-        "<table><tr><td>B</td><td>2</td></tr></table>\n"
+        "<table><tr><td>A</td><td>1</td></tr></table><table><tr><td>B</td><td>2</td></tr></table>\n"
     )
     result = detect_table_candidates(decoded(tmp_path, source))
 
@@ -113,11 +105,7 @@ def test_detector_orders_html_and_text_candidates_by_source_offset(tmp_path: Pat
 
 
 def test_fallback_accepts_only_consistent_financial_rows(tmp_path: Path) -> None:
-    source = (
-        "Chỉ tiêu\t2024\t2023\n"
-        "Doanh thu\t1.000\t900\n"
-        "Lá»£i nhuáº­n\t100\t80\n"
-    )
+    source = "Chỉ tiêu\t2024\t2023\nDoanh thu\t1.000\t900\nLá»£i nhuáº­n\t100\t80\n"
     result = detect_table_candidates(decoded(tmp_path, source))
 
     assert len(result.candidates) == 1
@@ -166,19 +154,11 @@ def test_fallback_rejects_delimited_rows_without_financial_evidence(tmp_path: Pa
     result = detect_table_candidates(decoded(tmp_path, source))
 
     assert result.candidates == ()
-    assert [item.reason for item in result.rejected] == [
-        "insufficient_structural_evidence"
-    ]
+    assert [item.reason for item in result.rejected] == ["insufficient_structural_evidence"]
 
 
 def test_fallback_caps_high_evidence_confidence_at_point_nine(tmp_path: Path) -> None:
-    source = (
-        "Ch\u1ec9 ti\u00eau\t2024\t2023\n"
-        "A\t10\t9\n"
-        "B\t8\t7\n"
-        "C\t6\t5\n"
-        "D\t4\t3\n"
-    )
+    source = "Ch\u1ec9 ti\u00eau\t2024\t2023\nA\t10\t9\nB\t8\t7\nC\t6\t5\nD\t4\t3\n"
     result = detect_table_candidates(decoded(tmp_path, source))
 
     assert result.candidates[0].confidence == 0.9
@@ -207,9 +187,7 @@ def test_nested_html_rejection_reserves_outer_region_from_structured_fallback(
 
 def test_unicode_header_signal_drives_acceptance_and_confidence(tmp_path: Path) -> None:
     source = (
-        "Chỉ tiêu\tKỳ hiện tại\tGhi chú\n"
-        "Doanh thu\t100\tĐã kiểm toán\n"
-        "Lợi nhuận\t80\tƯớc tính\n"
+        "Chỉ tiêu\tKỳ hiện tại\tGhi chú\nDoanh thu\t100\tĐã kiểm toán\nLợi nhuận\t80\tƯớc tính\n"
     )
 
     result = detect_table_candidates(decoded(tmp_path, source))

@@ -61,9 +61,10 @@ def test_write_manifest_sorts_all_paths_preserves_unicode_and_round_trips(
         == issue
     )
     assert rows[1]["record_type"] == "document"
-    assert DocumentRecord.model_validate(
-        {k: v for k, v in rows[1].items() if k != "record_type"}
-    ) == document
+    assert (
+        DocumentRecord.model_validate({k: v for k, v in rows[1].items() if k != "record_type"})
+        == document
+    )
 
 
 def test_write_manifest_is_byte_deterministic(tmp_path: Path) -> None:
@@ -200,4 +201,3 @@ def test_read_manifest_rejects_invalid_rows_with_safe_line_number(
     path.write_text(line, encoding="utf-8")
     with pytest.raises(DatasetBuildError, match="manifest line 1"):
         read_manifest(path)
-

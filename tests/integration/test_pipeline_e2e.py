@@ -63,7 +63,7 @@ def _setup_fixture(tmp_path: Path) -> tuple[Path, Path]:
         "ĐVT: tỷ đồng\n"
         "<table>\n"
         "<tr><th>Chỉ tiêu</th><th>Năm 2023</th></tr>\n"
-        "<tr><td>Tổng cộng tài sản</td><td>10.000</td></tr>\n"
+        "<tr><td>Tổng cộng tài sản</td><td>10.0.0</td></tr>\n"
         "</table>\n"
     )
     doc2_path.write_text(doc2_content, encoding="utf-8")
@@ -85,9 +85,7 @@ def _setup_fixture(tmp_path: Path) -> tuple[Path, Path]:
     )
 
     manifest_path = tmp_path / "documents.jsonl"
-    write_manifest(
-        InventoryResult(documents=(doc1_rec, doc2_rec), issues=()), manifest_path
-    )
+    write_manifest(InventoryResult(documents=(doc1_rec, doc2_rec), issues=()), manifest_path)
 
     return snapshot_root, manifest_path
 
@@ -145,9 +143,7 @@ def test_e2e_pipeline_builds_reproducible_release(tmp_path: Path) -> None:
         assert bytes_run1 == bytes_run2, f"{filename} is not byte-identical across runs"
 
     # Verify source_table_occurrences contract (Task 3)
-    occurrences = pq.read_table(
-        rel_path / "source_table_occurrences.parquet"
-    )  # type: ignore[no-untyped-call]
+    occurrences = pq.read_table(rel_path / "source_table_occurrences.parquet")  # type: ignore[no-untyped-call]
     assert SOURCE_TABLE_OCCURRENCE_SCHEMA.equals(occurrences.schema)
     assert occurrences.num_rows == 2
     assert set(occurrences.column("status").to_pylist()) == {"canonical"}

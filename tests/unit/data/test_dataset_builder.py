@@ -233,9 +233,7 @@ def test_duplicate_rows_reuse_layout_but_not_canonical_data() -> None:
     assert {row["status"] for row in rows} == {"duplicate"}
     assert all(row["canonical_table_id"] is None for row in rows)
     assert all(row["rejection_code"] is None for row in rows)
-    assert {row["duplicate_of_relative_path"] for row in rows} == {
-        "SSH/2024/primary.txt"
-    }
+    assert {row["duplicate_of_relative_path"] for row in rows} == {"SSH/2024/primary.txt"}
     assert all(row["doc_id"] == duplicate_doc.doc_id for row in rows)
     assert all(row["relative_path"] == duplicate_doc.relative_path for row in rows)
     assert all(row["source_sha256"] == duplicate_doc.sha256 for row in rows)
@@ -265,9 +263,7 @@ def test_flattened_rows_have_stable_order() -> None:
             encoding="utf-8",
             inventory_status="ready",
         )
-        extraction = ExtractionResult(
-            doc_id=document.doc_id, blocks=(), tables=(), rejected=()
-        )
+        extraction = ExtractionResult(doc_id=document.doc_id, blocks=(), tables=(), rejected=())
         return NormalizedDocument(
             document=document,
             extraction=extraction,
@@ -276,9 +272,7 @@ def test_flattened_rows_have_stable_order() -> None:
             normalization_fingerprint=digest,
         )
 
-    rows = flatten_normalized_documents(
-        (normalized_document("b"), normalized_document("a"))
-    )
+    rows = flatten_normalized_documents((normalized_document("b"), normalized_document("a")))
     paths = [str(row["relative_path"]) for row in rows.documents]
     assert paths == sorted(paths)
 
@@ -301,8 +295,7 @@ def test_build_dataset_creates_atomic_parquet_release(tmp_path: Path) -> None:
     doc_path = snapshot_root / "VCB/2024/Consolidated/report.txt"
     doc_path.parent.mkdir(parents=True)
     content = (
-        "<table><tr><td>Doanh thu bán hàng và cung cấp dịch vụ</td>"
-        "<td>1.500</td></tr></table>"
+        "<table><tr><td>Doanh thu bán hàng và cung cấp dịch vụ</td><td>1.500</td></tr></table>"
     )
     doc_path.write_text(content, encoding="utf-8")
     raw_bytes = doc_path.read_bytes()
@@ -335,9 +328,7 @@ def test_build_dataset_creates_atomic_parquet_release(tmp_path: Path) -> None:
     assert result.release_path.exists()
     assert (result.release_path / "cells.parquet").exists()
     assert (result.release_path / "manifest.json").exists()
-    cell_table = pq.read_table(
-        result.release_path / "cells.parquet"
-    )  # type: ignore[no-untyped-call]
+    cell_table = pq.read_table(result.release_path / "cells.parquet")  # type: ignore[no-untyped-call]
     assert CELL_SCHEMA.equals(cell_table.schema)
 
 
@@ -402,9 +393,7 @@ def test_build_dataset_emits_source_occurrence_artifact_with_duplicate_rows(
         )
     )
 
-    occurrence_table = pq.read_table(
-        result.release_path / "source_table_occurrences.parquet"
-    )  # type: ignore[no-untyped-call]
+    occurrence_table = pq.read_table(result.release_path / "source_table_occurrences.parquet")  # type: ignore[no-untyped-call]
     assert SOURCE_TABLE_OCCURRENCE_SCHEMA.equals(occurrence_table.schema)
     assert occurrence_table.num_rows == 2
     assert occurrence_table.column("status").to_pylist() == ["duplicate", "canonical"]
@@ -443,9 +432,7 @@ def test_build_source_table_occurrences_raises_on_html_candidate_without_outcome
     decoded_document = DecodedDocument(
         document=document,
         text="<table><tr><td>A</td></tr></table>\n",
-        lines=(
-            SourceLine(number=1, text="<table><tr><td>A</td></tr></table>", line_ending="\n"),
-        ),
+        lines=(SourceLine(number=1, text="<table><tr><td>A</td></tr></table>", line_ending="\n"),),
         blocks=(
             TextBlock(
                 kind="table",
@@ -533,11 +520,13 @@ def test_build_dataset_rejects_malformed_duplicate_note(tmp_path: Path) -> None:
     import pytest
 
     with pytest.raises(DatasetBuildError, match="duplicate_of note"):
-        build_dataset(DatasetBuildConfig(
-            snapshot_root=snapshot_root,
-            manifest_path=manifest_path,
-            processed_root=tmp_path / "processed",
-        ))
+        build_dataset(
+            DatasetBuildConfig(
+                snapshot_root=snapshot_root,
+                manifest_path=manifest_path,
+                processed_root=tmp_path / "processed",
+            )
+        )
 
 
 def test_build_dataset_rejects_duplicate_sha_mismatch(tmp_path: Path) -> None:
@@ -592,11 +581,13 @@ def test_build_dataset_rejects_duplicate_sha_mismatch(tmp_path: Path) -> None:
     import pytest
 
     with pytest.raises(DatasetBuildError, match="sha256 mismatch"):
-        build_dataset(DatasetBuildConfig(
-            snapshot_root=snapshot_root,
-            manifest_path=manifest_path,
-            processed_root=tmp_path / "processed",
-        ))
+        build_dataset(
+            DatasetBuildConfig(
+                snapshot_root=snapshot_root,
+                manifest_path=manifest_path,
+                processed_root=tmp_path / "processed",
+            )
+        )
 
 
 def test_validate_source_table_occurrences_rejects_unknown_status() -> None:

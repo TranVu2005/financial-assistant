@@ -46,7 +46,9 @@ def test_parse_report_path_extracts_vifinqa_hierarchy(tmp_path: Path) -> None:
     path.parent.mkdir(parents=True)
     path.write_text("sample", encoding="utf-8")
 
-    parse_report_path = cast(Callable[[Path, Path], dict[str, object]], _load_helpers()["parse_report_path"])
+    parse_report_path = cast(
+        Callable[[Path, Path], dict[str, object]], _load_helpers()["parse_report_path"]
+    )
     parsed = parse_report_path(path, root)
 
     assert parsed["ticker"] == "AAA"
@@ -80,9 +82,7 @@ def test_load_company_map_normalizes_and_flags_rows(tmp_path: Path) -> None:
 def test_load_questions_preserves_malformed_and_invalid_rows(tmp_path: Path) -> None:
     source = tmp_path / "questions.jsonl"
     source.write_text(
-        '{"id": 1, "question": "Doanh thu HPG năm 2022?"}\n'
-        '{bad json}\n'
-        '{"id": 2, "question": ""}\n',
+        '{"id": 1, "question": "Doanh thu HPG năm 2022?"}\n{bad json}\n{"id": 2, "question": ""}\n',
         encoding="utf-8",
     )
     frame = _load_helpers()["load_questions"](source)
@@ -178,16 +178,20 @@ def load_company_map(path: Path) -> pd.DataFrame:
     required = {"Mã CK", "Tên công ty"}
     if not required <= set(frame.columns):
         raise ValueError(f"Company map must contain columns: {sorted(required)}")
-    result = pd.DataFrame({
-        "row_number": range(2, len(frame) + 2),
-        "ticker": frame["Mã CK"].str.strip().str.upper(),
-        "company_name": frame["Tên công ty"].str.strip(),
-    })
+    result = pd.DataFrame(
+        {
+            "row_number": range(2, len(frame) + 2),
+            "ticker": frame["Mã CK"].str.strip().str.upper(),
+            "company_name": frame["Tên công ty"].str.strip(),
+        }
+    )
     valid_ticker = result["ticker"].str.fullmatch(r"[A-Z0-9]{2,10}")
     result["is_valid"] = valid_ticker & result["company_name"].ne("")
     result["validation_issue"] = None
     result.loc[~valid_ticker, "validation_issue"] = "invalid or missing ticker"
-    result.loc[valid_ticker & result["company_name"].eq(""), "validation_issue"] = "missing company name"
+    result.loc[valid_ticker & result["company_name"].eq(""), "validation_issue"] = (
+        "missing company name"
+    )
     return result
 
 
@@ -195,8 +199,13 @@ def load_questions(path: Path) -> pd.DataFrame:
     records = []
     with path.open(encoding="utf-8") as stream:
         for line_number, raw_line in enumerate(stream, start=1):
-            record = {"line_number": line_number, "id": None, "question": None,
-                      "is_valid": False, "validation_issue": None}
+            record = {
+                "line_number": line_number,
+                "id": None,
+                "question": None,
+                "is_valid": False,
+                "validation_issue": None,
+            }
             try:
                 payload = json.loads(raw_line)
             except json.JSONDecodeError as error:
@@ -269,12 +278,16 @@ def build_report_inventory(root: Path) -> pd.DataFrame:
         record = parse_report_path(path, root)
         try:
             stat = path.stat()
-            record.update(size_bytes=stat.st_size, is_empty=stat.st_size == 0,
-                          modified_at=pd.Timestamp(stat.st_mtime, unit="s", tz="UTC"),
-                          stat_error=None)
+            record.update(
+                size_bytes=stat.st_size,
+                is_empty=stat.st_size == 0,
+                modified_at=pd.Timestamp(stat.st_mtime, unit="s", tz="UTC"),
+                stat_error=None,
+            )
         except OSError as error:
-            record.update(size_bytes=None, is_empty=False, modified_at=pd.NaT,
-                          stat_error=str(error))
+            record.update(
+                size_bytes=None, is_empty=False, modified_at=pd.NaT, stat_error=str(error)
+            )
         records.append(record)
     return pd.DataFrame.from_records(records)
 
@@ -347,27 +360,42 @@ Build the KPI frame and chart inputs as follows, then render four matplotlib axe
 
 ```python
 valid_years = valid_reports["year"].dropna().astype(int)
-kpis = pd.DataFrame([
-    ("Question rows", f"{len(questions):,}"),
-    ("Valid questions", f"{len(valid_questions):,}"),
-    ("Report files", f"{len(report_inventory):,}"),
-    ("Mapped companies", f"{len(valid_companies):,}"),
-    ("Observed report tickers", f"{valid_reports['ticker'].nunique():,}"),
-    ("Observed years", f"{valid_years.min()}–{valid_years.max()}"),
-    ("Report text size", f"{report_inventory['size_bytes'].fillna(0).sum() / 1024**2:,.1f} MiB"),
-    ("Malformed report paths", f"{report_inventory['structure_status'].eq('malformed').sum():,}"),
-    ("Empty reports", f"{report_inventory['is_empty'].fillna(False).sum():,}"),
-], columns=["Metric", "Value"])
+kpis = pd.DataFrame(
+    [
+        ("Question rows", f"{len(questions):,}"),
+        ("Valid questions", f"{len(valid_questions):,}"),
+        ("Report files", f"{len(report_inventory):,}"),
+        ("Mapped companies", f"{len(valid_companies):,}"),
+        ("Observed report tickers", f"{valid_reports['ticker'].nunique():,}"),
+        ("Observed years", f"{valid_years.min()}–{valid_years.max()}"),
+        (
+            "Report text size",
+            f"{report_inventory['size_bytes'].fillna(0).sum() / 1024**2:,.1f} MiB",
+        ),
+        (
+            "Malformed report paths",
+            f"{report_inventory['structure_status'].eq('malformed').sum():,}",
+        ),
+        ("Empty reports", f"{report_inventory['is_empty'].fillna(False).sum():,}"),
+    ],
+    columns=["Metric", "Value"],
+)
 
 reports_by_year = valid_reports["year"].value_counts().sort_index()
 top_tickers = valid_reports["ticker"].value_counts().head(20).sort_values()
 statement_types = valid_reports["statement_type"].value_counts().sort_values()
-positive_sizes_mib = report_inventory.loc[report_inventory["size_bytes"].gt(0), "size_bytes"] / 1024**2
+positive_sizes_mib = (
+    report_inventory.loc[report_inventory["size_bytes"].gt(0), "size_bytes"] / 1024**2
+)
 
 coverage_tickers = valid_reports["ticker"].value_counts().head(40).index
-coverage = valid_reports[valid_reports["ticker"].isin(coverage_tickers)].pivot_table(
-    index="ticker", columns="year", values="relative_path", aggfunc="size", fill_value=0
-).reindex(index=coverage_tickers, columns=list(EXPECTED_YEAR_RANGE), fill_value=0)
+coverage = (
+    valid_reports[valid_reports["ticker"].isin(coverage_tickers)]
+    .pivot_table(
+        index="ticker", columns="year", values="relative_path", aggfunc="size", fill_value=0
+    )
+    .reindex(index=coverage_tickers, columns=list(EXPECTED_YEAR_RANGE), fill_value=0)
+)
 ```
 
 - [ ] **Step 3: Add `Question analysis` metrics and charts**
@@ -385,19 +413,34 @@ question_profile["mentioned_years"] = question_profile["question"].map(
 question_profile["mentioned_tickers"] = question_profile["question"].map(
     lambda value: extract_mentioned_tickers(value, known_tickers)
 )
-numeric_terms = ("bao nhiêu", "tỷ lệ", "chênh lệch", "tăng", "giảm", "trung bình", "tổng", "phần trăm")
+numeric_terms = (
+    "bao nhiêu",
+    "tỷ lệ",
+    "chênh lệch",
+    "tăng",
+    "giảm",
+    "trung bình",
+    "tổng",
+    "phần trăm",
+)
 question_profile["has_numeric_language"] = question_profile["question"].map(
-    lambda value: bool(re.search(r"\d", value)) or any(term in value.casefold() for term in numeric_terms)
+    lambda value: (
+        bool(re.search(r"\d", value)) or any(term in value.casefold() for term in numeric_terms)
+    )
 )
 
 duplicate_ids = question_profile[question_profile.duplicated("id", keep=False)].sort_values("id")
-duplicate_text = question_profile[
-    question_profile.duplicated("question", keep=False)
-].sort_values("question")
+duplicate_text = question_profile[question_profile.duplicated("question", keep=False)].sort_values(
+    "question"
+)
 observed_ids = set(question_profile["id"].astype(int))
 missing_ids = sorted(set(range(1, max(observed_ids) + 1)) - observed_ids) if observed_ids else []
-mentioned_year_counts = question_profile["mentioned_years"].explode().dropna().value_counts().sort_index()
-mentioned_ticker_counts = question_profile["mentioned_tickers"].explode().dropna().value_counts().head(20)
+mentioned_year_counts = (
+    question_profile["mentioned_years"].explode().dropna().value_counts().sort_index()
+)
+mentioned_ticker_counts = (
+    question_profile["mentioned_tickers"].explode().dropna().value_counts().head(20)
+)
 ```
 
 - [ ] **Step 4: Add `Integrity checks` and `Report content sample`**
@@ -418,27 +461,44 @@ duplicate_company_tickers = valid_companies[
     valid_companies.duplicated("ticker", keep=False)
 ].sort_values("ticker")
 
-integrity_summary = pd.DataFrame([
-    ("Report tickers absent from map", len(report_tickers_not_mapped)),
-    ("Mapped tickers without reports", len(mapped_tickers_without_reports)),
-    ("Mentioned tickers without reports", len(mentioned_tickers_without_reports)),
-    ("Questions without recognized ticker", len(questions_without_ticker)),
-    ("Invalid question rows", len(invalid_questions)),
-    ("Malformed report paths", len(malformed_reports)),
-    ("Duplicate company-map rows", len(duplicate_company_tickers)),
-], columns=["Check", "Count"])
+integrity_summary = pd.DataFrame(
+    [
+        ("Report tickers absent from map", len(report_tickers_not_mapped)),
+        ("Mapped tickers without reports", len(mapped_tickers_without_reports)),
+        ("Mentioned tickers without reports", len(mentioned_tickers_without_reports)),
+        ("Questions without recognized ticker", len(questions_without_ticker)),
+        ("Invalid question rows", len(invalid_questions)),
+        ("Malformed report paths", len(malformed_reports)),
+        ("Duplicate company-map rows", len(duplicate_company_tickers)),
+    ],
+    columns=["Check", "Count"],
+)
 
 selected_paths = sample_paths(valid_reports["path"].tolist(), CONTENT_SAMPLE_SIZE, RANDOM_SEED)
-content_profile = pd.DataFrame([inspect_text_file(path, MAX_CONTENT_BYTES) for path in selected_paths])
+content_profile = pd.DataFrame(
+    [inspect_text_file(path, MAX_CONTENT_BYTES) for path in selected_paths]
+)
 readable = content_profile[content_profile["read_error"].isna()]
-content_kpis = pd.DataFrame([
-    ("Sampled reports", len(content_profile)),
-    ("Read errors", int(content_profile["read_error"].notna().sum())),
-    ("Strict UTF-8", float(readable["utf8_valid"].eq(True).mean()) if len(readable) else None),
-    ("Truncated at byte cap", float(content_profile["truncated"].mean()) if len(content_profile) else None),
-    ("HTML table markers", float(content_profile["has_html_table"].mean()) if len(content_profile) else None),
-    ("Any table marker", float(content_profile["has_tabular_markers"].mean()) if len(content_profile) else None),
-], columns=["Metric", "Value"])
+content_kpis = pd.DataFrame(
+    [
+        ("Sampled reports", len(content_profile)),
+        ("Read errors", int(content_profile["read_error"].notna().sum())),
+        ("Strict UTF-8", float(readable["utf8_valid"].eq(True).mean()) if len(readable) else None),
+        (
+            "Truncated at byte cap",
+            float(content_profile["truncated"].mean()) if len(content_profile) else None,
+        ),
+        (
+            "HTML table markers",
+            float(content_profile["has_html_table"].mean()) if len(content_profile) else None,
+        ),
+        (
+            "Any table marker",
+            float(content_profile["has_tabular_markers"].mean()) if len(content_profile) else None,
+        ),
+    ],
+    columns=["Metric", "Value"],
+)
 ```
 
 - [ ] **Step 5: Add `Readiness summary`**
@@ -446,21 +506,47 @@ content_kpis = pd.DataFrame([
 Create the summary from live evidence:
 
 ```python
-readiness = pd.DataFrame([
-    ("P0", "question validation", f"{len(invalid_questions):,} invalid rows",
-     "Quarantine invalid JSONL rows while retaining line-number provenance."),
-    ("P0", "question IDs", f"{len(duplicate_ids):,} duplicate rows; {len(missing_ids):,} missing IDs",
-     "Use validated question IDs as stable external identifiers."),
-    ("P0", "report paths", f"{len(malformed_reports):,} malformed paths",
-     "Keep tolerant parsing and record structure issues in the inventory."),
-    ("P1", "ticker alignment",
-     f"{len(report_tickers_not_mapped):,} unmapped report tickers; {len(mapped_tickers_without_reports):,} mapped without reports",
-     "Resolve ticker mismatches before retrieval indexing."),
-    ("P1", "encoding", f"{int(content_profile['utf8_valid'].eq(False).sum()):,} sampled non-UTF-8 reports",
-     "Preserve raw bytes and record decoder fallbacks."),
-    ("P1", "table handling", f"{content_profile['has_tabular_markers'].mean():.1%} sampled with table markers",
-     "Retain inline tables and add structure-aware chunking."),
-], columns=["priority", "finding", "evidence", "next_action"])
+readiness = pd.DataFrame(
+    [
+        (
+            "P0",
+            "question validation",
+            f"{len(invalid_questions):,} invalid rows",
+            "Quarantine invalid JSONL rows while retaining line-number provenance.",
+        ),
+        (
+            "P0",
+            "question IDs",
+            f"{len(duplicate_ids):,} duplicate rows; {len(missing_ids):,} missing IDs",
+            "Use validated question IDs as stable external identifiers.",
+        ),
+        (
+            "P0",
+            "report paths",
+            f"{len(malformed_reports):,} malformed paths",
+            "Keep tolerant parsing and record structure issues in the inventory.",
+        ),
+        (
+            "P1",
+            "ticker alignment",
+            f"{len(report_tickers_not_mapped):,} unmapped report tickers; {len(mapped_tickers_without_reports):,} mapped without reports",
+            "Resolve ticker mismatches before retrieval indexing.",
+        ),
+        (
+            "P1",
+            "encoding",
+            f"{int(content_profile['utf8_valid'].eq(False).sum()):,} sampled non-UTF-8 reports",
+            "Preserve raw bytes and record decoder fallbacks.",
+        ),
+        (
+            "P1",
+            "table handling",
+            f"{content_profile['has_tabular_markers'].mean():.1%} sampled with table markers",
+            "Retain inline tables and add structure-aware chunking.",
+        ),
+    ],
+    columns=["priority", "finding", "evidence", "next_action"],
+)
 ```
 
 - [ ] **Step 6: Run the complete focused test file**

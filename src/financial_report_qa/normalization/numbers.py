@@ -9,6 +9,25 @@ from financial_report_qa.schemas.normalization import NormalizationIssueCode
 MISSING_MARKERS = {"-", "—", "–", "n/a", "na", "null", "none", "", "."}
 
 
+def is_missing_number(raw: str) -> bool:
+    normalized = unicodedata.normalize("NFKC", raw).strip()
+    s = " ".join(normalized.split())
+    s_lower = s.casefold()
+    return s_lower in MISSING_MARKERS
+
+
+def is_numeric_candidate(raw: str) -> bool:
+    normalized = unicodedata.normalize("NFKC", raw).strip()
+    s = " ".join(normalized.split())
+    if is_missing_number(raw):
+        return False
+    if (s.endswith("O") or s.endswith("o")) and re.search(r"\d", s):
+        s = s[:-1] + "0"
+    if not re.search(r"\d", s):
+        return False
+    return bool(re.fullmatch(r"[0-9., +\-()%]+", s))
+
+
 @dataclass(frozen=True)
 class NumberDecision:
     value: Decimal | None

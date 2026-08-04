@@ -19,9 +19,7 @@ NormalizationIssueCode = Literal[
     "unit_conflict",
 ]
 
-NormalizationField = Literal[
-    "company", "period", "statement_type", "metric", "number", "unit"
-]
+NormalizationField = Literal["company", "period", "statement_type", "metric", "number", "unit"]
 
 ISSUE_FIELD_BY_CODE: dict[NormalizationIssueCode, NormalizationField] = {
     "company_conflict": "company",

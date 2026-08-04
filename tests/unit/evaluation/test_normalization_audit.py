@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -15,9 +16,13 @@ from financial_report_qa.data.dataset_builder import (
 )
 from financial_report_qa.evaluation.normalization_audit import (
     SAMPLE_SCHEMA,
+    AuditComparison,
     AuditSamplingConfig,
     LabelRecord,
+    QualityGateError,
     build_issue_sample,
+    compare_releases,
+    enforce_quality_gate,
     evaluate_labels,
     load_and_validate_labels,
 )
@@ -314,15 +319,9 @@ def test_evaluate_labels_computes_exact_metrics_and_coverage(tmp_path: Path) -> 
     )
 
     labels = (
-        LabelRecord(
-            sample_id="s1", label="true_issue", cause_code="ocr_corruption"
-        ),
-        LabelRecord(
-            sample_id="s2", label="false_positive", cause_code="year_header_as_unit"
-        ),
-        LabelRecord(
-            sample_id="s3", label="uncertain", cause_code="other"
-        ),
+        LabelRecord(sample_id="s1", label="true_issue", cause_code="ocr_corruption"),
+        LabelRecord(sample_id="s2", label="false_positive", cause_code="year_header_as_unit"),
+        LabelRecord(sample_id="s3", label="uncertain", cause_code="other"),
         # s4 is unlabeled
     )
     metrics_by_code = evaluate_labels(mock_sample, labels)
@@ -337,3 +336,215 @@ def test_evaluate_labels_computes_exact_metrics_and_coverage(tmp_path: Path) -> 
     assert m.cause_counts["ocr_corruption"] == 1
     assert m.cause_counts["year_header_as_unit"] == 1
     assert m.cause_counts["other"] == 1
+
+
+def test_compare_releases_fails_on_changed_canonical_table_ids(tmp_path: Path) -> None:
+    before = build_fixture_release(tmp_path / "before")
+    after = build_fixture_release(tmp_path / "after")
+
+    # Modify table_id in after to cause a mismatch
+    after_tables = pq.read_table(after / "tables.parquet").to_pylist()
+    after_tables[0]["table_id"] = "tbl_" + "9" * 64
+    pq.write_table(
+        pa.Table.from_pylist(after_tables, schema=TABLE_SCHEMA), after / "tables.parquet"
+    )
+
+    # Sample and labels files
+    sample_path = tmp_path / "sample.parquet"
+    pq.write_table(pa.Table.from_pylist([], schema=SAMPLE_SCHEMA), sample_path)
+    labels_path = tmp_path / "labels.csv"
+    labels_path.write_text("sample_id,label,cause_code\n", encoding="utf-8")
+
+    with pytest.raises(QualityGateError, match="canonical table IDs changed"):
+        compare_releases(before, after, sample_path, labels_path)
+
+
+def test_compare_releases_fails_on_unresolved_sample_context(tmp_path: Path) -> None:
+    before = build_fixture_release(tmp_path / "before")
+    after = build_fixture_release(tmp_path / "after")
+
+    # Write sample with 1 item
+    sample_row = {
+        "sample_id": "s1",
+        "release_fingerprint": "release-1",
+        "issue_code": "unit_unknown",
+        "field": "unit",
+        "raw_value": "test",
+        "doc_id": "doc_1",
+        "table_id": "tbl_1",
+        "cell_id": "cell_" + "1" * 64,
+        "company_code": "VCB",
+        "report_year": 2024,
+        "statement_type": "income_statement",
+        "table_title_raw": "",
+        "table_unit_raw": "",
+        "row_label_raw": "Doanh thu",
+        "column_label_raw": "Năm 2024",
+        "value_raw": "1000",
+        "source_line_start": 1,
+        "source_line_end": 1,
+        "stratum_key": "s1",
+        "selection_rank": "r1",
+    }
+    sample_path = tmp_path / "sample.parquet"
+    pq.write_table(pa.Table.from_pylist([sample_row], schema=SAMPLE_SCHEMA), sample_path)
+
+    # Empty labels file -> sample s1 is unresolved
+    labels_path = tmp_path / "labels.csv"
+    labels_path.write_text("sample_id,label,cause_code\n", encoding="utf-8")
+
+    with pytest.raises(QualityGateError, match="unresolved sample context"):
+        compare_releases(before, after, sample_path, labels_path)
+
+
+def test_quality_gate_checks_table_count() -> None:
+    comparison = AuditComparison(
+        before_fingerprint="fp1",
+        after_fingerprint="fp2",
+        before_table_count=100,
+        after_table_count=100,  # not 146011
+        before_issue_count=10,
+        after_issue_count=5,
+        coverage=Decimal("0.95"),
+        false_positive_rate=Decimal("0.02"),
+        passed=True,
+        errors=(),
+    )
+    with pytest.raises(QualityGateError, match="table count not equal to 146,011"):
+        enforce_quality_gate(comparison)
+
+
+def test_quality_gate_checks_coverage() -> None:
+    comparison = AuditComparison(
+        before_fingerprint="fp1",
+        after_fingerprint="fp2",
+        before_table_count=146011,
+        after_table_count=146011,
+        before_issue_count=10,
+        after_issue_count=5,
+        coverage=Decimal("0.85"),  # < 0.90
+        false_positive_rate=Decimal("0.02"),
+        passed=True,
+        errors=(),
+    )
+    with pytest.raises(QualityGateError, match="coverage below 0.90"):
+        enforce_quality_gate(comparison)
+
+
+def test_quality_gate_checks_false_positive_rate() -> None:
+    comparison = AuditComparison(
+        before_fingerprint="fp1",
+        after_fingerprint="fp2",
+        before_table_count=146011,
+        after_table_count=146011,
+        before_issue_count=10,
+        after_issue_count=5,
+        coverage=Decimal("0.95"),
+        false_positive_rate=Decimal("0.08"),  # > 0.05
+        passed=True,
+        errors=(),
+    )
+    with pytest.raises(QualityGateError, match="false-positive rate above 0.05"):
+        enforce_quality_gate(comparison)
+
+
+def test_quality_gate_success() -> None:
+    comparison = AuditComparison(
+        before_fingerprint="fp1",
+        after_fingerprint="fp2",
+        before_table_count=146011,
+        after_table_count=146011,
+        before_issue_count=10,
+        after_issue_count=5,
+        coverage=Decimal("0.95"),
+        false_positive_rate=Decimal("0.02"),
+        passed=True,
+        errors=(),
+    )
+    enforce_quality_gate(comparison)
+
+
+def test_compare_releases_fails_on_missing_source_context(tmp_path: Path) -> None:
+    before = build_fixture_release(tmp_path / "before")
+    after = build_fixture_release(tmp_path / "after")
+
+    # Remove a cell from the after release
+    after_cells = pq.read_table(after / "cells.parquet").to_pylist()
+    del after_cells[0]
+    pq.write_table(pa.Table.from_pylist(after_cells, schema=CELL_SCHEMA), after / "cells.parquet")
+
+    sample_row = {
+        "sample_id": "s1",
+        "release_fingerprint": "release-1",
+        "issue_code": "unit_unknown",
+        "field": "unit",
+        "raw_value": "test",
+        "doc_id": "doc_1",
+        "table_id": "tbl_1",
+        "cell_id": "cell_" + "1" * 64,  # First cell from fixture
+        "company_code": "VCB",
+        "report_year": 2024,
+        "statement_type": "income_statement",
+        "table_title_raw": "",
+        "table_unit_raw": "",
+        "row_label_raw": "Doanh thu",
+        "column_label_raw": "Năm 2024",
+        "value_raw": "1000",
+        "source_line_start": 1,
+        "source_line_end": 1,
+        "stratum_key": "s1",
+        "selection_rank": "r1",
+    }
+    sample_path = tmp_path / "sample.parquet"
+    pq.write_table(pa.Table.from_pylist([sample_row], schema=SAMPLE_SCHEMA), sample_path)
+
+    labels_path = tmp_path / "labels.csv"
+    labels_path.write_text(
+        "sample_id,label,cause_code\ns1,true_issue,ocr_corruption\n", encoding="utf-8"
+    )
+
+    with pytest.raises(QualityGateError, match="missing or changed source context"):
+        compare_releases(before, after, sample_path, labels_path)
+
+
+def test_compare_releases_fails_on_changed_source_context(tmp_path: Path) -> None:
+    before = build_fixture_release(tmp_path / "before")
+    after = build_fixture_release(tmp_path / "after")
+
+    # Change a cell's raw value in the after release
+    after_cells = pq.read_table(after / "cells.parquet").to_pylist()
+    after_cells[0]["value_raw"] = "9999"
+    pq.write_table(pa.Table.from_pylist(after_cells, schema=CELL_SCHEMA), after / "cells.parquet")
+
+    sample_row = {
+        "sample_id": "s1",
+        "release_fingerprint": "release-1",
+        "issue_code": "unit_unknown",
+        "field": "unit",
+        "raw_value": "test",
+        "doc_id": "doc_1",
+        "table_id": "tbl_1",
+        "cell_id": "cell_" + "1" * 64,  # First cell from fixture
+        "company_code": "VCB",
+        "report_year": 2024,
+        "statement_type": "income_statement",
+        "table_title_raw": "",
+        "table_unit_raw": "",
+        "row_label_raw": "Doanh thu",
+        "column_label_raw": "Năm 2024",
+        "value_raw": "1000",
+        "source_line_start": 1,
+        "source_line_end": 1,
+        "stratum_key": "s1",
+        "selection_rank": "r1",
+    }
+    sample_path = tmp_path / "sample.parquet"
+    pq.write_table(pa.Table.from_pylist([sample_row], schema=SAMPLE_SCHEMA), sample_path)
+
+    labels_path = tmp_path / "labels.csv"
+    labels_path.write_text(
+        "sample_id,label,cause_code\ns1,true_issue,ocr_corruption\n", encoding="utf-8"
+    )
+
+    with pytest.raises(QualityGateError, match="missing or changed source context"):
+        compare_releases(before, after, sample_path, labels_path)

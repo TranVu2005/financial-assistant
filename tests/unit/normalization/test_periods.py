@@ -1,7 +1,7 @@
 import pytest
 
 from financial_report_qa.normalization._shared import Decision
-from financial_report_qa.normalization.periods import normalize_period
+from financial_report_qa.normalization.periods import has_period_evidence, normalize_period
 
 
 @pytest.mark.parametrize(
@@ -22,3 +22,10 @@ from financial_report_qa.normalization.periods import normalize_period
 )
 def test_normalize_period(raw: str, report_year: int, expected: Decision[str]) -> None:
     assert normalize_period(raw, report_year) == expected
+
+
+def test_period_evidence_rejects_generic_headers() -> None:
+    assert has_period_evidence("Giá trị") is False
+    assert has_period_evidence("Số tiền") is False
+    assert has_period_evidence("2024") is True
+    assert has_period_evidence("Tháng 12") is True

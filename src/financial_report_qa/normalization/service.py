@@ -12,10 +12,17 @@ from financial_report_qa.normalization._shared import (
 )
 from financial_report_qa.normalization.companies import normalize_company
 from financial_report_qa.normalization.metrics import normalize_metric
-from financial_report_qa.normalization.numbers import parse_number
-from financial_report_qa.normalization.periods import normalize_period
+from financial_report_qa.normalization.numbers import (
+    is_numeric_candidate,
+    parse_number,
+)
+from financial_report_qa.normalization.periods import has_period_evidence, normalize_period
 from financial_report_qa.normalization.statements import normalize_statement_type
-from financial_report_qa.normalization.units import normalize_unit, resolve_unit
+from financial_report_qa.normalization.units import (
+    has_unit_evidence,
+    normalize_unit,
+    resolve_unit,
+)
 from financial_report_qa.schemas.documents import DocumentRecord
 from financial_report_qa.schemas.normalization import (
     NormalizationField,
@@ -45,9 +52,7 @@ def _issue(
     )
 
 
-def normalize_extraction(
-    document: DocumentRecord, result: ExtractionResult
-) -> NormalizedDocument:
+def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> NormalizedDocument:
     if document.doc_id != result.doc_id:
         raise NormalizationError("document and extraction IDs must match")
 
@@ -101,21 +106,22 @@ def normalize_extraction(
                 m_dec = normalize_metric(first_label)
                 row_metric_decisions[row_idx] = (m_dec.value, m_dec.issue_code)
                 if m_dec.issue_code is not None:
-                    # Emit one metric issue per logical row for lowest (col_idx, cell_id)
-                    target_cell = min(
-
-                        cell_list, key=lambda c: (c.col_idx, c.cell_id)
-                    )
-                    issues.append(
-                        _issue(
-                            code=m_dec.issue_code,
-                            field="metric",
-                            document=document,
-                            table_id=table_id,
-                            cell_id=target_cell.cell_id,
-                            raw_value=first_label,
+                    if not (
+                        m_dec.issue_code == "metric_unknown"
+                        and (stmt_dec.value is None or stmt_dec.value == "notes")
+                    ):
+                        # Emit one metric issue per logical row for lowest (col_idx, cell_id)
+                        target_cell = min(cell_list, key=lambda c: (c.col_idx, c.cell_id))
+                        issues.append(
+                            _issue(
+                                code=m_dec.issue_code,
+                                field="metric",
+                                document=document,
+                                table_id=table_id,
+                                cell_id=target_cell.cell_id,
+                                raw_value=first_label,
+                            )
                         )
-                    )
             else:
                 row_metric_decisions[row_idx] = (None, None)
 
@@ -123,8 +129,11 @@ def normalize_extraction(
         col_period_decisions: dict[str, tuple[str | None, NormalizationIssueCode | None]] = {}
         for cell in extracted.cells:
             if cell.column_label_raw and cell.column_label_raw not in col_period_decisions:
-                p_dec = normalize_period(cell.column_label_raw, document.report_year)
-                col_period_decisions[cell.column_label_raw] = (p_dec.value, p_dec.issue_code)
+                if has_period_evidence(cell.column_label_raw):
+                    p_dec = normalize_period(cell.column_label_raw, document.report_year)
+                    col_period_decisions[cell.column_label_raw] = (p_dec.value, p_dec.issue_code)
+                else:
+                    col_period_decisions[cell.column_label_raw] = (None, None)
 
         # Process cells
         normalized_cells: list[CellRecord] = []
@@ -159,43 +168,53 @@ def normalize_extraction(
             val_num = None
             unit_val = None
 
-            if is_value_candidate:
-                num_dec = parse_number(cell.value_raw)
-                if num_dec.value is not None:
-                    val_num = num_dec.value
-                elif num_dec.issue_code is not None:
-                    if num_dec.issue_code == "number_missing" and metric_val is None:
-                        pass
-                    else:
+            if is_value_candidate and cell.value_raw is not None:
+                num_dec = None
+                if is_numeric_candidate(cell.value_raw):
+                    num_dec = parse_number(cell.value_raw)
+                    if num_dec.value is not None:
+                        val_num = num_dec.value
+                    elif num_dec.issue_code is not None:
+                        if num_dec.issue_code == "number_missing" and metric_val is None:
+                            pass
+                        else:
+                            issues.append(
+                                _issue(
+                                    code=num_dec.issue_code,
+                                    field="number",
+                                    document=document,
+                                    table_id=table_id,
+                                    cell_id=cell.cell_id,
+                                    raw_value=cell.value_raw,
+                                )
+                            )
+
+                cell_hint = num_dec.unit_hint if num_dec is not None else None
+                has_unit_ctx = (
+                    cell_hint is not None
+                    or has_unit_evidence(cell.value_raw)
+                    or has_unit_evidence(cell.column_label_raw)
+                    or has_unit_evidence(table_rec.unit_raw)
+                )
+                if has_unit_ctx:
+                    unit_dec = resolve_unit(
+                        cell_hint=cell_hint,
+                        column_raw=cell.column_label_raw,
+                        table_raw=table_rec.unit_raw,
+                    )
+                    if unit_dec.value is not None:
+                        unit_val = unit_dec.value
+                    elif unit_dec.issue_code is not None:
                         issues.append(
                             _issue(
-                                code=num_dec.issue_code,
-                                field="number",
+                                code=unit_dec.issue_code,
+                                field="unit",
                                 document=document,
                                 table_id=table_id,
                                 cell_id=cell.cell_id,
                                 raw_value=cell.value_raw,
                             )
                         )
-
-                unit_dec = resolve_unit(
-                    cell_hint=num_dec.unit_hint,
-                    column_raw=cell.column_label_raw,
-                    table_raw=table_rec.unit_raw,
-                )
-                if unit_dec.value is not None:
-                    unit_val = unit_dec.value
-                elif unit_dec.issue_code is not None:
-                    issues.append(
-                        _issue(
-                            code=unit_dec.issue_code,
-                            field="unit",
-                            document=document,
-                            table_id=table_id,
-                            cell_id=cell.cell_id,
-                            raw_value=cell.value_raw,
-                        )
-                    )
 
             updated_cell = cell.model_copy(
                 update={
@@ -236,9 +255,7 @@ def normalize_extraction(
         if key not in unique_issues_dict:
             unique_issues_dict[key] = issue
 
-    sorted_issues = tuple(
-        sorted(unique_issues_dict.values(), key=issue_sort_key)
-    )
+    sorted_issues = tuple(sorted(unique_issues_dict.values(), key=issue_sort_key))
 
     normalized_extraction = ExtractionResult(
         doc_id=document.doc_id,
@@ -253,9 +270,7 @@ def normalize_extraction(
         "issues": [issue.model_dump(mode="json") for issue in sorted_issues],
         "ruleset_version": RULESET_VERSION,
     }
-    fingerprint = hashlib.sha256(
-        orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
-    ).hexdigest()
+    fingerprint = hashlib.sha256(orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)).hexdigest()
 
     return NormalizedDocument(
         document=document,

@@ -150,9 +150,7 @@ def _source_table_id(
     line_start: int,
     line_end: int,
 ) -> str:
-    payload = (
-        f"{relative_path}|{source_sha256}|{ordinal}|{line_start}|{line_end}".encode()
-    )
+    payload = f"{relative_path}|{source_sha256}|{ordinal}|{line_start}|{line_end}".encode()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -172,35 +170,25 @@ def build_source_table_occurrences(
 
     html_items = sorted(
         (
-            *(
-                item
-                for item in detection.candidates
-                if item.kind == "html"
-            ),
-            *(
-                item
-                for item in detection.rejected
-                if item.kind == "html"
-            ),
+            *(item for item in detection.candidates if item.kind == "html"),
+            *(item for item in detection.rejected if item.kind == "html"),
         ),
-        key=lambda item: (item.ordinal, item.line_start, item.line_end),
+        key=lambda item: (item.ordinal, item.line_start, item.line_end),  # type: ignore[attr-defined]
     )
 
     for item in html_items:
-        key = (item.ordinal, item.line_start, item.line_end)
+        key = (item.ordinal, item.line_start, item.line_end)  # type: ignore[attr-defined]
         canonical_table_id = canonical_table_ids.get(key)
         rejected = rejected_by_key.get(key)
         if canonical_table_id is None and rejected is None:
-            raise ValueError(
-                "every html candidate must resolve to a canonical or rejected outcome"
-            )
+            raise ValueError("every html candidate must resolve to a canonical or rejected outcome")
 
         source_table_id = _source_table_id(
             relative_path=document.document.relative_path,
             source_sha256=document.document.sha256,
-            ordinal=item.ordinal,
-            line_start=item.line_start,
-            line_end=item.line_end,
+            ordinal=item.ordinal,  # type: ignore[attr-defined]
+            line_start=item.line_start,  # type: ignore[attr-defined]
+            line_end=item.line_end,  # type: ignore[attr-defined]
         )
         if source_table_id in seen_source_ids:
             raise ValueError("duplicate source table occurrence ID")
@@ -212,12 +200,12 @@ def build_source_table_occurrences(
                 "doc_id": document.document.doc_id,
                 "relative_path": document.document.relative_path,
                 "source_sha256": document.document.sha256,
-                "ordinal": item.ordinal,
-                "line_start": item.line_start,
-                "line_end": item.line_end,
+                "ordinal": item.ordinal,  # type: ignore[attr-defined]
+                "line_start": item.line_start,  # type: ignore[attr-defined]
+                "line_end": item.line_end,  # type: ignore[attr-defined]
                 "status": "canonical" if canonical_table_id is not None else "rejected",
                 "canonical_table_id": canonical_table_id,
-                "rejection_code": None if canonical_table_id is not None else rejected.reason,
+                "rejection_code": rejected.reason if rejected is not None else None,
                 "duplicate_of_relative_path": None,
             }
         )
@@ -233,9 +221,9 @@ def build_duplicate_source_table_occurrences(
     rows: list[dict[str, object]] = []
     seen_source_ids: set[str] = set()
     for primary_row in primary_rows:
-        ordinal = int(primary_row["ordinal"])
-        line_start = int(primary_row["line_start"])
-        line_end = int(primary_row["line_end"])
+        ordinal = int(str(primary_row["ordinal"]))
+        line_start = int(str(primary_row["line_start"]))
+        line_end = int(str(primary_row["line_end"]))
         source_table_id = _source_table_id(
             relative_path=duplicate_document.relative_path,
             source_sha256=duplicate_document.sha256,
@@ -265,7 +253,7 @@ def build_duplicate_source_table_occurrences(
 
 
 def flatten_normalized_documents(
-    normalized_docs: tuple[NormalizedDocument, ...]
+    normalized_docs: tuple[NormalizedDocument, ...],
 ) -> FlattenedDataset:
     doc_rows: list[dict[str, object]] = []
     table_rows: list[dict[str, object]] = []
@@ -395,9 +383,7 @@ def _build_canonical_source_table_ids(
             and table.table.line_end >= candidate.line_end
         ]
         if len(matching_tables) != 1:
-            raise DatasetBuildError(
-                "html candidate must map to exactly one canonical table"
-            )
+            raise DatasetBuildError("html candidate must map to exactly one canonical table")
         canonical_table_ids[key] = matching_tables[0]
     return canonical_table_ids
 
@@ -409,9 +395,9 @@ def _source_occurrence_sort_key(
     return (
         relative_path.casefold(),
         relative_path,
-        int(row["ordinal"]),
-        int(row["line_start"]),
-        int(row["line_end"]),
+        int(str(row["ordinal"])),
+        int(str(row["line_start"])),
+        int(str(row["line_end"])),
         str(row["source_table_id"]),
     )
 
@@ -487,14 +473,10 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
     manifest_snapshot = read_manifest(config.manifest_path)
 
     ready_documents = [
-        doc
-        for doc in manifest_snapshot.inventory.documents
-        if doc.inventory_status == "ready"
+        doc for doc in manifest_snapshot.inventory.documents if doc.inventory_status == "ready"
     ]
     duplicate_documents = [
-        doc
-        for doc in manifest_snapshot.inventory.documents
-        if doc.inventory_status == "duplicate"
+        doc for doc in manifest_snapshot.inventory.documents if doc.inventory_status == "duplicate"
     ]
 
     normalized_docs: list[NormalizedDocument] = []
@@ -504,9 +486,7 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
     for doc in ready_documents:
         file_path = config.snapshot_root / doc.relative_path
         if not file_path.is_file():
-            raise DatasetBuildError(
-                f"document file missing from snapshot: {file_path}"
-            )
+            raise DatasetBuildError(f"document file missing from snapshot: {file_path}")
 
         decoded_document = read_document(config.snapshot_root, doc)
         detection_result = detect_table_candidates(decoded_document)
@@ -530,9 +510,7 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
                 f"duplicate document primary layout missing: {doc.relative_path}"
             )
         if doc.sha256 != primary_document.sha256:
-            raise DatasetBuildError(
-                f"duplicate document sha256 mismatch: {doc.relative_path}"
-            )
+            raise DatasetBuildError(f"duplicate document sha256 mismatch: {doc.relative_path}")
         primary_rows = ready_occurrence_rows_by_path.get(duplicate_of_relative_path)
         if primary_rows is None:
             raise DatasetBuildError(
@@ -572,22 +550,23 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
             return [_json_safe(v) for v in obj]
         return obj
 
-    payload = _json_safe({
-        "schema_version": config.schema_version,
-        "source_manifest_sha256": manifest_snapshot.sha256,
-        "documents": flattened.documents,
-        "tables": flattened.tables,
-        "cells": flattened.cells,
-        "issues": flattened.issues,
-        "source_table_occurrences": flattened.source_table_occurrences,
-    })
+    payload = _json_safe(
+        {
+            "schema_version": config.schema_version,
+            "source_manifest_sha256": manifest_snapshot.sha256,
+            "documents": flattened.documents,
+            "tables": flattened.tables,
+            "cells": flattened.cells,
+            "issues": flattened.issues,
+            "source_table_occurrences": flattened.source_table_occurrences,
+        }
+    )
     dataset_fingerprint = hashlib.sha256(
         orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
     ).hexdigest()
 
     release_dir = (
-        config.processed_root
-        / f"release_v{config.schema_version}_{dataset_fingerprint[:12]}"
+        config.processed_root / f"release_v{config.schema_version}_{dataset_fingerprint[:12]}"
     )
     config.processed_root.mkdir(parents=True, exist_ok=True)
 
@@ -603,24 +582,15 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
             schema=SOURCE_TABLE_OCCURRENCE_SCHEMA,
         )
 
-        pq.write_table(
-            doc_table, temp_dir / "documents.parquet", compression="snappy"
-        )  # type: ignore[no-untyped-call]
-        pq.write_table(
-            table_table, temp_dir / "tables.parquet", compression="snappy"
-        )  # type: ignore[no-untyped-call]
-        pq.write_table(
-            cell_table, temp_dir / "cells.parquet", compression="snappy"
-        )  # type: ignore[no-untyped-call]
-        pq.write_table(
-            issue_table, temp_dir / "issues.parquet", compression="snappy"
-        )  # type: ignore[no-untyped-call]
+        pq.write_table(doc_table, temp_dir / "documents.parquet", compression="snappy")  # type: ignore[no-untyped-call]
+        pq.write_table(table_table, temp_dir / "tables.parquet", compression="snappy")  # type: ignore[no-untyped-call]
+        pq.write_table(cell_table, temp_dir / "cells.parquet", compression="snappy")  # type: ignore[no-untyped-call]
+        pq.write_table(issue_table, temp_dir / "issues.parquet", compression="snappy")  # type: ignore[no-untyped-call]
         pq.write_table(
             source_table_occurrence_table,
             temp_dir / "source_table_occurrences.parquet",
             compression="snappy",
         )  # type: ignore[no-untyped-call]
-
 
         issue_counts: dict[str, int] = {}
         for iss in flattened.issues:
@@ -642,9 +612,9 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
             },
         }
         (temp_dir / "manifest.json").write_bytes(
-            json.dumps(
-                release_manifest, ensure_ascii=False, indent=2, sort_keys=True
-            ).encode("utf-8")
+            json.dumps(release_manifest, ensure_ascii=False, indent=2, sort_keys=True).encode(
+                "utf-8"
+            )
         )
 
         if release_dir.exists():

@@ -101,9 +101,7 @@ def read_manifest(path: Path) -> ManifestSnapshot:
             try:
                 doc = DocumentRecord.model_validate(data)
             except ValidationError as exc:
-                raise DatasetBuildError(
-                    f"manifest line {idx}: invalid document record"
-                ) from exc
+                raise DatasetBuildError(f"manifest line {idx}: invalid document record") from exc
 
             if doc.relative_path in seen_paths:
                 raise DatasetBuildError(
@@ -124,9 +122,7 @@ def read_manifest(path: Path) -> ManifestSnapshot:
             try:
                 iss = InventoryIssue.model_validate(data)
             except ValidationError as exc:
-                raise DatasetBuildError(
-                    f"manifest line {idx}: invalid issue record"
-                ) from exc
+                raise DatasetBuildError(f"manifest line {idx}: invalid issue record") from exc
 
             if iss.relative_path in seen_paths:
                 raise DatasetBuildError(

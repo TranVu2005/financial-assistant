@@ -93,9 +93,7 @@ def _split_source_lines(text: str) -> tuple[SourceLine, ...]:
         else:
             line_ending = ""
         line_text = value[: -len(line_ending)] if line_ending else value
-        lines.append(
-            SourceLine(number=len(lines) + 1, text=line_text, line_ending=line_ending)
-        )
+        lines.append(SourceLine(number=len(lines) + 1, text=line_text, line_ending=line_ending))
     return tuple(lines)
 
 
@@ -136,10 +134,7 @@ def _segment_blocks(lines: tuple[SourceLine, ...]) -> tuple[TextBlock, ...]:
             )
             index += 1
             continue
-        if any(
-            not token.group().startswith("</")
-            for token in _TABLE_TOKEN_RE.finditer(line.text)
-        ):
+        if any(not token.group().startswith("</") for token in _TABLE_TOKEN_RE.finditer(line.text)):
             flush_prose()
             table_lines: list[SourceLine] = []
             table_depth = 0

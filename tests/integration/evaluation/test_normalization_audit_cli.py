@@ -297,3 +297,64 @@ def test_normalization_audit_sample_and_baseline_cli(tmp_path: Path) -> None:
     assert "| `unit_unknown` | 3 | 3 | 0 | 0 | 0 | 1.0000 | 0.0000 |" in md_content
 
 
+def test_normalization_audit_compare_cli(tmp_path: Path) -> None:
+    before_dir = build_fixture_release(tmp_path / "before")
+    after_dir = build_fixture_release(tmp_path / "after")
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "seed: normalization-audit-v1\nmax_per_stratum: 5\nissue_limits:\n"
+        "  unit_unknown: 200\n  metric_unknown: 200\n",
+        encoding="utf-8",
+    )
+    sample_path = tmp_path / "sample.parquet"
+    assert (
+        main(
+            [
+                "sample",
+                "--release",
+                str(before_dir),
+                "--output",
+                str(sample_path),
+                "--config",
+                str(config_path),
+            ]
+        )
+        == 0
+    )
+
+    labels_path = tmp_path / "labels.csv"
+    read_table = cast(Any, pq.read_table)
+    table = read_table(sample_path)
+    rows = table.to_pylist()
+    csv_lines = ["sample_id,label,cause_code,reviewer_note"]
+    for r in rows:
+        csv_lines.append(f"{r['sample_id']},true_issue,ocr_corruption,test note")
+    labels_path.write_text("\n".join(csv_lines) + "\n", encoding="utf-8")
+
+    compare_dir = tmp_path / "compare"
+    assert (
+        main(
+            [
+                "compare",
+                "--before",
+                str(before_dir),
+                "--after",
+                str(after_dir),
+                "--sample",
+                str(sample_path),
+                "--labels",
+                str(labels_path),
+                "--output-dir",
+                str(compare_dir),
+            ]
+        )
+        == 1
+    )
+
+    assert (compare_dir / "comparison.json").is_file()
+    assert (compare_dir / "comparison.md").is_file()
+
+    comp_data = json.loads((compare_dir / "comparison.json").read_text(encoding="utf-8"))
+    assert comp_data["passed"] is False
+    assert any("table count not equal to 146,011" in err for err in comp_data["errors"])

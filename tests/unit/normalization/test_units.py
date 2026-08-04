@@ -9,6 +9,7 @@ from financial_report_qa.normalization.units import (
     CanonicalUnit,
     convert_scale,
     economic_value,
+    has_unit_evidence,
     normalize_unit,
     resolve_unit,
 )
@@ -30,9 +31,9 @@ def test_normalize_unit_aliases(raw: str, expected: CanonicalUnit) -> None:
 
 
 def test_resolve_unit_prefers_more_specific_agreeing_evidence() -> None:
-    assert resolve_unit(
-        cell_hint="percent", column_raw="Tỷ lệ (%)", table_raw=None
-    ) == Decision(value="percent")
+    assert resolve_unit(cell_hint="percent", column_raw="Tỷ lệ (%)", table_raw=None) == Decision(
+        value="percent"
+    )
 
 
 def test_resolve_unit_rejects_conflicting_evidence() -> None:
@@ -72,3 +73,8 @@ def test_resolve_unit_ignores_year_column_labels_without_unit_markers() -> None:
     decision_year = resolve_unit(cell_hint=None, column_raw="Năm 2024", table_raw=None)
     assert decision_year.value is None
     assert decision_year.issue_code is None
+
+
+def test_unit_evidence_rejects_year_header() -> None:
+    assert has_unit_evidence("2024") is False
+    assert has_unit_evidence("Đơn vị: triệu đồng") is True

@@ -30,9 +30,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             repo_id=args.repo_id,
             revision=args.revision,
         )
-        ready = tuple(
-            item for item in inventory.documents if item.inventory_status == "ready"
-        )
+        ready = tuple(item for item in inventory.documents if item.inventory_status == "ready")
         table_count = 0
         cell_count = 0
         placement_count = 0
@@ -44,9 +42,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if index < args.repeat_sample:
                 repeated = extract_document(args.root, document)
                 if repeated != result:
-                    raise ValueError(
-                        f"non-deterministic extraction: {document.relative_path}"
-                    )
+                    raise ValueError(f"non-deterministic extraction: {document.relative_path}")
             table_count += len(result.tables)
             cell_count += sum(len(item.cells) for item in result.tables)
             placement_count += sum(len(item.placements) for item in result.tables)

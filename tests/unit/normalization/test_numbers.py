@@ -4,7 +4,12 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from financial_report_qa.normalization.numbers import NumberDecision, parse_number
+from financial_report_qa.normalization.numbers import (
+    NumberDecision,
+    is_missing_number,
+    is_numeric_candidate,
+    parse_number,
+)
 
 
 @pytest.mark.parametrize(
@@ -32,7 +37,9 @@ def test_parse_number_examples(
     issue: str | None,
 ) -> None:
     assert parse_number(raw) == NumberDecision(
-        value=value, unit_hint=unit_hint, issue_code=issue  # type: ignore[arg-type]
+        value=value,
+        unit_hint=unit_hint,  # type: ignore[arg-type]
+        issue_code=issue,  # type: ignore[arg-type]
     )
 
 
@@ -55,3 +62,9 @@ def test_parse_number_never_mutates_input(raw: str) -> None:
     before = raw
     parse_number(raw)
     assert raw == before
+
+
+def test_number_candidate_rejects_text_but_keeps_malformed_numeric_input() -> None:
+    assert is_numeric_candidate("Thuyết minh") is False
+    assert is_numeric_candidate("1.50.0") is True
+    assert is_missing_number("—") is True
