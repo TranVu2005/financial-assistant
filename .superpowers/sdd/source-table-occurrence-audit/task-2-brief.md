@@ -1,0 +1,3 @@
+# Task 2 brief
+
+Read Task 2 in `docs/superpowers/plans/2026-08-04-source-table-occurrence-audit.md` first. Implement Task 2 only. Build duplicate occurrence rows from primary layout; wire the occurrence rows into the dataset release artifact, deterministic fingerprint, and manifest counts. Existing ready/duplicate manifest semantics and SHA validation apply. Use the worktree code, do not touch normalization or README. Test through `D:\GitHub\financial-assistant\.venv\Scripts\python.exe` with `PYTHONPATH` set to this worktree's `src`. Commit only Task 2 changes, then write detailed report to `D:\GitHub\financial-assistant\.worktrees\source-table-occurrence-audit\.superpowers\sdd\source-table-occurrence-audit\task-2-report.md`.

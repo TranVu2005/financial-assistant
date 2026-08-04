@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 
 import pyarrow.parquet as pq
@@ -7,6 +8,7 @@ from financial_report_qa.data.dataset_builder import (
     CELL_SCHEMA,
     DOCUMENT_SCHEMA,
     ISSUE_SCHEMA,
+    SOURCE_TABLE_OCCURRENCE_SCHEMA,
     TABLE_SCHEMA,
     DatasetBuildConfig,
     build_dataset,
@@ -134,9 +136,26 @@ def test_e2e_pipeline_builds_reproducible_release(tmp_path: Path) -> None:
         "tables.parquet",
         "cells.parquet",
         "issues.parquet",
+        "source_table_occurrences.parquet",
         "manifest.json",
     )
     for filename in filenames:
         bytes_run1 = (res1.release_path / filename).read_bytes()
         bytes_run2 = (res2.release_path / filename).read_bytes()
         assert bytes_run1 == bytes_run2, f"{filename} is not byte-identical across runs"
+
+    # Verify source_table_occurrences contract (Task 3)
+    occurrences = pq.read_table(
+        rel_path / "source_table_occurrences.parquet"
+    )  # type: ignore[no-untyped-call]
+    assert SOURCE_TABLE_OCCURRENCE_SCHEMA.equals(occurrences.schema)
+    assert occurrences.num_rows == 2
+    assert set(occurrences.column("status").to_pylist()) == {"canonical"}
+
+    manifest = json.loads((rel_path / "manifest.json").read_text("utf-8"))
+    assert manifest["source_table_occurrence_counts"] == {
+        "total": 2,
+        "canonical": 2,
+        "rejected": 0,
+        "duplicate": 0,
+    }

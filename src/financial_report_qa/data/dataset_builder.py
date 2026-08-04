@@ -1,6 +1,7 @@
 import hashlib
 import json
 import tempfile
+from decimal import Decimal
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -561,7 +562,17 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
     )
 
     # Calculate dataset payload fingerprint
-    payload = {
+    def _json_safe(obj: object) -> object:
+        """Convert non-JSON-serializable types for deterministic fingerprinting."""
+        if isinstance(obj, Decimal):
+            return str(obj)
+        if isinstance(obj, dict):
+            return {k: _json_safe(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_json_safe(v) for v in obj]
+        return obj
+
+    payload = _json_safe({
         "schema_version": config.schema_version,
         "source_manifest_sha256": manifest_snapshot.sha256,
         "documents": flattened.documents,
@@ -569,7 +580,7 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
         "cells": flattened.cells,
         "issues": flattened.issues,
         "source_table_occurrences": flattened.source_table_occurrences,
-    }
+    })
     dataset_fingerprint = hashlib.sha256(
         orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
     ).hexdigest()

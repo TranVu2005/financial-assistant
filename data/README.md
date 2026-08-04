@@ -14,6 +14,10 @@ financial-report-qa inventory-data \
   --manifest data/manifests/documents.jsonl
 ```
 
+The ViFinQA snapshot contains 146,246 raw HTML table occurrences in 1,973 source
+files; canonical build emits 146,011 parseable tables and records all source
+occurrences in `source_table_occurrences.parquet`.
+
 Only commit small, redistributable manifests. Investigate every `record_type="issue"`
 entry before ingestion.
 
