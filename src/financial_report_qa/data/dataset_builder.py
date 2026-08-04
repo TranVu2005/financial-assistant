@@ -1,6 +1,7 @@
 import hashlib
 import json
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,7 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from financial_report_qa.core.errors import DatasetBuildError
 from financial_report_qa.data.manifests import read_manifest
-from financial_report_qa.ingestion import extract_document
+from financial_report_qa.ingestion import (
+    detect_table_candidates,
+    extract_candidates,
+    read_document,
+)
 from financial_report_qa.ingestion.provenance import (
     DecodedDocument,
     DetectionResult,
@@ -19,6 +24,7 @@ from financial_report_qa.ingestion.provenance import (
 )
 from financial_report_qa.normalization import normalize_extraction
 from financial_report_qa.normalization._shared import issue_sort_key
+from financial_report_qa.schemas.documents import DocumentRecord
 from financial_report_qa.schemas.normalization import NormalizedDocument
 
 DOCUMENT_SCHEMA = pa.schema(
@@ -132,6 +138,7 @@ class FlattenedDataset:
     tables: tuple[dict[str, object], ...]
     cells: tuple[dict[str, object], ...]
     issues: tuple[dict[str, object], ...]
+    source_table_occurrences: tuple[dict[str, object], ...] = ()
 
 
 def _source_table_id(
@@ -216,6 +223,45 @@ def build_source_table_occurrences(
             }
         )
 
+    return rows
+
+
+def build_duplicate_source_table_occurrences(
+    duplicate_document: DocumentRecord,
+    primary_rows: Sequence[dict[str, object]],
+    duplicate_of_relative_path: str,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    seen_source_ids: set[str] = set()
+    for primary_row in primary_rows:
+        ordinal = int(primary_row["ordinal"])
+        line_start = int(primary_row["line_start"])
+        line_end = int(primary_row["line_end"])
+        source_table_id = _source_table_id(
+            relative_path=duplicate_document.relative_path,
+            source_sha256=duplicate_document.sha256,
+            ordinal=ordinal,
+            line_start=line_start,
+            line_end=line_end,
+        )
+        if source_table_id in seen_source_ids:
+            raise ValueError("duplicate source table occurrence ID")
+        seen_source_ids.add(source_table_id)
+        rows.append(
+            {
+                "source_table_id": source_table_id,
+                "doc_id": duplicate_document.doc_id,
+                "relative_path": duplicate_document.relative_path,
+                "source_sha256": duplicate_document.sha256,
+                "ordinal": ordinal,
+                "line_start": line_start,
+                "line_end": line_end,
+                "status": "duplicate",
+                "canonical_table_id": None,
+                "rejection_code": None,
+                "duplicate_of_relative_path": duplicate_of_relative_path,
+            }
+        )
     return rows
 
 
@@ -327,6 +373,115 @@ def flatten_normalized_documents(
     )
 
 
+def _build_canonical_source_table_ids(
+    detection: DetectionResult,
+    extraction: ExtractionResult,
+) -> dict[tuple[int, int, int], str]:
+    rejected_keys = {
+        (item.ordinal, item.line_start, item.line_end)
+        for item in extraction.rejected
+        if item.kind == "html"
+    }
+    canonical_table_ids: dict[tuple[int, int, int], str] = {}
+    for candidate in detection.candidates:
+        if candidate.kind != "html":
+            continue
+        key = (candidate.ordinal, candidate.line_start, candidate.line_end)
+        if key in rejected_keys:
+            continue
+        matching_tables = [
+            table.table.table_id
+            for table in extraction.tables
+            if table.table.line_start <= candidate.line_start
+            and table.table.line_end >= candidate.line_end
+        ]
+        if len(matching_tables) != 1:
+            raise DatasetBuildError(
+                "html candidate must map to exactly one canonical table"
+            )
+        canonical_table_ids[key] = matching_tables[0]
+    return canonical_table_ids
+
+
+def _source_occurrence_sort_key(
+    row: dict[str, object],
+) -> tuple[str, str, int, int, int, str]:
+    relative_path = str(row["relative_path"])
+    return (
+        relative_path.casefold(),
+        relative_path,
+        int(row["ordinal"]),
+        int(row["line_start"]),
+        int(row["line_end"]),
+        str(row["source_table_id"]),
+    )
+
+
+def _validate_source_table_occurrences(
+    rows: Sequence[dict[str, object]],
+) -> dict[str, int]:
+    counts = {"canonical": 0, "rejected": 0, "duplicate": 0}
+    seen_source_ids: set[str] = set()
+    for row in rows:
+        source_table_id = str(row["source_table_id"])
+        if source_table_id in seen_source_ids:
+            raise DatasetBuildError("source table occurrence IDs must be globally unique")
+        seen_source_ids.add(source_table_id)
+
+        status = str(row["status"])
+        if status not in counts:
+            raise DatasetBuildError(f"unknown source table occurrence status: {status}")
+        counts[status] += 1
+
+        canonical_table_id = row["canonical_table_id"]
+        rejection_code = row["rejection_code"]
+        duplicate_of_relative_path = row["duplicate_of_relative_path"]
+        if status == "canonical":
+            if canonical_table_id is None:
+                raise DatasetBuildError(
+                    "canonical source table occurrences require canonical_table_id"
+                )
+            if rejection_code is not None or duplicate_of_relative_path is not None:
+                raise DatasetBuildError(
+                    "canonical source table occurrences cannot carry rejection or duplicate metadata"
+                )
+        elif status == "rejected":
+            if canonical_table_id is not None or rejection_code is None:
+                raise DatasetBuildError(
+                    "rejected source table occurrences must have only a rejection code"
+                )
+            if duplicate_of_relative_path is not None:
+                raise DatasetBuildError(
+                    "rejected source table occurrences cannot carry duplicate metadata"
+                )
+        else:
+            if canonical_table_id is not None or rejection_code is not None:
+                raise DatasetBuildError(
+                    "duplicate source table occurrences cannot carry canonical or rejection data"
+                )
+            if duplicate_of_relative_path is None:
+                raise DatasetBuildError(
+                    "duplicate source table occurrences require duplicate_of_relative_path"
+                )
+
+    if sum(counts.values()) != len(rows):
+        raise DatasetBuildError("source table occurrence counts must sum to total rows")
+    return counts
+
+
+def _duplicate_primary_relative_path(document: DocumentRecord) -> str:
+    duplicate_notes = [
+        note.removeprefix("duplicate_of=")
+        for note in document.notes
+        if note.startswith("duplicate_of=")
+    ]
+    if len(duplicate_notes) != 1 or not duplicate_notes[0]:
+        raise DatasetBuildError(
+            f"duplicate document must declare exactly one duplicate_of note: {document.relative_path}"
+        )
+    return duplicate_notes[0]
+
+
 def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
     manifest_snapshot = read_manifest(config.manifest_path)
 
@@ -335,8 +490,16 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
         for doc in manifest_snapshot.inventory.documents
         if doc.inventory_status == "ready"
     ]
+    duplicate_documents = [
+        doc
+        for doc in manifest_snapshot.inventory.documents
+        if doc.inventory_status == "duplicate"
+    ]
 
     normalized_docs: list[NormalizedDocument] = []
+    ready_occurrence_rows_by_path: dict[str, list[dict[str, object]]] = {}
+    ready_documents_by_path = {doc.relative_path: doc for doc in ready_documents}
+    source_table_occurrence_rows: list[dict[str, object]] = []
     for doc in ready_documents:
         file_path = config.snapshot_root / doc.relative_path
         if not file_path.is_file():
@@ -344,12 +507,58 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
                 f"document file missing from snapshot: {file_path}"
             )
 
-        extraction_result = extract_document(config.snapshot_root, doc)
+        decoded_document = read_document(config.snapshot_root, doc)
+        detection_result = detect_table_candidates(decoded_document)
+        extraction_result = extract_candidates(decoded_document, detection_result)
         norm_doc = normalize_extraction(doc, extraction_result)
         normalized_docs.append(norm_doc)
+        occurrence_rows = build_source_table_occurrences(
+            decoded_document,
+            detection_result,
+            extraction_result,
+            _build_canonical_source_table_ids(detection_result, extraction_result),
+        )
+        ready_occurrence_rows_by_path[doc.relative_path] = occurrence_rows
+        source_table_occurrence_rows.extend(occurrence_rows)
 
+    for doc in duplicate_documents:
+        duplicate_of_relative_path = _duplicate_primary_relative_path(doc)
+        primary_document = ready_documents_by_path.get(duplicate_of_relative_path)
+        if primary_document is None:
+            raise DatasetBuildError(
+                f"duplicate document primary layout missing: {doc.relative_path}"
+            )
+        if doc.sha256 != primary_document.sha256:
+            raise DatasetBuildError(
+                f"duplicate document sha256 mismatch: {doc.relative_path}"
+            )
+        primary_rows = ready_occurrence_rows_by_path.get(duplicate_of_relative_path)
+        if primary_rows is None:
+            raise DatasetBuildError(
+                f"duplicate document primary occurrence layout missing: {doc.relative_path}"
+            )
+        source_table_occurrence_rows.extend(
+            build_duplicate_source_table_occurrences(
+                doc,
+                primary_rows,
+                duplicate_of_relative_path,
+            )
+        )
 
     flattened = flatten_normalized_documents(tuple(normalized_docs))
+    source_table_occurrences = tuple(
+        sorted(source_table_occurrence_rows, key=_source_occurrence_sort_key)
+    )
+    flattened = FlattenedDataset(
+        documents=flattened.documents,
+        tables=flattened.tables,
+        cells=flattened.cells,
+        issues=flattened.issues,
+        source_table_occurrences=source_table_occurrences,
+    )
+    source_table_occurrence_counts = _validate_source_table_occurrences(
+        flattened.source_table_occurrences
+    )
 
     # Calculate dataset payload fingerprint
     payload = {
@@ -359,6 +568,7 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
         "tables": flattened.tables,
         "cells": flattened.cells,
         "issues": flattened.issues,
+        "source_table_occurrences": flattened.source_table_occurrences,
     }
     dataset_fingerprint = hashlib.sha256(
         orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
@@ -377,6 +587,10 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
         table_table = pa.Table.from_pylist(list(flattened.tables), schema=TABLE_SCHEMA)
         cell_table = pa.Table.from_pylist(list(flattened.cells), schema=CELL_SCHEMA)
         issue_table = pa.Table.from_pylist(list(flattened.issues), schema=ISSUE_SCHEMA)
+        source_table_occurrence_table = pa.Table.from_pylist(
+            list(flattened.source_table_occurrences),
+            schema=SOURCE_TABLE_OCCURRENCE_SCHEMA,
+        )
 
         pq.write_table(
             doc_table, temp_dir / "documents.parquet", compression="snappy"
@@ -389,6 +603,11 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
         )  # type: ignore[no-untyped-call]
         pq.write_table(
             issue_table, temp_dir / "issues.parquet", compression="snappy"
+        )  # type: ignore[no-untyped-call]
+        pq.write_table(
+            source_table_occurrence_table,
+            temp_dir / "source_table_occurrences.parquet",
+            compression="snappy",
         )  # type: ignore[no-untyped-call]
 
 
@@ -406,6 +625,10 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
             "cell_count": len(flattened.cells),
             "issue_count": len(flattened.issues),
             "issue_counts_by_code": issue_counts,
+            "source_table_occurrence_counts": {
+                "total": len(flattened.source_table_occurrences),
+                **source_table_occurrence_counts,
+            },
         }
         (temp_dir / "manifest.json").write_bytes(
             json.dumps(

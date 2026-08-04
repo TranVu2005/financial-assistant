@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -10,6 +11,7 @@ from financial_report_qa.data.dataset_builder import (
     DatasetBuildConfig,
     SOURCE_TABLE_OCCURRENCE_SCHEMA,
     build_dataset,
+    build_duplicate_source_table_occurrences,
     build_source_table_occurrences,
     flatten_normalized_documents,
 )
@@ -177,6 +179,76 @@ def test_build_source_table_occurrences_tracks_rejection_and_continuation() -> N
     assert len({str(row["source_table_id"]) for row in rows}) == 3
 
 
+def test_duplicate_rows_reuse_layout_but_not_canonical_data() -> None:
+    digest = "b" * 64
+    duplicate_doc = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path="SSH/2024/duplicate.txt",
+        company_code="SSH",
+        report_year=2024,
+        statement_scope="separate",
+        sha256=digest,
+        file_size_bytes=120,
+        encoding="utf-8",
+        inventory_status="duplicate",
+        notes=("duplicate_of=SSH/2024/primary.txt",),
+    )
+    primary_rows = [
+        {
+            "source_table_id": "primary-source-1",
+            "doc_id": stable_document_id(digest),
+            "relative_path": "SSH/2024/primary.txt",
+            "source_sha256": digest,
+            "ordinal": 0,
+            "line_start": 10,
+            "line_end": 20,
+            "status": "canonical",
+            "canonical_table_id": "table-1",
+            "rejection_code": None,
+            "duplicate_of_relative_path": None,
+        },
+        {
+            "source_table_id": "primary-source-2",
+            "doc_id": stable_document_id(digest),
+            "relative_path": "SSH/2024/primary.txt",
+            "source_sha256": digest,
+            "ordinal": 1,
+            "line_start": 21,
+            "line_end": 30,
+            "status": "rejected",
+            "canonical_table_id": None,
+            "rejection_code": "unsupported_html_structure",
+            "duplicate_of_relative_path": None,
+        },
+    ]
+
+    rows = build_duplicate_source_table_occurrences(
+        duplicate_doc,
+        primary_rows,
+        "SSH/2024/primary.txt",
+    )
+
+    assert {row["status"] for row in rows} == {"duplicate"}
+    assert all(row["canonical_table_id"] is None for row in rows)
+    assert all(row["rejection_code"] is None for row in rows)
+    assert {row["duplicate_of_relative_path"] for row in rows} == {
+        "SSH/2024/primary.txt"
+    }
+    assert all(row["doc_id"] == duplicate_doc.doc_id for row in rows)
+    assert all(row["relative_path"] == duplicate_doc.relative_path for row in rows)
+    assert all(row["source_sha256"] == duplicate_doc.sha256 for row in rows)
+    assert [(row["ordinal"], row["line_start"], row["line_end"]) for row in rows] == [
+        (0, 10, 20),
+        (1, 21, 30),
+    ]
+    assert len({str(row["source_table_id"]) for row in rows}) == 2
+    assert {str(row["source_table_id"]) for row in rows}.isdisjoint(
+        {str(row["source_table_id"]) for row in primary_rows}
+    )
+
+
 def test_flattened_rows_have_stable_order() -> None:
     def normalized_document(suffix: Literal["a", "b"]) -> NormalizedDocument:
         digest = suffix * 64
@@ -268,3 +340,85 @@ def test_build_dataset_creates_atomic_parquet_release(tmp_path: Path) -> None:
     )  # type: ignore[no-untyped-call]
     assert CELL_SCHEMA.equals(cell_table.schema)
 
+
+def test_build_dataset_emits_source_occurrence_artifact_with_duplicate_rows(
+    tmp_path: Path,
+) -> None:
+    snapshot_root = tmp_path / "snapshot"
+    snapshot_root.mkdir()
+    primary_rel = "VCB/2024/Consolidated/primary.txt"
+    duplicate_rel = "VCB/2024/Consolidated/duplicate.txt"
+    content = "<table><tr><td>Doanh thu</td><td>1.500</td></tr></table>\n"
+
+    primary_path = snapshot_root / primary_rel
+    primary_path.parent.mkdir(parents=True)
+    primary_path.write_text(content, encoding="utf-8")
+
+    duplicate_path = snapshot_root / duplicate_rel
+    duplicate_path.write_text(content, encoding="utf-8")
+
+    raw_bytes = primary_path.read_bytes()
+    digest = hashlib.sha256(raw_bytes).hexdigest()
+
+    primary_doc = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path=primary_rel,
+        company_code="VCB",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=len(raw_bytes),
+        encoding="utf-8",
+        inventory_status="ready",
+    )
+    duplicate_doc = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path=duplicate_rel,
+        company_code="VCB",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=len(raw_bytes),
+        encoding="utf-8",
+        inventory_status="duplicate",
+        notes=(f"duplicate_of={primary_rel}",),
+    )
+
+    manifest_path = tmp_path / "documents.jsonl"
+    write_manifest(
+        InventoryResult(documents=(primary_doc, duplicate_doc), issues=()),
+        manifest_path,
+    )
+
+    result = build_dataset(
+        DatasetBuildConfig(
+            snapshot_root=snapshot_root,
+            manifest_path=manifest_path,
+            processed_root=tmp_path / "processed",
+        )
+    )
+
+    occurrence_table = pq.read_table(
+        result.release_path / "source_table_occurrences.parquet"
+    )  # type: ignore[no-untyped-call]
+    assert SOURCE_TABLE_OCCURRENCE_SCHEMA.equals(occurrence_table.schema)
+    assert occurrence_table.num_rows == 2
+    assert occurrence_table.column("status").to_pylist() == ["duplicate", "canonical"]
+    assert occurrence_table.column("canonical_table_id").to_pylist().count(None) == 1
+    assert occurrence_table.column("duplicate_of_relative_path").to_pylist() == [
+        primary_rel,
+        None,
+    ]
+    assert len(set(occurrence_table.column("source_table_id").to_pylist())) == 2
+
+    manifest = json.loads((result.release_path / "manifest.json").read_text("utf-8"))
+    assert manifest["source_table_occurrence_counts"] == {
+        "total": 2,
+        "canonical": 1,
+        "rejected": 0,
+        "duplicate": 1,
+    }
