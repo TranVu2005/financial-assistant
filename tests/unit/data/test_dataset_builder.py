@@ -422,3 +422,258 @@ def test_build_dataset_emits_source_occurrence_artifact_with_duplicate_rows(
         "rejected": 0,
         "duplicate": 1,
     }
+
+
+def test_build_source_table_occurrences_raises_on_html_candidate_without_outcome() -> None:
+    """ValueError when an HTML candidate maps to neither canonical nor rejected."""
+    digest = "d" * 64
+    document = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path="XX/2024/report.txt",
+        company_code="XX",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=10,
+        encoding="utf-8",
+        inventory_status="ready",
+    )
+    decoded_document = DecodedDocument(
+        document=document,
+        text="<table><tr><td>A</td></tr></table>\n",
+        lines=(
+            SourceLine(number=1, text="<table><tr><td>A</td></tr></table>", line_ending="\n"),
+        ),
+        blocks=(TextBlock(kind="table", line_start=1, line_end=1, text="<table><tr><td>A</td></tr></table>"),),
+    )
+    detection = DetectionResult(
+        candidates=(
+            TableCandidate(
+                ordinal=0,
+                kind="html",
+                raw_source="<table><tr><td>A</td></tr></table>",
+                line_start=1,
+                line_end=1,
+                confidence=1.0,
+                evidence=("html_table_marker",),
+            ),
+        ),
+        rejected=(),
+        blocks=decoded_document.blocks,
+    )
+    extraction = ExtractionResult(
+        doc_id=document.doc_id,
+        blocks=decoded_document.blocks,
+        tables=(),
+        rejected=(),  # no rejection either!
+    )
+
+    import pytest
+
+    with pytest.raises(ValueError, match="canonical or rejected outcome"):
+        build_source_table_occurrences(decoded_document, detection, extraction, {})
+
+
+def test_build_dataset_rejects_malformed_duplicate_note(tmp_path: Path) -> None:
+    """DatasetBuildError when duplicate_of note is missing or malformed."""
+    from financial_report_qa.core.errors import DatasetBuildError
+
+    snapshot_root = tmp_path / "snapshot"
+    snapshot_root.mkdir()
+    content = "<table><tr><td>A</td></tr></table>\n"
+    doc_path = snapshot_root / "XX/2024/report.txt"
+    doc_path.parent.mkdir(parents=True)
+    doc_path.write_text(content, encoding="utf-8")
+    raw_bytes = doc_path.read_bytes()
+    digest = hashlib.sha256(raw_bytes).hexdigest()
+
+    # Duplicate with no duplicate_of= note
+    doc_ready = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path="XX/2024/report.txt",
+        company_code="XX",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=len(raw_bytes),
+        encoding="utf-8",
+        inventory_status="ready",
+    )
+    doc_bad_dup = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path="XX/2024/dup.txt",
+        company_code="XX",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=len(raw_bytes),
+        encoding="utf-8",
+        inventory_status="duplicate",
+        notes=(),  # missing duplicate_of=
+    )
+    dup_path = snapshot_root / "XX/2024/dup.txt"
+    dup_path.write_text(content, encoding="utf-8")
+
+    manifest_path = tmp_path / "documents.jsonl"
+    write_manifest(InventoryResult(documents=(doc_ready, doc_bad_dup), issues=()), manifest_path)
+
+    import pytest
+
+    with pytest.raises(DatasetBuildError, match="duplicate_of note"):
+        build_dataset(DatasetBuildConfig(
+            snapshot_root=snapshot_root,
+            manifest_path=manifest_path,
+            processed_root=tmp_path / "processed",
+        ))
+
+
+def test_build_dataset_rejects_duplicate_sha_mismatch(tmp_path: Path) -> None:
+    """DatasetBuildError when duplicate SHA doesn't match primary."""
+    from financial_report_qa.core.errors import DatasetBuildError
+
+    snapshot_root = tmp_path / "snapshot"
+    snapshot_root.mkdir()
+
+    content = "<table><tr><td>A</td></tr></table>\n"
+    primary_path = snapshot_root / "XX/2024/primary.txt"
+    primary_path.parent.mkdir(parents=True)
+    primary_path.write_text(content, encoding="utf-8")
+    raw_bytes = primary_path.read_bytes()
+    digest = hashlib.sha256(raw_bytes).hexdigest()
+
+    different_digest = "f" * 64  # deliberately wrong
+
+    doc_ready = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path="XX/2024/primary.txt",
+        company_code="XX",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=len(raw_bytes),
+        encoding="utf-8",
+        inventory_status="ready",
+    )
+    doc_dup = DocumentRecord(
+        doc_id=stable_document_id(different_digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path="XX/2024/dup.txt",
+        company_code="XX",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=different_digest,  # different from primary
+        file_size_bytes=len(raw_bytes),
+        encoding="utf-8",
+        inventory_status="duplicate",
+        notes=("duplicate_of=XX/2024/primary.txt",),
+    )
+    dup_path = snapshot_root / "XX/2024/dup.txt"
+    dup_path.write_text(content, encoding="utf-8")
+
+    manifest_path = tmp_path / "documents.jsonl"
+    write_manifest(InventoryResult(documents=(doc_ready, doc_dup), issues=()), manifest_path)
+
+    import pytest
+
+    with pytest.raises(DatasetBuildError, match="sha256 mismatch"):
+        build_dataset(DatasetBuildConfig(
+            snapshot_root=snapshot_root,
+            manifest_path=manifest_path,
+            processed_root=tmp_path / "processed",
+        ))
+
+
+def test_validate_source_table_occurrences_rejects_unknown_status() -> None:
+    """DatasetBuildError when occurrence row has an invalid status."""
+    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
+    from financial_report_qa.core.errors import DatasetBuildError
+
+    import pytest
+
+    rows = [
+        {
+            "source_table_id": "id1",
+            "status": "invalid_status",
+            "canonical_table_id": None,
+            "rejection_code": None,
+            "duplicate_of_relative_path": None,
+        }
+    ]
+    with pytest.raises(DatasetBuildError, match="unknown source table occurrence status"):
+        _validate_source_table_occurrences(rows)
+
+
+def test_validate_source_table_occurrences_rejects_canonical_without_table_id() -> None:
+    """DatasetBuildError when a canonical row is missing canonical_table_id."""
+    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
+    from financial_report_qa.core.errors import DatasetBuildError
+
+    import pytest
+
+    rows = [
+        {
+            "source_table_id": "id1",
+            "status": "canonical",
+            "canonical_table_id": None,  # missing!
+            "rejection_code": None,
+            "duplicate_of_relative_path": None,
+        }
+    ]
+    with pytest.raises(DatasetBuildError, match="require canonical_table_id"):
+        _validate_source_table_occurrences(rows)
+
+
+def test_validate_source_table_occurrences_rejects_duplicate_without_path() -> None:
+    """DatasetBuildError when a duplicate row is missing duplicate_of_relative_path."""
+    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
+    from financial_report_qa.core.errors import DatasetBuildError
+
+    import pytest
+
+    rows = [
+        {
+            "source_table_id": "id1",
+            "status": "duplicate",
+            "canonical_table_id": None,
+            "rejection_code": None,
+            "duplicate_of_relative_path": None,  # missing!
+        }
+    ]
+    with pytest.raises(DatasetBuildError, match="require duplicate_of_relative_path"):
+        _validate_source_table_occurrences(rows)
+
+
+def test_validate_source_table_occurrences_rejects_globally_non_unique_ids() -> None:
+    """DatasetBuildError when two occurrence rows share the same source_table_id."""
+    from financial_report_qa.data.dataset_builder import _validate_source_table_occurrences
+    from financial_report_qa.core.errors import DatasetBuildError
+
+    import pytest
+
+    rows = [
+        {
+            "source_table_id": "duplicate-id",
+            "status": "canonical",
+            "canonical_table_id": "tbl-1",
+            "rejection_code": None,
+            "duplicate_of_relative_path": None,
+        },
+        {
+            "source_table_id": "duplicate-id",  # same as above
+            "status": "canonical",
+            "canonical_table_id": "tbl-2",
+            "rejection_code": None,
+            "duplicate_of_relative_path": None,
+        },
+    ]
+    with pytest.raises(DatasetBuildError, match="globally unique"):
+        _validate_source_table_occurrences(rows)
