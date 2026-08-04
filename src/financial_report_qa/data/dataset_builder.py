@@ -12,6 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from financial_report_qa.core.errors import DatasetBuildError
 from financial_report_qa.data.manifests import read_manifest
 from financial_report_qa.ingestion import extract_document
+from financial_report_qa.ingestion.provenance import (
+    DecodedDocument,
+    DetectionResult,
+    ExtractionResult,
+)
 from financial_report_qa.normalization import normalize_extraction
 from financial_report_qa.normalization._shared import issue_sort_key
 from financial_report_qa.schemas.normalization import NormalizedDocument
@@ -82,6 +87,22 @@ ISSUE_SCHEMA = pa.schema(
     ]
 )
 
+SOURCE_TABLE_OCCURRENCE_SCHEMA = pa.schema(
+    [
+        pa.field("source_table_id", pa.string(), nullable=False),
+        pa.field("doc_id", pa.string(), nullable=False),
+        pa.field("relative_path", pa.string(), nullable=False),
+        pa.field("source_sha256", pa.string(), nullable=False),
+        pa.field("ordinal", pa.int32(), nullable=False),
+        pa.field("line_start", pa.int32(), nullable=False),
+        pa.field("line_end", pa.int32(), nullable=False),
+        pa.field("status", pa.string(), nullable=False),
+        pa.field("canonical_table_id", pa.string()),
+        pa.field("rejection_code", pa.string()),
+        pa.field("duplicate_of_relative_path", pa.string()),
+    ]
+)
+
 
 class DatasetBuildConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -111,6 +132,91 @@ class FlattenedDataset:
     tables: tuple[dict[str, object], ...]
     cells: tuple[dict[str, object], ...]
     issues: tuple[dict[str, object], ...]
+
+
+def _source_table_id(
+    *,
+    relative_path: str,
+    source_sha256: str,
+    ordinal: int,
+    line_start: int,
+    line_end: int,
+) -> str:
+    payload = (
+        f"{relative_path}|{source_sha256}|{ordinal}|{line_start}|{line_end}".encode(
+            "utf-8"
+        )
+    )
+    return hashlib.sha256(payload).hexdigest()
+
+
+def build_source_table_occurrences(
+    document: DecodedDocument,
+    detection: DetectionResult,
+    extraction: ExtractionResult,
+    canonical_table_ids: dict[tuple[int, int, int], str],
+) -> list[dict[str, object]]:
+    rejected_by_key = {
+        (item.ordinal, item.line_start, item.line_end): item
+        for item in extraction.rejected
+        if item.kind == "html"
+    }
+    rows: list[dict[str, object]] = []
+    seen_source_ids: set[str] = set()
+
+    html_items = sorted(
+        (
+            *(
+                item
+                for item in detection.candidates
+                if item.kind == "html"
+            ),
+            *(
+                item
+                for item in detection.rejected
+                if item.kind == "html"
+            ),
+        ),
+        key=lambda item: (item.ordinal, item.line_start, item.line_end),
+    )
+
+    for item in html_items:
+        key = (item.ordinal, item.line_start, item.line_end)
+        canonical_table_id = canonical_table_ids.get(key)
+        rejected = rejected_by_key.get(key)
+        if canonical_table_id is None and rejected is None:
+            raise ValueError(
+                "every html candidate must resolve to a canonical or rejected outcome"
+            )
+
+        source_table_id = _source_table_id(
+            relative_path=document.document.relative_path,
+            source_sha256=document.document.sha256,
+            ordinal=item.ordinal,
+            line_start=item.line_start,
+            line_end=item.line_end,
+        )
+        if source_table_id in seen_source_ids:
+            raise ValueError("duplicate source table occurrence ID")
+        seen_source_ids.add(source_table_id)
+
+        rows.append(
+            {
+                "source_table_id": source_table_id,
+                "doc_id": document.document.doc_id,
+                "relative_path": document.document.relative_path,
+                "source_sha256": document.document.sha256,
+                "ordinal": item.ordinal,
+                "line_start": item.line_start,
+                "line_end": item.line_end,
+                "status": "canonical" if canonical_table_id is not None else "rejected",
+                "canonical_table_id": canonical_table_id,
+                "rejection_code": None if canonical_table_id is not None else rejected.reason,
+                "duplicate_of_relative_path": None,
+            }
+        )
+
+    return rows
 
 
 def flatten_normalized_documents(

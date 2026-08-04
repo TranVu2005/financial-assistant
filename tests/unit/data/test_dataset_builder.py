@@ -8,12 +8,22 @@ import pyarrow.parquet as pq
 from financial_report_qa.data.dataset_builder import (
     CELL_SCHEMA,
     DatasetBuildConfig,
+    SOURCE_TABLE_OCCURRENCE_SCHEMA,
     build_dataset,
+    build_source_table_occurrences,
     flatten_normalized_documents,
 )
 from financial_report_qa.data.inventory import InventoryResult
 from financial_report_qa.data.manifests import write_manifest
-from financial_report_qa.ingestion.provenance import ExtractionResult
+from financial_report_qa.ingestion.provenance import (
+    DecodedDocument,
+    DetectionResult,
+    ExtractionResult,
+    RejectedCandidate,
+    SourceLine,
+    TableCandidate,
+    TextBlock,
+)
 from financial_report_qa.normalization._shared import RULESET_VERSION
 from financial_report_qa.schemas.documents import DocumentRecord, stable_document_id
 from financial_report_qa.schemas.normalization import NormalizedDocument
@@ -23,6 +33,148 @@ def test_cell_schema_uses_fixed_decimal_and_no_absolute_paths() -> None:
     assert CELL_SCHEMA.field("value_numeric").type == pa.decimal128(38, 10)
     assert CELL_SCHEMA.field("source_line_start").type == pa.int32()
     assert "absolute_path" not in CELL_SCHEMA.names
+
+
+def test_source_table_occurrence_schema_matches_task_1_contract() -> None:
+    assert SOURCE_TABLE_OCCURRENCE_SCHEMA == pa.schema(
+        [
+            pa.field("source_table_id", pa.string(), nullable=False),
+            pa.field("doc_id", pa.string(), nullable=False),
+            pa.field("relative_path", pa.string(), nullable=False),
+            pa.field("source_sha256", pa.string(), nullable=False),
+            pa.field("ordinal", pa.int32(), nullable=False),
+            pa.field("line_start", pa.int32(), nullable=False),
+            pa.field("line_end", pa.int32(), nullable=False),
+            pa.field("status", pa.string(), nullable=False),
+            pa.field("canonical_table_id", pa.string()),
+            pa.field("rejection_code", pa.string()),
+            pa.field("duplicate_of_relative_path", pa.string()),
+        ]
+    )
+
+
+def test_build_source_table_occurrences_tracks_rejection_and_continuation() -> None:
+    digest = "a" * 64
+    document = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path="VCB/2024/Consolidated/report.txt",
+        company_code="VCB",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=120,
+        encoding="utf-8",
+        inventory_status="ready",
+    )
+    decoded_document = DecodedDocument(
+        document=document,
+        text="\n".join(
+            [
+                "<table><tr><td>A</td></tr></table>",
+                "<table><tr><td>B</td></tr></table>",
+                "<table><div>bad</div></table>",
+            ]
+        )
+        + "\n",
+        lines=tuple(
+            SourceLine(number=index, text=line, line_ending="\n")
+            for index, line in enumerate(
+                (
+                    "<table><tr><td>A</td></tr></table>",
+                    "<table><tr><td>B</td></tr></table>",
+                    "<table><div>bad</div></table>",
+                ),
+                start=1,
+            )
+        ),
+        blocks=(
+            TextBlock(
+                kind="table",
+                line_start=1,
+                line_end=3,
+                text=(
+                    "<table><tr><td>A</td></tr></table>\n"
+                    "<table><tr><td>B</td></tr></table>\n"
+                    "<table><div>bad</div></table>"
+                ),
+            ),
+        ),
+    )
+    detection = DetectionResult(
+        candidates=(
+            TableCandidate(
+                ordinal=0,
+                kind="html",
+                raw_source="<table><tr><td>A</td></tr></table>\n",
+                line_start=1,
+                line_end=1,
+                confidence=1.0,
+                evidence=("html_table_marker",),
+            ),
+            TableCandidate(
+                ordinal=1,
+                kind="html",
+                raw_source="<table><tr><td>B</td></tr></table>\n",
+                line_start=2,
+                line_end=2,
+                confidence=1.0,
+                evidence=("html_table_marker",),
+            ),
+            TableCandidate(
+                ordinal=2,
+                kind="structured_text",
+                raw_source="skip me",
+                line_start=10,
+                line_end=12,
+                confidence=0.8,
+                evidence=("numeric_density",),
+            ),
+            TableCandidate(
+                ordinal=3,
+                kind="html",
+                raw_source="<table><div>bad</div></table>\n",
+                line_start=3,
+                line_end=3,
+                confidence=1.0,
+                evidence=("html_table_marker",),
+            ),
+        ),
+        rejected=(),
+        blocks=decoded_document.blocks,
+    )
+    extraction = ExtractionResult(
+        doc_id=document.doc_id,
+        blocks=decoded_document.blocks,
+        tables=(),
+        rejected=(
+            RejectedCandidate(
+                ordinal=3,
+                kind="html",
+                raw_source="<table><div>bad</div></table>\n",
+                line_start=3,
+                line_end=3,
+                reason="unsupported_html_structure",
+            ),
+        ),
+    )
+
+    rows = build_source_table_occurrences(
+        decoded_document,
+        detection,
+        extraction,
+        {
+            (0, 1, 1): "table-1",
+            (1, 2, 2): "table-1",
+        },
+    )
+
+    assert [row["status"] for row in rows] == ["canonical", "canonical", "rejected"]
+    assert [row["canonical_table_id"] for row in rows] == ["table-1", "table-1", None]
+    assert rows[2]["rejection_code"] == "unsupported_html_structure"
+    assert all(row["duplicate_of_relative_path"] is None for row in rows)
+    assert len({str(row["source_table_id"]) for row in rows}) == 3
 
 
 def test_flattened_rows_have_stable_order() -> None:
@@ -115,5 +267,4 @@ def test_build_dataset_creates_atomic_parquet_release(tmp_path: Path) -> None:
         result.release_path / "cells.parquet"
     )  # type: ignore[no-untyped-call]
     assert CELL_SCHEMA.equals(cell_table.schema)
-
 
