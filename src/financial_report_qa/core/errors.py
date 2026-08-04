@@ -53,3 +53,7 @@ class Week1GatePublicationError(Week1GateError):
     """Gate artifacts cannot be safely verified or published."""
 
 
+class QualityGateError(FinancialReportQAError):
+    """A quality gate threshold or invariant was violated."""
+
+
