@@ -1,8 +1,11 @@
 """Normalization issue audit and remediation evaluation module."""
 
+import csv
 import hashlib
 import json
 from collections import defaultdict
+from collections.abc import Sequence
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 
@@ -211,3 +214,147 @@ def build_issue_sample(
         key=lambda r: (str(r["issue_code"]), str(r["selection_rank"]), str(r["sample_id"]))
     )
     return pa.Table.from_pylist(selected_rows, schema=SAMPLE_SCHEMA)
+
+
+VALID_LABELS = {"true_issue", "false_positive", "uncertain"}
+
+VALID_CAUSE_CODES = {
+    "year_header_as_unit",
+    "missing_unit_context",
+    "unsupported_unit_alias",
+    "non_metric_row",
+    "unsupported_metric_alias",
+    "non_value_cell",
+    "ocr_corruption",
+    "separator_ambiguity",
+    "legitimate_missing_value",
+    "mixed_unit_table",
+    "statement_signal_conflict",
+    "period_missing_year",
+    "period_format_ambiguous",
+    "other",
+}
+
+
+class LabelRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    sample_id: str = Field(min_length=1)
+    label: str
+    cause_code: str
+    reviewer_note: str = Field(default="")
+
+
+class IssueAuditMetrics(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    sample_count: int
+    true_issue_count: int
+    false_positive_count: int
+    uncertain_count: int
+    unlabeled_count: int
+    conclusive_coverage: Decimal
+    false_positive_rate: Decimal | None
+    cause_counts: dict[str, int]
+
+
+def load_and_validate_labels(sample: pa.Table, labels_path: Path) -> tuple[LabelRecord, ...]:
+    """Load and validate human review labels against a sampled dataset."""
+    valid_sample_ids = {str(row["sample_id"]) for row in sample.to_pylist()}
+    if not labels_path.is_file():
+        return ()
+
+    seen_sample_ids: set[str] = set()
+    records: list[LabelRecord] = []
+
+    with labels_path.open("r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            s_id = str(row.get("sample_id", "")).strip()
+            if not s_id or s_id not in valid_sample_ids:
+                raise ValueError(f"unknown sample_id: {s_id}")
+            if s_id in seen_sample_ids:
+                raise ValueError(f"duplicate sample_id: {s_id}")
+            seen_sample_ids.add(s_id)
+
+            label = str(row.get("label", "")).strip()
+            if label not in VALID_LABELS:
+                raise ValueError(f"invalid label: {label}")
+
+            cause_code = str(row.get("cause_code", "")).strip()
+            if cause_code not in VALID_CAUSE_CODES:
+                raise ValueError(f"invalid cause_code: {cause_code}")
+
+            note = str(row.get("reviewer_note", "")).strip()
+            records.append(
+                LabelRecord(
+                    sample_id=s_id,
+                    label=label,
+                    cause_code=cause_code,
+                    reviewer_note=note,
+                )
+            )
+    return tuple(records)
+
+
+def evaluate_labels(
+    sample: pa.Table,
+    labels: Sequence[LabelRecord],
+) -> dict[str, IssueAuditMetrics]:
+    """Evaluate conclusive label coverage and false positive rates by issue code."""
+    labels_by_id = {lbl.sample_id: lbl for lbl in labels}
+
+    rows_by_issue: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in sample.to_pylist():
+        rows_by_issue[str(row["issue_code"])].append(row)
+
+    metrics_by_code: dict[str, IssueAuditMetrics] = {}
+
+    for issue_code, rows in sorted(rows_by_issue.items()):
+        sample_count = len(rows)
+        true_issue_count = 0
+        false_positive_count = 0
+        uncertain_count = 0
+        unlabeled_count = 0
+        cause_counts: dict[str, int] = defaultdict(int)
+
+        for row in rows:
+            s_id = str(row["sample_id"])
+            lbl = labels_by_id.get(s_id)
+            if lbl is None:
+                unlabeled_count += 1
+            else:
+                cause_counts[lbl.cause_code] += 1
+                if lbl.label == "true_issue":
+                    true_issue_count += 1
+                elif lbl.label == "false_positive":
+                    false_positive_count += 1
+                elif lbl.label == "uncertain":
+                    uncertain_count += 1
+
+        conclusive = true_issue_count + false_positive_count
+        conclusive_coverage = (
+            Decimal(conclusive) / Decimal(sample_count)
+            if sample_count > 0
+            else Decimal("0")
+        )
+        false_positive_rate = (
+            Decimal(false_positive_count) / Decimal(conclusive)
+            if conclusive > 0
+            else None
+        )
+
+        sorted_cause_counts = {k: cause_counts[k] for k in sorted(cause_counts)}
+
+        metrics_by_code[issue_code] = IssueAuditMetrics(
+            sample_count=sample_count,
+            true_issue_count=true_issue_count,
+            false_positive_count=false_positive_count,
+            uncertain_count=uncertain_count,
+            unlabeled_count=unlabeled_count,
+            conclusive_coverage=conclusive_coverage,
+            false_positive_rate=false_positive_rate,
+            cause_counts=sorted_cause_counts,
+        )
+
+    return metrics_by_code

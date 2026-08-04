@@ -1,9 +1,11 @@
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 
 from financial_report_qa.data.dataset_builder import (
     CELL_SCHEMA,
@@ -14,7 +16,10 @@ from financial_report_qa.data.dataset_builder import (
 from financial_report_qa.evaluation.normalization_audit import (
     SAMPLE_SCHEMA,
     AuditSamplingConfig,
+    LabelRecord,
     build_issue_sample,
+    evaluate_labels,
+    load_and_validate_labels,
 )
 
 
@@ -249,3 +254,86 @@ def test_stratified_sampling_respects_stratum_cap_and_retains_rare_issues(
 
     # metric_unknown has 1 row in fixture, limit is 5 -> all retained.
     assert counts_by_code.get("metric_unknown") == 1
+
+
+@pytest.mark.parametrize(
+    "csv_content,match_msg",
+    [
+        ("sample_id,label,cause_code\nunknown_id,true_issue,ocr_corruption\n", "unknown sample_id"),
+        (
+            "sample_id,label,cause_code\n{valid_id},true_issue,ocr_corruption\n{valid_id},false_positive,other\n",
+            "duplicate sample_id",
+        ),
+        ("sample_id,label,cause_code\n{valid_id},bad_label,ocr_corruption\n", "invalid label"),
+        ("sample_id,label,cause_code\n{valid_id},true_issue,bad_cause\n", "invalid cause_code"),
+    ],
+)
+def test_load_and_validate_labels_rejects_invalid_inputs(
+    tmp_path: Path, csv_content: str, match_msg: str
+) -> None:
+    path = build_fixture_release(tmp_path / "labels_test")
+    config = AuditSamplingConfig()
+    sample = build_issue_sample(path, "release-1", config)
+    valid_id = sample.to_pylist()[0]["sample_id"]
+    csv_path = tmp_path / "labels.csv"
+    csv_path.write_text(csv_content.format(valid_id=valid_id), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=match_msg):
+        load_and_validate_labels(sample, csv_path)
+
+
+def test_evaluate_labels_computes_exact_metrics_and_coverage(tmp_path: Path) -> None:
+    # Build a mock sample table with 4 rows of unit_unknown
+    mock_sample = pa.Table.from_pylist(
+        [
+            {
+                "sample_id": f"s{i}",
+                "release_fingerprint": "fp",
+                "issue_code": "unit_unknown",
+                "field": "unit",
+                "raw_value": "test",
+                "doc_id": "doc_1",
+                "table_id": "tbl_1",
+                "cell_id": f"cell_{i}",
+                "company_code": "VCB",
+                "report_year": 2024,
+                "statement_type": "income_statement",
+                "table_title_raw": "",
+                "table_unit_raw": "",
+                "row_label_raw": "",
+                "column_label_raw": "",
+                "value_raw": "",
+                "source_line_start": 1,
+                "source_line_end": 1,
+                "stratum_key": f"s{i}",
+                "selection_rank": f"r{i}",
+            }
+            for i in range(1, 5)
+        ],
+        schema=SAMPLE_SCHEMA,
+    )
+
+    labels = (
+        LabelRecord(
+            sample_id="s1", label="true_issue", cause_code="ocr_corruption"
+        ),
+        LabelRecord(
+            sample_id="s2", label="false_positive", cause_code="year_header_as_unit"
+        ),
+        LabelRecord(
+            sample_id="s3", label="uncertain", cause_code="other"
+        ),
+        # s4 is unlabeled
+    )
+    metrics_by_code = evaluate_labels(mock_sample, labels)
+    m = metrics_by_code["unit_unknown"]
+    assert m.sample_count == 4
+    assert m.true_issue_count == 1
+    assert m.false_positive_count == 1
+    assert m.uncertain_count == 1
+    assert m.unlabeled_count == 1
+    assert m.conclusive_coverage == Decimal("0.5")
+    assert m.false_positive_rate == Decimal("0.5")
+    assert m.cause_counts["ocr_corruption"] == 1
+    assert m.cause_counts["year_header_as_unit"] == 1
+    assert m.cause_counts["other"] == 1
