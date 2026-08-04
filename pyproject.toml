@@ -33,6 +33,7 @@ dependencies = [
 
 [project.scripts]
 financial-report-qa = "financial_report_qa.cli:main"
+normalization-audit = "financial_report_qa.evaluation.normalization_audit_cli:main"
 
 [project.optional-dependencies]
 dev = [

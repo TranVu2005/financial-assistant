@@ -1,0 +1,12 @@
+seed: normalization-audit-v1
+max_per_stratum: 5
+issue_limits:
+  unit_unknown: 200
+  metric_unknown: 200
+  number_invalid: 200
+  number_missing: 200
+  unit_conflict: 100
+  statement_conflict: 100
+  number_ambiguous: 100
+  period_incomplete: 100
+  period_ambiguous: 100
