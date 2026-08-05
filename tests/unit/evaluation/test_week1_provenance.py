@@ -5,7 +5,12 @@ from pathlib import Path
 
 from test_week1_dataset import _write_release
 
-from financial_report_qa.evaluation.week1_contracts import ExpectedTable, TableAssessment
+from financial_report_qa.evaluation.week1_contracts import (
+    SAMPLING_VERSION,
+    CellAudit,
+    ExpectedTable,
+    TableAssessment,
+)
 from financial_report_qa.evaluation.week1_dataset import load_gate_dataset
 from financial_report_qa.evaluation.week1_provenance import (
     audit_cell_provenance,
@@ -68,6 +73,137 @@ def test_audit_cell_provenance_invalid_span() -> None:
     verified, excerpt, failures = audit_cell_provenance(cell, doc_lines)
     assert verified is False
     assert failures == ["invalid_provenance"]
+
+
+def test_audit_cell_provenance_accepts_decoded_entity_and_br() -> None:
+    doc_id = "doc_" + "a" * 64
+    cell = CellRecord(
+        cell_id="cell_1",
+        table_id=stable_table_id(doc_id, 1, 1),
+        row_idx=0,
+        col_idx=0,
+        row_label_raw=None,
+        row_label_canonical=None,
+        column_label_raw=None,
+        column_label_canonical=None,
+        value_raw="Lợi nhuận & thu nhập\nkhác",
+        value_numeric=None,
+        period=None,
+        unit=None,
+        source_line_start=1,
+        source_line_end=1,
+        extraction_confidence=1.0,
+    )
+
+    verified, _, failures = audit_cell_provenance(
+        cell,
+        ("<td>Lợi nhuận &amp; thu nhập<br>khác</td>",),
+    )
+
+    assert verified is True
+    assert failures == []
+
+
+def _usable_fixture() -> tuple[TableAssessment, TableRecord]:
+    doc_id = "doc_" + "b" * 64
+    table_id = stable_table_id(doc_id, 10, 20)
+    expected = ExpectedTable(
+        annotation_schema_version="1",
+        annotation_id="ann_value_gate",
+        doc_id=doc_id,
+        relative_path="VCB/2024/report.txt",
+        statement_type="balance_sheet",
+        line_start=10,
+        line_end=20,
+        row_count=2,
+        column_count=2,
+        unit_normalized="VND",
+        expected_periods=("2024",),
+    )
+    assessment = TableAssessment(
+        annotation=expected,
+        table_id=table_id,
+        overlap_numerator=11,
+        overlap_denominator=11,
+        failures=(),
+        usable=True,
+    )
+    table = TableRecord(
+        table_id=table_id,
+        doc_id=doc_id,
+        title_raw=None,
+        statement_type="balance_sheet",
+        unit_raw="VND",
+        unit_normalized="VND",
+        line_start=10,
+        line_end=20,
+        row_count=2,
+        column_count=2,
+        quality_score=1.0,
+        csv_path=None,
+    )
+    return assessment, table
+
+
+def _audit(
+    *, value_raw: str, value_numeric: float | None, period: str, row_label: str
+) -> CellAudit:
+    doc_id = "doc_" + "b" * 64
+    return CellAudit(
+        annotation_schema_version="1",
+        sampling_version=SAMPLING_VERSION,
+        cell_id=f"cell_{value_raw}",
+        doc_id=doc_id,
+        relative_path="VCB/2024/report.txt",
+        company_code="VCB",
+        report_year=2024,
+        annotation_id="ann_value_gate",
+        statement_type="balance_sheet",
+        table_id=stable_table_id(doc_id, 10, 20),
+        row_idx=1,
+        col_idx=1,
+        row_label_raw=row_label,
+        column_label_raw="2024",
+        value_raw=value_raw,
+        value_numeric=value_numeric,
+        period=period,
+        unit="VND",
+        source_line_start=10,
+        source_line_end=10,
+        source_excerpt=value_raw,
+        verified=True,
+    )
+
+
+def test_usability_ignores_header_and_metric_label_cells_for_numeric_gate() -> None:
+    audits = (
+        _audit(value_raw="Chỉ tiêu", value_numeric=None, period="", row_label=""),
+        _audit(value_raw="Doanh thu", value_numeric=None, period="", row_label="Doanh thu"),
+    )
+    assessment, table = _usable_fixture()
+
+    result = evaluate_table_usability((assessment,), {"ann_value_gate": table}, audits)[0]
+
+    assert result.usable is True
+    assert result.failures == ()
+
+
+def test_usability_flags_numeric_looking_value_that_failed_normalization() -> None:
+    audits = (_audit(value_raw="100", value_numeric=None, period="2024", row_label="Doanh thu"),)
+    assessment, table = _usable_fixture()
+
+    result = evaluate_table_usability((assessment,), {"ann_value_gate": table}, audits)[0]
+
+    assert [failure.code for failure in result.failures] == ["no_numeric_value"]
+
+
+def test_usability_flags_numeric_value_with_missing_period() -> None:
+    audits = (_audit(value_raw="100", value_numeric=100.0, period="", row_label="Doanh thu"),)
+    assessment, table = _usable_fixture()
+
+    result = evaluate_table_usability((assessment,), {"ann_value_gate": table}, audits)[0]
+
+    assert [failure.code for failure in result.failures] == ["period_mismatch"]
 
 
 def test_generate_cell_audits_rejects_noncanonical_cell_id(tmp_path: Path) -> None:

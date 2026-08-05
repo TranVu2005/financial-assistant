@@ -1,5 +1,7 @@
 """Provenance audit and cell verification logic for Week 1 Quality Gate."""
 
+import html
+import re
 from pathlib import Path
 
 from financial_report_qa.evaluation.week1_contracts import (
@@ -13,6 +15,26 @@ from financial_report_qa.evaluation.week1_contracts import (
 from financial_report_qa.evaluation.week1_dataset import GateDataset
 from financial_report_qa.ingestion.provenance import stable_cell_id
 from financial_report_qa.schemas import CellRecord, TableRecord
+
+_BR_TAG_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_NUMERIC_VALUE_RE = re.compile(r"\(?[+-]?[0-9][0-9., ]*%?\)?$")
+_AUXILIARY_COLUMN_SIGNALS = ("stt", "số thứ tự", "mã số", "code", "thuyết minh", "note")
+
+
+def _normalized_text(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _is_eligible_value_cell(cell: CellAudit) -> bool:
+    raw = cell.value_raw.strip()
+    if not raw or not cell.row_label_raw.strip() or not cell.column_label_raw.strip():
+        return False
+    if _normalized_text(raw) == _normalized_text(cell.row_label_raw):
+        return False
+    column_label = _normalized_text(cell.column_label_raw)
+    if any(signal in column_label for signal in _AUXILIARY_COLUMN_SIGNALS):
+        return False
+    return cell.value_numeric is not None or _NUMERIC_VALUE_RE.fullmatch(raw) is not None
 
 
 def audit_cell_provenance(
@@ -38,8 +60,8 @@ def audit_cell_provenance(
         # Non-numeric value where raw is present
         pass
 
-    if cell.value_raw and cell.value_raw not in source_excerpt:
-        # Simple substring check for raw value in source excerpt
+    comparable_excerpt = html.unescape(_BR_TAG_RE.sub("\n", source_excerpt))
+    if cell.value_raw and cell.value_raw not in comparable_excerpt:
         failures.append("invalid_provenance")
 
     verified = len(failures) == 0
@@ -185,7 +207,8 @@ def evaluate_table_usability(
 
         # Check cell-level automated provenance and normalization completeness.
         ann_audits = audits_by_ann.get(ta.annotation.annotation_id, [])
-        non_numeric_cells = [ca for ca in ann_audits if ca.value_numeric is None]
+        value_cells = [ca for ca in ann_audits if _is_eligible_value_cell(ca)]
+        non_numeric_cells = [ca for ca in value_cells if ca.value_numeric is None]
         if non_numeric_cells:
             failures.append(
                 FailureEvent(
@@ -198,7 +221,9 @@ def evaluate_table_usability(
 
         expected_periods = set(ta.annotation.expected_periods)
         period_mismatch_cells = [
-            ca for ca in ann_audits if ca.period and ca.period not in expected_periods
+            ca
+            for ca in value_cells
+            if expected_periods and (not ca.period or ca.period not in expected_periods)
         ]
         if period_mismatch_cells:
             failures.append(

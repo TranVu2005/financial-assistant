@@ -50,6 +50,7 @@ TABLE_SCHEMA = pa.schema(
     [
         ("table_id", pa.string()),
         ("doc_id", pa.string()),
+        ("source_ordinal", pa.int32()),
         ("title_raw", pa.string()),
         ("statement_type", pa.string()),
         ("unit_raw", pa.string()),
@@ -80,6 +81,15 @@ CELL_SCHEMA = pa.schema(
         pa.field("source_line_start", pa.int32(), nullable=False),
         pa.field("source_line_end", pa.int32(), nullable=False),
         pa.field("extraction_confidence", pa.float64(), nullable=False),
+    ]
+)
+
+PLACEMENT_SCHEMA = pa.schema(
+    [
+        pa.field("table_id", pa.string(), nullable=False),
+        pa.field("row_idx", pa.int32(), nullable=False),
+        pa.field("col_idx", pa.int32(), nullable=False),
+        pa.field("cell_id", pa.string(), nullable=False),
     ]
 )
 
@@ -117,7 +127,7 @@ class DatasetBuildConfig(BaseModel):
     snapshot_root: Path
     manifest_path: Path
     processed_root: Path
-    schema_version: str = Field(default="1", min_length=1)
+    schema_version: str = Field(default="2", min_length=1)
 
 
 class DatasetBuildResult(BaseModel):
@@ -129,6 +139,7 @@ class DatasetBuildResult(BaseModel):
     document_count: int
     table_count: int
     cell_count: int
+    placement_count: int
     issue_count: int
     issue_counts_by_code: dict[str, int]
 
@@ -139,6 +150,7 @@ class FlattenedDataset:
     tables: tuple[dict[str, object], ...]
     cells: tuple[dict[str, object], ...]
     issues: tuple[dict[str, object], ...]
+    placements: tuple[dict[str, object], ...] = ()
     source_table_occurrences: tuple[dict[str, object], ...] = ()
 
 
@@ -258,6 +270,7 @@ def flatten_normalized_documents(
     doc_rows: list[dict[str, object]] = []
     table_rows: list[dict[str, object]] = []
     cell_rows: list[dict[str, object]] = []
+    placement_rows: list[dict[str, object]] = []
     issue_rows: list[dict[str, object]] = []
 
     sorted_docs = sorted(
@@ -295,6 +308,7 @@ def flatten_normalized_documents(
                 {
                     "table_id": t_rec.table_id,
                     "doc_id": t_rec.doc_id,
+                    "source_ordinal": t_rec.source_ordinal,
                     "title_raw": t_rec.title_raw,
                     "statement_type": t_rec.statement_type,
                     "unit_raw": t_rec.unit_raw,
@@ -329,6 +343,16 @@ def flatten_normalized_documents(
                     }
                 )
 
+            for placement in tbl.placements:
+                placement_rows.append(
+                    {
+                        "table_id": t_rec.table_id,
+                        "row_idx": placement.row_idx,
+                        "col_idx": placement.col_idx,
+                        "cell_id": placement.cell_id,
+                    }
+                )
+
         sorted_issues = sorted(norm.issues, key=issue_sort_key)
         for iss in sorted_issues:
             issue_rows.append(
@@ -351,12 +375,21 @@ def flatten_normalized_documents(
             str(r["cell_id"]),
         )
     )
+    placement_rows.sort(
+        key=lambda r: (
+            str(r["table_id"]),
+            int(str(r["row_idx"])),
+            int(str(r["col_idx"])),
+            str(r["cell_id"]),
+        )
+    )
 
     return FlattenedDataset(
         documents=tuple(doc_rows),
         tables=tuple(table_rows),
         cells=tuple(cell_rows),
         issues=tuple(issue_rows),
+        placements=tuple(placement_rows),
     )
 
 
@@ -381,6 +414,10 @@ def _build_canonical_source_table_ids(
             for table in extraction.tables
             if table.table.line_start <= candidate.line_start
             and table.table.line_end >= candidate.line_end
+            and (
+                table.table.source_ordinal == candidate.ordinal
+                or "continued_across_page" in table.evidence
+            )
         ]
         if len(matching_tables) != 1:
             raise DatasetBuildError("html candidate must map to exactly one canonical table")
@@ -533,6 +570,7 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
         tables=flattened.tables,
         cells=flattened.cells,
         issues=flattened.issues,
+        placements=flattened.placements,
         source_table_occurrences=source_table_occurrences,
     )
     source_table_occurrence_counts = _validate_source_table_occurrences(
@@ -557,6 +595,7 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
             "documents": flattened.documents,
             "tables": flattened.tables,
             "cells": flattened.cells,
+            "placements": flattened.placements,
             "issues": flattened.issues,
             "source_table_occurrences": flattened.source_table_occurrences,
         }
@@ -576,6 +615,10 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
         doc_table = pa.Table.from_pylist(list(flattened.documents), schema=DOCUMENT_SCHEMA)
         table_table = pa.Table.from_pylist(list(flattened.tables), schema=TABLE_SCHEMA)
         cell_table = pa.Table.from_pylist(list(flattened.cells), schema=CELL_SCHEMA)
+        placement_table = pa.Table.from_pylist(
+            list(flattened.placements),
+            schema=PLACEMENT_SCHEMA,
+        )
         issue_table = pa.Table.from_pylist(list(flattened.issues), schema=ISSUE_SCHEMA)
         source_table_occurrence_table = pa.Table.from_pylist(
             list(flattened.source_table_occurrences),
@@ -585,6 +628,11 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
         pq.write_table(doc_table, temp_dir / "documents.parquet", compression="snappy")  # type: ignore[no-untyped-call]
         pq.write_table(table_table, temp_dir / "tables.parquet", compression="snappy")  # type: ignore[no-untyped-call]
         pq.write_table(cell_table, temp_dir / "cells.parquet", compression="snappy")  # type: ignore[no-untyped-call]
+        pq.write_table(
+            placement_table,
+            temp_dir / "placements.parquet",
+            compression="snappy",
+        )  # type: ignore[no-untyped-call]
         pq.write_table(issue_table, temp_dir / "issues.parquet", compression="snappy")  # type: ignore[no-untyped-call]
         pq.write_table(
             source_table_occurrence_table,
@@ -604,6 +652,7 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
             "document_count": len(flattened.documents),
             "table_count": len(flattened.tables),
             "cell_count": len(flattened.cells),
+            "placement_count": len(flattened.placements),
             "issue_count": len(flattened.issues),
             "issue_counts_by_code": issue_counts,
             "source_table_occurrence_counts": {
@@ -636,6 +685,7 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
         document_count=len(flattened.documents),
         table_count=len(flattened.tables),
         cell_count=len(flattened.cells),
+        placement_count=len(flattened.placements),
         issue_count=len(flattened.issues),
         issue_counts_by_code=issue_counts,
     )

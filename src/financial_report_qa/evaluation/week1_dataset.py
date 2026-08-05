@@ -14,6 +14,7 @@ from financial_report_qa.data.dataset_builder import (
     CELL_SCHEMA,
     DOCUMENT_SCHEMA,
     ISSUE_SCHEMA,
+    PLACEMENT_SCHEMA,
     TABLE_SCHEMA,
 )
 from financial_report_qa.data.manifests import ManifestSnapshot, read_manifest
@@ -67,7 +68,13 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
             "Source manifest fingerprint mismatch between release and manifest file"
         )
 
-    for filename in ("documents.parquet", "tables.parquet", "cells.parquet", "issues.parquet"):
+    for filename in (
+        "documents.parquet",
+        "tables.parquet",
+        "cells.parquet",
+        "placements.parquet",
+        "issues.parquet",
+    ):
         if not (release_path / filename).is_file():
             raise Week1GateInputError(f"Missing required release file: {filename}")
 
@@ -85,6 +92,10 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
     if cell_table.schema != CELL_SCHEMA:
         raise Week1GateInputError("cells.parquet Arrow schema mismatch")
 
+    placement_table = read_table(release_path / "placements.parquet")
+    if placement_table.schema != PLACEMENT_SCHEMA:
+        raise Week1GateInputError("placements.parquet Arrow schema mismatch")
+
     iss_table = read_table(release_path / "issues.parquet")
     if iss_table.schema != ISSUE_SCHEMA:
         raise Week1GateInputError("issues.parquet Arrow schema mismatch")
@@ -93,6 +104,7 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
     doc_rows = doc_table.to_pylist()
     tbl_rows = tbl_table.to_pylist()
     cell_rows = cell_table.to_pylist()
+    placement_rows = placement_table.to_pylist()
     iss_rows = iss_table.to_pylist()
 
     if len(doc_rows) != release_manifest_data.get("document_count"):
@@ -105,6 +117,10 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
         )
     if len(cell_rows) != release_manifest_data.get("cell_count"):
         raise Week1GateInputError("Cell count mismatch between release manifest and cells.parquet")
+    if len(placement_rows) != release_manifest_data.get("placement_count"):
+        raise Week1GateInputError(
+            "Placement count mismatch between release manifest and placements.parquet"
+        )
     if len(iss_rows) != release_manifest_data.get("issue_count"):
         raise Week1GateInputError(
             "Issue count mismatch between release manifest and issues.parquet"
@@ -161,6 +177,7 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
         table_rec = TableRecord(
             table_id=table_id,
             doc_id=doc_id,
+            source_ordinal=int(r.get("source_ordinal", 0)),
             title_raw=r.get("title_raw"),
             statement_type=r.get("statement_type"),
             unit_raw=r.get("unit_raw"),
@@ -215,6 +232,38 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
         )
         for t_id in sorted(cells_list_by_table.keys())
     }
+
+    seen_placement_coordinates: set[tuple[str, int, int]] = set()
+    placed_cell_ids: set[str] = set()
+    cells_by_id = {cell.cell_id: cell for cells in cells_by_table_id.values() for cell in cells}
+    for r in placement_rows:
+        table_id = str(r["table_id"])
+        cell_id = str(r["cell_id"])
+        row_idx = int(r["row_idx"])
+        col_idx = int(r["col_idx"])
+        table = tables_by_id.get(table_id)
+        cell = cells_by_id.get(cell_id)
+        if table is None:
+            raise Week1GateInputError(
+                f"Placement ({row_idx}, {col_idx}) references unknown table_id: {table_id}"
+            )
+        if cell is None or cell.table_id != table_id:
+            raise Week1GateInputError(
+                f"Placement ({row_idx}, {col_idx}) references unknown cell_id: {cell_id}"
+            )
+        coordinate = (table_id, row_idx, col_idx)
+        if coordinate in seen_placement_coordinates:
+            raise Week1GateInputError(
+                f"Duplicate placement coordinate in placements.parquet: {coordinate}"
+            )
+        if row_idx >= table.row_count or col_idx >= table.column_count:
+            raise Week1GateInputError(
+                f"Placement ({row_idx}, {col_idx}) is outside table grid: {table_id}"
+            )
+        seen_placement_coordinates.add(coordinate)
+        placed_cell_ids.add(cell_id)
+    if placed_cell_ids != seen_cell_ids:
+        raise Week1GateInputError("Every canonical cell must have at least one placement")
 
     # Process issues
     issues_list: list[NormalizationIssue] = []

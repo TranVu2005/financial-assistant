@@ -18,6 +18,7 @@ def valid_table_payload() -> dict[str, object]:
     return {
         "table_id": stable_table_id(DOC_ID, 10, 25),
         "doc_id": DOC_ID,
+        "source_ordinal": 0,
         "title_raw": "B\u1ea3ng c\u00e2n \u0111\u1ed1i k\u1ebf to\u00e1n",
         "statement_type": "balance_sheet",
         "unit_raw": "\u0110\u01a1n v\u1ecb: tri\u1ec7u \u0111\u1ed3ng",
@@ -34,14 +35,21 @@ def valid_table_payload() -> dict[str, object]:
 def test_stable_table_id_matches_hand_checked_sha256() -> None:
     result = stable_table_id(DOC_ID, 10, 25)
 
-    assert result == "tbl_32c57ec231bb937a8f18f8e625d660e1a38af5e9fd926b84cae1bcf797e9172c"
+    assert result == "tbl_02768744497ca8052f2512b555339bc9e892b8e855addcf5f84eb79feaacab60"
 
 
 def test_stable_table_id_changes_with_document_or_span() -> None:
-    base = "tbl_32c57ec231bb937a8f18f8e625d660e1a38af5e9fd926b84cae1bcf797e9172c"
+    base = "tbl_02768744497ca8052f2512b555339bc9e892b8e855addcf5f84eb79feaacab60"
 
     assert stable_table_id(DOC_ID, 11, 25) != base
     assert stable_table_id(stable_document_id("b" * 64), 10, 25) != base
+    assert stable_table_id(DOC_ID, 10, 25, 1) != base
+
+
+@pytest.mark.parametrize("source_ordinal", [-1, True, 1.5])
+def test_stable_table_id_rejects_invalid_source_ordinal(source_ordinal: object) -> None:
+    with pytest.raises(ValueError, match="source_ordinal"):
+        stable_table_id(DOC_ID, 10, 25, cast(int, source_ordinal))
 
 
 @pytest.mark.parametrize(
@@ -95,12 +103,22 @@ def test_table_record_rejects_mismatched_stable_id() -> None:
         TableRecord.model_validate(payload)
 
 
+def test_table_record_identity_includes_source_ordinal() -> None:
+    payload = valid_table_payload()
+    payload["source_ordinal"] = 1
+
+    with pytest.raises(ValidationError, match="source ordinal"):
+        TableRecord.model_validate(payload)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
         ("line_start", 0),
         ("line_start", 26),
         ("line_end", 9),
+        ("source_ordinal", -1),
+        ("source_ordinal", True),
         ("row_count", -1),
         ("column_count", -1),
         ("quality_score", -0.01),

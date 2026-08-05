@@ -70,6 +70,36 @@ def test_decodes_entities_but_keeps_raw_candidate(tmp_path: Path) -> None:
     assert "&amp;" in result.blocks[0].text
 
 
+def test_same_line_tables_have_distinct_table_and_cell_ids(tmp_path: Path) -> None:
+    source = (
+        "<table><tr><td>A</td><td>1</td></tr></table><table><tr><td>B</td><td>2</td></tr></table>\n"
+    )
+
+    tables = extract(tmp_path, source).tables
+
+    assert len(tables) == 2
+    assert [(table.table.line_start, table.table.line_end) for table in tables] == [(1, 1), (1, 1)]
+    assert [table.table.source_ordinal for table in tables] == [0, 1]
+    assert len({table.table.table_id for table in tables}) == 2
+    assert len({cell.cell_id for table in tables for cell in table.cells}) == 4
+
+
+def test_td_header_drives_metric_column_selection(tmp_path: Path) -> None:
+    source = (
+        "<table>"
+        "<tr><td>STT</td><td>Chỉ tiêu</td><td>Mã số</td><td>2024</td></tr>"
+        "<tr><td>1</td><td>Doanh thu</td><td>01</td><td>100</td></tr>"
+        "</table>\n"
+    )
+
+    table = extract(tmp_path, source).tables[0]
+    values = {cell.value_raw: cell for cell in table.cells}
+
+    assert values["100"].row_label_raw == "Doanh thu"
+    assert values["100"].column_label_raw == "2024"
+    assert values["1"].row_label_raw == "Doanh thu"
+
+
 def test_composes_multiline_headers_without_normalizing_values(tmp_path: Path) -> None:
     source = (
         "<table>\n"

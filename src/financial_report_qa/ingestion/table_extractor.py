@@ -36,6 +36,31 @@ _UNIT_MARKERS = (
     "\u00c4\u2018\u00c6\u00a1n v\u00e1\u00bb\u2039 t\u00c3\u00adnh",
     "\u00c4\u2018vt",
 )
+_HEADER_SIGNALS = (
+    "chỉ tiêu",
+    "mã số",
+    "thuyết minh",
+    "năm",
+    "kỳ",
+    "đơn vị",
+    "đvt",
+    "metric",
+    "item",
+    "description",
+    "code",
+    "year",
+    "period",
+)
+_METRIC_HEADER_SIGNALS = (
+    "chỉ tiêu",
+    "khoản mục",
+    "nội dung",
+    "diễn giải",
+    "metric",
+    "item",
+    "description",
+)
+_AUXILIARY_HEADER_SIGNALS = ("stt", "số thứ tự", "mã số", "code", "thuyết minh", "note")
 
 
 class _ExtractionFailure(Exception):
@@ -259,6 +284,15 @@ def _is_numeric_looking(value: str) -> bool:
     return stripped == "-" or _NUMERIC_VALUE_RE.fullmatch(stripped) is not None
 
 
+def _normalized_label(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def _contains_signal(value: str, signals: tuple[str, ...]) -> bool:
+    normalized = _normalized_label(value)
+    return any(signal in normalized for signal in signals)
+
+
 def _header_row_count(
     candidate: TableCandidate,
     grid: dict[tuple[int, int], int],
@@ -278,12 +312,16 @@ def _header_row_count(
         if not cell_tokens:
             break
         all_headers = all(raw_cells[token].is_header for token in cell_tokens)
+        row_values = [raw_cells[token].text for token in cell_tokens]
+        has_header_signal = row_idx == 0 and any(
+            _contains_signal(value, _HEADER_SIGNALS) for value in row_values
+        )
         first_token = grid.get((row_idx, 0))
         non_first = [raw_cells[token].text for token in cell_tokens if token != first_token]
         mostly_non_numeric = bool(non_first) and sum(
             _is_numeric_looking(value) for value in non_first
         ) * 2 < len(non_first)
-        if not all_headers and not mostly_non_numeric:
+        if not all_headers and not has_header_signal and not mostly_non_numeric:
             break
         count += 1
     return count
@@ -291,6 +329,35 @@ def _header_row_count(
 
 def _metadata_key(value: str) -> str:
     return unicodedata.normalize("NFKC", value).casefold()
+
+
+def _metric_column_index(
+    column_headers: list[str | None],
+    grid: dict[tuple[int, int], int],
+    raw_cells: list[_RawCell],
+    header_rows: int,
+    row_count: int,
+    column_count: int,
+) -> int:
+    """Choose the descriptive metric column instead of assuming the leftmost column."""
+    for col_idx, header in enumerate(column_headers):
+        if header is not None and _contains_signal(header, _METRIC_HEADER_SIGNALS):
+            return col_idx
+
+    for col_idx, header in enumerate(column_headers):
+        if header is not None and _contains_signal(header, _AUXILIARY_HEADER_SIGNALS):
+            continue
+        values = [
+            raw_cells[grid[(row_idx, col_idx)]].text
+            for row_idx in range(header_rows, row_count)
+            if (row_idx, col_idx) in grid
+        ]
+        populated = [value for value in values if value.strip()]
+        if populated and sum(not _is_numeric_looking(value) for value in populated) * 2 > len(
+            populated
+        ):
+            return col_idx
+    return 0
 
 
 def _contains_unit_marker(value: str) -> bool:
@@ -396,10 +463,16 @@ def _materialize_table(
         origins,
         header_rows,
     )
-    table_id = stable_table_id(document.document.doc_id, candidate.line_start, candidate.line_end)
+    table_id = stable_table_id(
+        document.document.doc_id,
+        candidate.line_start,
+        candidate.line_end,
+        candidate.ordinal,
+    )
     table = TableRecord(
         table_id=table_id,
         doc_id=document.document.doc_id,
+        source_ordinal=candidate.ordinal,
         title_raw=title_raw,
         statement_type=None,
         unit_raw=unit_raw,
@@ -422,6 +495,14 @@ def _materialize_table(
             if value and value not in values:
                 values.append(value)
         column_headers.append("\n".join(values) or None)
+    metric_col_idx = _metric_column_index(
+        column_headers,
+        grid,
+        raw_cells,
+        header_rows,
+        row_count,
+        column_count,
+    )
 
     cells: list[CellRecord] = []
     cell_ids: list[str] = []
@@ -432,15 +513,8 @@ def _materialize_table(
         is_header = origin_row < header_rows
         row_label = None
         if not is_header:
-            first_token = next(
-                (
-                    grid[(origin_row, col_idx)]
-                    for col_idx in range(column_count)
-                    if (origin_row, col_idx) in grid
-                ),
-                None,
-            )
-            row_label = raw_cells[first_token].text if first_token is not None else None
+            metric_token = grid.get((origin_row, metric_col_idx))
+            row_label = raw_cells[metric_token].text if metric_token is not None else None
         cells.append(
             CellRecord(
                 cell_id=cell_id,
@@ -548,6 +622,7 @@ def _merge_pair(first: ExtractedTable, second: ExtractedTable) -> ExtractedTable
         first.table.doc_id,
         merged_line_start,
         merged_line_end,
+        first.table.source_ordinal,
     )
     confidence = min(first.table.quality_score, second.table.quality_score)
     row_offset = first.table.row_count - second_header_rows
@@ -555,6 +630,7 @@ def _merge_pair(first: ExtractedTable, second: ExtractedTable) -> ExtractedTable
     merged_table = TableRecord(
         table_id=merged_table_id,
         doc_id=first.table.doc_id,
+        source_ordinal=first.table.source_ordinal,
         title_raw=first.table.title_raw,
         statement_type=None,
         unit_raw=first.table.unit_raw or second.table.unit_raw,

@@ -11,6 +11,7 @@ from financial_report_qa.data.dataset_builder import (
     CELL_SCHEMA,
     DOCUMENT_SCHEMA,
     ISSUE_SCHEMA,
+    PLACEMENT_SCHEMA,
     TABLE_SCHEMA,
 )
 from financial_report_qa.evaluation.week1_dataset import load_gate_dataset
@@ -130,6 +131,7 @@ def _write_release(
             {
                 "table_id": table_id,
                 "doc_id": doc_id,
+                "source_ordinal": 0,
                 "title_raw": "Balance Sheet",
                 "statement_type": "balance_sheet",
                 "unit_raw": "VND",
@@ -170,6 +172,12 @@ def _write_release(
     )
     write_table(cell_table, release_path / "cells.parquet")
 
+    placement_table = pa.Table.from_pylist(
+        [{"table_id": table_id, "row_idx": 0, "col_idx": 0, "cell_id": cell_id}],
+        schema=PLACEMENT_SCHEMA,
+    )
+    write_table(placement_table, release_path / "placements.parquet")
+
     issue_table = pa.Table.from_pylist([], schema=ISSUE_SCHEMA)
     write_table(issue_table, release_path / "issues.parquet")
 
@@ -180,6 +188,7 @@ def _write_release(
         "document_count": 1,
         "table_count": 1,
         "cell_count": 1,
+        "placement_count": 1,
         "issue_count": 0,
     }
     (release_path / "manifest.json").write_text(json.dumps(release_manifest), encoding="utf-8")

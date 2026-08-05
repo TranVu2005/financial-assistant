@@ -8,6 +8,7 @@ import pyarrow.parquet as pq
 
 from financial_report_qa.data.dataset_builder import (
     CELL_SCHEMA,
+    PLACEMENT_SCHEMA,
     SOURCE_TABLE_OCCURRENCE_SCHEMA,
     DatasetBuildConfig,
     build_dataset,
@@ -339,7 +340,10 @@ def test_build_dataset_emits_source_occurrence_artifact_with_duplicate_rows(
     snapshot_root.mkdir()
     primary_rel = "VCB/2024/Consolidated/primary.txt"
     duplicate_rel = "VCB/2024/Consolidated/duplicate.txt"
-    content = "<table><tr><td>Doanh thu</td><td>1.500</td></tr></table>\n"
+    content = (
+        '<table><tr><td rowspan="2">Doanh thu</td><td>1.500</td></tr>'
+        "<tr><td>1.400</td></tr></table>\n"
+    )
 
     primary_path = snapshot_root / primary_rel
     primary_path.parent.mkdir(parents=True)
@@ -394,6 +398,12 @@ def test_build_dataset_emits_source_occurrence_artifact_with_duplicate_rows(
     )
 
     occurrence_table = pq.read_table(result.release_path / "source_table_occurrences.parquet")  # type: ignore[no-untyped-call]
+    placement_table = pq.read_table(result.release_path / "placements.parquet")  # type: ignore[no-untyped-call]
+    cell_table = pq.read_table(result.release_path / "cells.parquet")  # type: ignore[no-untyped-call]
+    assert PLACEMENT_SCHEMA.equals(placement_table.schema)
+    assert placement_table.num_rows == 4
+    assert cell_table.num_rows == 3
+    assert result.placement_count == 4
     assert SOURCE_TABLE_OCCURRENCE_SCHEMA.equals(occurrence_table.schema)
     assert occurrence_table.num_rows == 2
     assert occurrence_table.column("status").to_pylist() == ["duplicate", "canonical"]
@@ -405,12 +415,58 @@ def test_build_dataset_emits_source_occurrence_artifact_with_duplicate_rows(
     assert len(set(occurrence_table.column("source_table_id").to_pylist())) == 2
 
     manifest = json.loads((result.release_path / "manifest.json").read_text("utf-8"))
+    assert manifest["schema_version"] == "2"
+    assert manifest["placement_count"] == 4
     assert manifest["source_table_occurrence_counts"] == {
         "total": 2,
         "canonical": 1,
         "rejected": 0,
         "duplicate": 1,
     }
+
+
+def test_build_dataset_maps_two_same_line_tables_by_source_ordinal(tmp_path: Path) -> None:
+    snapshot_root = tmp_path / "snapshot"
+    snapshot_root.mkdir()
+    relative_path = "VCB/2024/Consolidated/report.txt"
+    content = (
+        "<table><tr><td>A</td><td>1</td></tr></table><table><tr><td>B</td><td>2</td></tr></table>\n"
+    )
+    document_path = snapshot_root / relative_path
+    document_path.parent.mkdir(parents=True)
+    document_path.write_text(content, encoding="utf-8")
+    raw_bytes = document_path.read_bytes()
+    digest = hashlib.sha256(raw_bytes).hexdigest()
+    document = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path=relative_path,
+        company_code="VCB",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=len(raw_bytes),
+        encoding="utf-8",
+        inventory_status="ready",
+    )
+    manifest_path = tmp_path / "documents.jsonl"
+    write_manifest(InventoryResult(documents=(document,), issues=()), manifest_path)
+
+    result = build_dataset(
+        DatasetBuildConfig(
+            snapshot_root=snapshot_root,
+            manifest_path=manifest_path,
+            processed_root=tmp_path / "processed",
+        )
+    )
+
+    table_ids = pq.read_table(result.release_path / "tables.parquet").column("table_id").to_pylist()  # type: ignore[no-untyped-call]
+    occurrences = pq.read_table(result.release_path / "source_table_occurrences.parquet")  # type: ignore[no-untyped-call]
+    canonical_ids = occurrences.column("canonical_table_id").to_pylist()
+    assert result.table_count == 2
+    assert len(set(table_ids)) == 2
+    assert set(canonical_ids) == set(table_ids)
 
 
 def test_build_source_table_occurrences_raises_on_html_candidate_without_outcome() -> None:

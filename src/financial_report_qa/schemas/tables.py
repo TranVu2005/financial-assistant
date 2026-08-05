@@ -37,14 +37,25 @@ def _validate_line_span(line_start: int, line_end: int) -> None:
         raise ValueError("source lines must be one-based and start must not exceed end")
 
 
-def stable_table_id(doc_id: str, line_start: int, line_end: int) -> str:
-    """Return a deterministic ID for a table at a source-line span."""
+def stable_table_id(
+    doc_id: str,
+    line_start: int,
+    line_end: int,
+    source_ordinal: int = 0,
+) -> str:
+    """Return a deterministic ID for one table occurrence in a document."""
     if not isinstance(doc_id, str):
         raise ValueError("doc_id must be a string")
     if _DOC_ID_RE.fullmatch(doc_id) is None:
         raise ValueError("doc_id must be a canonical document ID")
     _validate_line_span(line_start, line_end)
-    payload = f"{doc_id}\n{line_start}\n{line_end}".encode()
+    if (
+        isinstance(source_ordinal, bool)
+        or not isinstance(source_ordinal, int)
+        or source_ordinal < 0
+    ):
+        raise ValueError("source_ordinal must be a non-negative integer")
+    payload = f"{doc_id}\n{line_start}\n{line_end}\n{source_ordinal}".encode()
     return f"tbl_{hashlib.sha256(payload).hexdigest()}"
 
 
@@ -55,6 +66,7 @@ class TableRecord(BaseModel):
 
     table_id: TableId
     doc_id: DocumentId
+    source_ordinal: int = Field(default=0, strict=True, ge=0)
     title_raw: str | None
     statement_type: NonEmptyString | None
     unit_raw: str | None
@@ -89,9 +101,14 @@ class TableRecord(BaseModel):
     def validate_identity_and_span(self) -> Self:
         """Require valid provenance and an ID derived from that provenance."""
         _validate_line_span(self.line_start, self.line_end)
-        expected_id = stable_table_id(self.doc_id, self.line_start, self.line_end)
+        expected_id = stable_table_id(
+            self.doc_id,
+            self.line_start,
+            self.line_end,
+            self.source_ordinal,
+        )
         if self.table_id != expected_id:
-            raise ValueError("table_id must match doc_id and source-line span")
+            raise ValueError("table_id must match doc_id, source-line span, and source ordinal")
         return self
 
 
