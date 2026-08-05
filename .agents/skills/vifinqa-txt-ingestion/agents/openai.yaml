@@ -1,0 +1,4 @@
+interface:
+  display_name: "ViFinQA TXT Ingestion"
+  short_description: "Implement ViFinQA TXT ingestion safely"
+  default_prompt: "Use $vifinqa-txt-ingestion to implement or extend the ViFinQA TXT ingestion pipeline."

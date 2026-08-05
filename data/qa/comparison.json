@@ -1,0 +1,126 @@
+{
+  "after_fingerprint": "f481a496651df7e1c69dd9bb452d582b93581b14ecc1f40152159671d8daad56",
+  "after_issue_count": 2315162,
+  "after_table_count": 146011,
+  "before_fingerprint": "fa708d19761a6bac3e4f6983fce403f4b896136581e218a2bce15a6f348f271c",
+  "before_issue_count": 5890516,
+  "before_table_count": 146011,
+  "coverage": "1",
+  "errors": [],
+  "false_positive_rate": "0",
+  "metrics_by_code": {
+    "metric_unknown": {
+      "cause_counts": {
+        "non_metric_row": 199,
+        "unsupported_metric_alias": 1
+      },
+      "conclusive_coverage": "1",
+      "false_positive_count": 0,
+      "false_positive_rate": "0",
+      "sample_count": 200,
+      "true_issue_count": 200,
+      "uncertain_count": 0,
+      "unlabeled_count": 0
+    },
+    "number_ambiguous": {
+      "cause_counts": {
+        "other": 100
+      },
+      "conclusive_coverage": "1",
+      "false_positive_count": 0,
+      "false_positive_rate": "0",
+      "sample_count": 100,
+      "true_issue_count": 100,
+      "uncertain_count": 0,
+      "unlabeled_count": 0
+    },
+    "number_invalid": {
+      "cause_counts": {
+        "ocr_corruption": 189,
+        "other": 11
+      },
+      "conclusive_coverage": "1",
+      "false_positive_count": 0,
+      "false_positive_rate": "0",
+      "sample_count": 200,
+      "true_issue_count": 200,
+      "uncertain_count": 0,
+      "unlabeled_count": 0
+    },
+    "number_missing": {
+      "cause_counts": {
+        "legitimate_missing_value": 200
+      },
+      "conclusive_coverage": "1",
+      "false_positive_count": 0,
+      "false_positive_rate": "0",
+      "sample_count": 200,
+      "true_issue_count": 200,
+      "uncertain_count": 0,
+      "unlabeled_count": 0
+    },
+    "period_ambiguous": {
+      "cause_counts": {
+        "other": 5
+      },
+      "conclusive_coverage": "1",
+      "false_positive_count": 0,
+      "false_positive_rate": "0",
+      "sample_count": 5,
+      "true_issue_count": 5,
+      "uncertain_count": 0,
+      "unlabeled_count": 0
+    },
+    "period_incomplete": {
+      "cause_counts": {
+        "other": 17,
+        "period_missing_year": 64
+      },
+      "conclusive_coverage": "1",
+      "false_positive_count": 0,
+      "false_positive_rate": "0",
+      "sample_count": 81,
+      "true_issue_count": 81,
+      "uncertain_count": 0,
+      "unlabeled_count": 0
+    },
+    "statement_conflict": {
+      "cause_counts": {
+        "other": 18
+      },
+      "conclusive_coverage": "1",
+      "false_positive_count": 0,
+      "false_positive_rate": "0",
+      "sample_count": 18,
+      "true_issue_count": 18,
+      "uncertain_count": 0,
+      "unlabeled_count": 0
+    },
+    "unit_conflict": {
+      "cause_counts": {
+        "other": 100
+      },
+      "conclusive_coverage": "1",
+      "false_positive_count": 0,
+      "false_positive_rate": "0",
+      "sample_count": 100,
+      "true_issue_count": 100,
+      "uncertain_count": 0,
+      "unlabeled_count": 0
+    },
+    "unit_unknown": {
+      "cause_counts": {
+        "missing_unit_context": 116,
+        "year_header_as_unit": 84
+      },
+      "conclusive_coverage": "1",
+      "false_positive_count": 0,
+      "false_positive_rate": "0",
+      "sample_count": 200,
+      "true_issue_count": 200,
+      "uncertain_count": 0,
+      "unlabeled_count": 0
+    }
+  },
+  "passed": true
+}
