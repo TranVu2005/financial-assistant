@@ -38,7 +38,7 @@ normalization-audit = "financial_report_qa.evaluation.normalization_audit_cli:ma
 [project.optional-dependencies]
 dev = [
     "hatchling==1.31.0",
-    "hypothesis>=6.120,<7",
+    "hypothesis>=6.165.0,<7",
     "jupyterlab>=4.4,<5",
     "matplotlib>=3.10,<4",
     "mypy>=1.14,<2",
@@ -50,7 +50,7 @@ dev = [
     "ruff>=0.9,<1",
 ]
 ocr = [
-    "paddleocr>=3,<4",
+    "paddleocr>=3.7.0,<4",
     "paddlepaddle>=3,<4",
 ]
 
