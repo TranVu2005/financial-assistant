@@ -2,16 +2,40 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
+import pyarrow.parquet as pq
 from pydantic import ValidationError
 
 from financial_report_qa.core.errors import RetrievalGoldError
 from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion
-from financial_report_qa.retrieval.release import EXPECTED_FINGERPRINT
+from financial_report_qa.retrieval.release import EXPECTED_FINGERPRINT, ResolvedRetrievalRelease
 
 REQUIRED_GOLD_QUESTION_COUNT = 30
+
+
+def stable_question_id(
+    question: str,
+    filters: object,
+    gold_table_ids: tuple[str, ...],
+    dataset_fingerprint: str,
+) -> str:
+    """Derive an ID from immutable semantic fields, never BM25 predictions."""
+    payload = json.dumps(
+        {
+            "contract_version": "v1",
+            "dataset_fingerprint": dataset_fingerprint,
+            "filters": getattr(filters, "model_dump")(),
+            "gold_table_ids": gold_table_ids,
+            "question": " ".join(question.split()),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "retq_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def load_reviewed_gold(
@@ -49,3 +73,68 @@ def load_reviewed_gold(
             f"Expected {expected_count} reviewed gold questions, found {len(result)}"
         )
     return result
+
+
+def load_gold_questions(
+    path: Path,
+    release: ResolvedRetrievalRelease,
+    *,
+    require_count: int = REQUIRED_GOLD_QUESTION_COUNT,
+) -> tuple[GoldRetrievalQuestion, ...]:
+    """Load gold only when every label matches the locked release provenance."""
+    questions = load_reviewed_gold(
+        path, expected_count=require_count, expected_fingerprint=release.dataset_fingerprint
+    )
+    tables = {
+        str(row["table_id"]): row
+        for row in pq.read_table(release.release_dir / "tables.parquet").to_pylist()  # type: ignore[no-untyped-call]
+    }
+    documents = {
+        str(row["doc_id"]): row
+        for row in pq.read_table(release.release_dir / "documents.parquet").to_pylist()  # type: ignore[no-untyped-call]
+    }
+    seen_questions: set[str] = set()
+    for question in questions:
+        if question.question_id != stable_question_id(
+            question.question,
+            question.filters,
+            question.gold_table_ids,
+            question.dataset_fingerprint,
+        ):
+            raise RetrievalGoldError(f"question_id is not stable for {question.question_id}")
+        if question.question in seen_questions:
+            raise RetrievalGoldError("duplicate reviewed gold question text")
+        seen_questions.add(question.question)
+        for evidence in question.gold_evidence:
+            table = tables.get(evidence.table_id)
+            if table is None:
+                raise RetrievalGoldError(
+                    f"gold table is absent from locked release: {evidence.table_id}"
+                )
+            document = documents.get(str(table["doc_id"]))
+            if document is None:
+                raise RetrievalGoldError(f"gold table has no locked document: {evidence.table_id}")
+            if (
+                evidence.relative_path != document.get("relative_path")
+                or evidence.line_start != table.get("line_start")
+                or evidence.line_end != table.get("line_end")
+            ):
+                raise RetrievalGoldError(f"gold evidence provenance mismatch: {evidence.table_id}")
+            if (
+                question.filters.company_codes
+                and document.get("company_code") not in question.filters.company_codes
+            ):
+                raise RetrievalGoldError(f"gold table violates company filter: {evidence.table_id}")
+            if (
+                question.filters.periods
+                and str(document.get("report_year")) not in question.filters.periods
+            ):
+                raise RetrievalGoldError(f"gold table violates period filter: {evidence.table_id}")
+            if (
+                question.filters.statement_types
+                and table.get("statement_type") not in question.filters.statement_types
+            ):
+                raise RetrievalGoldError(
+                    f"gold table violates statement filter: {evidence.table_id}"
+                )
+    return questions

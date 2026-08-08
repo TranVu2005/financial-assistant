@@ -15,7 +15,16 @@ def _write_release(tmp_path: Path, *, fingerprint: str = EXPECTED_FINGERPRINT) -
     for name in ("documents.parquet", "tables.parquet", "cells.parquet"):
         pq.write_table(pa.table({"id": [name]}), release / name)
     (release / "manifest.json").write_text(
-        json.dumps({"dataset_fingerprint": fingerprint}), encoding="utf-8"
+        json.dumps(
+            {
+                "dataset_fingerprint": fingerprint,
+                "source_manifest_sha256": "a" * 64,
+                "document_count": 1,
+                "table_count": 1,
+                "cell_count": 1,
+            }
+        ),
+        encoding="utf-8",
     )
     gate = tmp_path / "data" / "gate.json"
     gate.write_text(

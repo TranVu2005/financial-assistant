@@ -10,7 +10,7 @@ from pathlib import Path
 from financial_report_qa.core.errors import RetrievalError
 from financial_report_qa.retrieval.documents import build_table_documents
 from financial_report_qa.retrieval.evaluation import evaluate_retrieval, write_report
-from financial_report_qa.retrieval.gold import REQUIRED_GOLD_QUESTION_COUNT, load_reviewed_gold
+from financial_report_qa.retrieval.gold import load_gold_questions
 from financial_report_qa.retrieval.index import build_bm25_index, load_bm25_index, save_bm25_index
 from financial_report_qa.retrieval.release import resolve_retrieval_release
 from financial_report_qa.retrieval.service import RetrievalService
@@ -48,11 +48,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             save_bm25_index(index, target)
             print(target)
             return 0
-        gold = load_reviewed_gold(
-            args.gold_path,
-            expected_count=REQUIRED_GOLD_QUESTION_COUNT,
-            expected_fingerprint=release.dataset_fingerprint,
-        )
+        gold = load_gold_questions(args.gold_path, release)
         if args.command == "validate-gold":
             print(f"validated {len(gold)} reviewed retrieval questions")
             return 0

@@ -5,10 +5,11 @@ from financial_report_qa.retrieval.documents import build_table_documents
 
 
 def test_build_table_documents_is_stable_and_contains_headers(tmp_path) -> None:
+    table_id = "tbl_" + "a" * 64
     pq.write_table(
         pa.table(
             {
-                "table_id": ["tbl_a"],
+                "table_id": [table_id],
                 "doc_id": ["doc_a"],
                 "title_raw": ["Báo cáo kết quả"],
                 "statement_type": ["income"],
@@ -32,7 +33,7 @@ def test_build_table_documents_is_stable_and_contains_headers(tmp_path) -> None:
     pq.write_table(
         pa.table(
             {
-                "table_id": ["tbl_a"],
+                "table_id": [table_id],
                 "row_idx": [0],
                 "col_idx": [0],
                 "row_label_canonical": ["Doanh thu"],
@@ -47,6 +48,6 @@ def test_build_table_documents_is_stable_and_contains_headers(tmp_path) -> None:
         tmp_path / "documents.parquet", tmp_path / "tables.parquet", tmp_path / "cells.parquet"
     )
 
-    assert [document.table_id for document in documents] == ["tbl_a"]
+    assert [document.table_id for document in documents] == [table_id]
     assert "company_code: ACB" in documents[0].text
     assert "Doanh thu | 2024 | 100" in documents[0].text

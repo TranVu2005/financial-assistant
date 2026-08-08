@@ -61,9 +61,17 @@ class RetrievalError(FinancialReportQAError):
     """Base class for deterministic retrieval failures."""
 
 
-class RetrievalReleaseError(RetrievalError):
+class RetrievalInputError(RetrievalError):
+    """A release lock, gold record, or CLI input is invalid."""
+
+
+class RetrievalArtifactError(RetrievalError):
+    """A generated retrieval artifact is corrupt or mismatched."""
+
+
+class RetrievalReleaseError(RetrievalInputError):
     """The Week 1 release lock cannot be used for retrieval."""
 
 
-class RetrievalGoldError(RetrievalError):
+class RetrievalGoldError(RetrievalInputError):
     """Reviewed retrieval gold data violates its immutable contract."""

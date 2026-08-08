@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from typing import Literal, cast
 
 from financial_report_qa.retrieval.contracts import (
     FilterDecision,
-    FilterFieldDecision,
     RetrievalCandidate,
     RetrievalFilters,
     RetrievalTrace,
@@ -28,82 +28,92 @@ class RetrievalService:
     ) -> RetrievalTrace:
         if k < 1:
             raise ValueError("k must be positive")
-        eligible, field_decisions = self._eligible_documents(filters)
-        decision = FilterDecision(
-            filters=filters,
-            indexed_count=len(self._index.documents),
-            eligible_count=len(eligible),
-            excluded_count=len(self._index.documents) - len(eligible),
-            field_decisions=field_decisions,
+        eligible, decisions = self._eligible_positions(filters)
+        query_tokens = tuple(tokenize_query(query))
+        index_tokens = tuple(
+            token for token in query_tokens if token in self._index.retriever.vocab_dict
         )
-        tokens = tokenize_query(query)
-        index_tokens = [token for token in tokens if token in self._index.retriever.vocab_dict]
-        if not index_tokens or not eligible:
+        if not eligible:
             return RetrievalTrace(
-                question_id=question_id, query=query, filter_decision=decision, results=()
+                question_id=question_id,
+                query=query,
+                query_tokens=index_tokens,
+                eligible_count=0,
+                filter_decisions=decisions,
+                results=(),
+                empty_reason="no_eligible_documents",
             )
-        scores = self._index.retriever.get_scores(index_tokens)
-        candidates = [
-            RetrievalCandidate(
-                table_id=document.table_id,
-                score=float(scores[position]),
-                rank=1,
-                metadata=document.metadata,
-                snippet=document.text[:500],
+        if not index_tokens:
+            return RetrievalTrace(
+                question_id=question_id,
+                query=query,
+                query_tokens=index_tokens,
+                eligible_count=len(eligible),
+                filter_decisions=decisions,
+                results=(),
+                empty_reason="no_index_tokens",
             )
-            for position, document in enumerate(self._index.documents)
-            if self._matches(document, filters)
-        ]
-        ordered = sorted(candidates, key=lambda candidate: (-candidate.score, candidate.table_id))[
-            :k
-        ]
-        ranked = tuple(
-            candidate.model_copy(update={"rank": rank})
-            for rank, candidate in enumerate(ordered, start=1)
-        )
+        scores = self._index.retriever.get_scores(list(index_tokens))
+        ranked_positions = sorted(
+            eligible,
+            key=lambda position: (
+                -float(scores[position]),
+                self._index.documents[position].table_id,
+            ),
+        )[:k]
+        candidates: list[RetrievalCandidate] = []
+        for rank, position in enumerate(ranked_positions, start=1):
+            score = float(scores[position])
+            if not math.isfinite(score):
+                raise ValueError("BM25 produced a non-finite score")
+            document = self._index.documents[position]
+            matched_tokens = tuple(
+                sorted(set(index_tokens).intersection(tokenize_query(document.text)))
+            )
+            candidates.append(
+                RetrievalCandidate(
+                    table_id=document.table_id,
+                    score=score,
+                    rank=rank,
+                    metadata=document.metadata,
+                    snippet=document.text[:500],
+                    matched_tokens=matched_tokens,
+                )
+            )
         return RetrievalTrace(
-            question_id=question_id, query=query, filter_decision=decision, results=ranked
+            question_id=question_id,
+            query=query,
+            query_tokens=index_tokens,
+            eligible_count=len(eligible),
+            filter_decisions=decisions,
+            results=tuple(candidates),
         )
 
-    @staticmethod
-    def _matches(document: object, filters: RetrievalFilters) -> bool:
-        metadata = getattr(document, "metadata")
-        return (
-            (not filters.company_codes or metadata.company_code in filters.company_codes)
-            and (not filters.periods or metadata.period in filters.periods)
-            and (not filters.statement_types or metadata.statement_type in filters.statement_types)
-        )
-
-    def _eligible_documents(
+    def _eligible_positions(
         self, filters: RetrievalFilters
-    ) -> tuple[tuple[object, ...], tuple[FilterFieldDecision, ...]]:
+    ) -> tuple[tuple[int, ...], tuple[FilterDecision, ...]]:
         eligible = set(range(len(self._index.documents)))
-        decisions: list[FilterFieldDecision] = []
+        decisions: list[FilterDecision] = []
         fields = (
             ("company_codes", filters.company_codes, "company_code"),
             ("periods", filters.periods, "period"),
             ("statement_types", filters.statement_types, "statement_type"),
         )
-        for field_name, requested_values, metadata_field in fields:
+        for field, requested_values, metadata_field in fields:
             if not requested_values:
                 continue
             matched = {
-                index
-                for index, document in enumerate(self._index.documents)
+                position
+                for position, document in enumerate(self._index.documents)
                 if getattr(document.metadata, metadata_field) in requested_values
             }
             eligible.intersection_update(matched)
             decisions.append(
-                FilterFieldDecision(
-                    field_name=cast(
-                        Literal["company_codes", "periods", "statement_types"], field_name
-                    ),
+                FilterDecision(
+                    field=cast(Literal["company_codes", "periods", "statement_types"], field),
                     requested_values=requested_values,
                     matched_count_before_intersection=len(matched),
                     eligible_count_after_intersection=len(eligible),
                 )
             )
-        return (
-            tuple(self._index.documents[index] for index in sorted(eligible)),
-            tuple(decisions),
-        )
+        return tuple(sorted(eligible)), tuple(decisions)

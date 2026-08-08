@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,10 +19,13 @@ REQUIRED_PARQUETS = ("documents.parquet", "tables.parquet", "cells.parquet")
 
 @dataclass(frozen=True)
 class ResolvedRetrievalRelease:
+    lock: ReleaseLock
     dataset_fingerprint: str
     release_dir: Path
     gate_result_path: Path
     lock_path: Path
+    manifest: dict[str, object]
+    lock_sha256: str
 
 
 def _resolve_repo_path(repo_root: Path, relative_path: str, *, label: str) -> Path:
@@ -40,10 +44,17 @@ def resolve_retrieval_release(lock_path: Path, *, repo_root: Path) -> ResolvedRe
     """Resolve the approved Week 1 release and validate its binding invariants."""
     root = repo_root.resolve()
     resolved_lock = lock_path.resolve()
+    try:
+        resolved_lock.relative_to(root)
+    except ValueError as exc:
+        raise RetrievalReleaseError(
+            "Retrieval release lock must stay within repository root"
+        ) from exc
     if not resolved_lock.is_file():
         raise RetrievalReleaseError(f"Retrieval release lock not found: {resolved_lock}")
     try:
-        lock = ReleaseLock.model_validate_json(resolved_lock.read_text(encoding="utf-8"))
+        lock_bytes = resolved_lock.read_bytes()
+        lock = ReleaseLock.model_validate_json(lock_bytes)
     except (OSError, ValidationError) as exc:
         raise RetrievalReleaseError(
             f"Invalid retrieval release lock or repository-relative path: {resolved_lock}"
@@ -72,20 +83,38 @@ def resolve_retrieval_release(lock_path: Path, *, repo_root: Path) -> ResolvedRe
         or gate_result.get("dataset_fingerprint") != EXPECTED_FINGERPRINT
     ):
         raise RetrievalReleaseError("Week 1 gate result is not a passed approved release")
+    if manifest.get("source_manifest_sha256") != lock.source_manifest_sha256:
+        raise RetrievalReleaseError(
+            "Release manifest source manifest hash does not match release lock"
+        )
+    expected_counts = {
+        "documents.parquet": manifest.get("document_count"),
+        "tables.parquet": manifest.get("table_count"),
+        "cells.parquet": manifest.get("cell_count"),
+    }
     for filename in REQUIRED_PARQUETS:
         parquet_path = release_dir / filename
         if not parquet_path.is_file():
             raise RetrievalReleaseError(f"Required release artifact is missing: {filename}")
         try:
-            if pq.read_metadata(parquet_path).num_rows <= 0:  # type: ignore[no-untyped-call]
+            row_count = pq.read_metadata(parquet_path).num_rows  # type: ignore[no-untyped-call]
+            if row_count <= 0:
                 raise RetrievalReleaseError(f"Release artifact has no rows: {filename}")
+            if (
+                not isinstance(expected_counts[filename], int)
+                or row_count != expected_counts[filename]
+            ):
+                raise RetrievalReleaseError(f"Release manifest count differs from {filename}")
         except RetrievalReleaseError:
             raise
         except Exception as exc:
             raise RetrievalReleaseError(f"Invalid Parquet release artifact: {filename}") from exc
     return ResolvedRetrievalRelease(
+        lock=lock,
         dataset_fingerprint=EXPECTED_FINGERPRINT,
         release_dir=release_dir,
         gate_result_path=gate_result_path,
         lock_path=resolved_lock,
+        manifest=manifest,
+        lock_sha256=hashlib.sha256(lock_bytes).hexdigest(),
     )

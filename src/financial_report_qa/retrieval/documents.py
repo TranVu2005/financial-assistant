@@ -37,13 +37,14 @@ def build_table_documents(
             raise ValueError(f"No document metadata for table {table_id}")
         metadata = TableMetadata(
             table_id=table_id,
+            doc_id=str(table["doc_id"]),
             company_code=_optional(document, "company_code"),
             period=_optional(document, "report_year"),
             statement_type=_optional(table, "statement_type"),
             title=_optional(table, "title_raw"),
             source_path=str(document["relative_path"]),
-            start_line=int(table["line_start"]),
-            end_line=int(table["line_end"]),
+            line_start=int(table["line_start"]),
+            line_end=int(table["line_end"]),
         )
         lines = [
             f"table_id: {table_id}",
@@ -65,5 +66,12 @@ def build_table_documents(
                 or ""
             )
             lines.append(f"{row_label} | {column_label} | {cell['value_raw']}")
-        result.append(TableDocument(table_id=table_id, text="\n".join(lines), metadata=metadata))
+        result.append(
+            TableDocument(
+                table_id=table_id,
+                doc_id=str(table["doc_id"]),
+                text="\n".join(lines),
+                metadata=metadata,
+            )
+        )
     return tuple(result)

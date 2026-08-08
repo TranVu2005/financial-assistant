@@ -1,31 +1,41 @@
-"""Immutable contracts shared by the Day 8 retrieval pipeline."""
+"""Immutable public contracts for the Day 8 retrieval baseline."""
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
-from pathlib import Path
-from typing import Literal
+from pathlib import PurePosixPath, PureWindowsPath
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
-_TABLE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
-_QUESTION_ID_PATTERN = r"^retq_[a-z0-9_]+$"
-_FINGERPRINT_PATTERN = r"^[0-9a-f]{64}$"
+RetrievalIntent = Literal["lookup", "compare", "growth"]
+EmptyReason = Literal["no_eligible_documents", "no_index_tokens"]
+TableId = Annotated[str, StringConstraints(pattern=r"^tbl_[0-9a-f]{64}$")]
+QuestionId = Annotated[str, StringConstraints(pattern=r"^retq_[0-9a-f]{64}$")]
+Fingerprint = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class _FrozenModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-def _normalize_values(values: tuple[str, ...]) -> tuple[str, ...]:
-    normalized = tuple(sorted(set(values)))
-    if any(not value.strip() for value in normalized):
-        raise ValueError("filter values must not be blank")
-    return normalized
+def _canonical_tuple(
+    values: tuple[str, ...], *, label: str, allow_empty: bool = True
+) -> tuple[str, ...]:
+    if not allow_empty and not values:
+        raise ValueError(f"{label} must not be empty")
+    if any(not value or value != value.strip() for value in values):
+        raise ValueError(f"{label} must not contain blank values")
+    canonical = tuple(sorted(set(values)))
+    if values != canonical:
+        raise ValueError(f"{label} must be sorted and unique")
+    return values
 
 
 class RetrievalFilters(_FrozenModel):
-    """Exact metadata restrictions, OR within each field and AND across fields."""
+    """Explicit Day 8 metadata filters; OR within a field, AND across fields."""
 
     company_codes: tuple[str, ...] = ()
     periods: tuple[str, ...] = ()
@@ -33,114 +43,132 @@ class RetrievalFilters(_FrozenModel):
 
     @field_validator("company_codes", "periods", "statement_types")
     @classmethod
-    def normalize_values(cls, values: tuple[str, ...]) -> tuple[str, ...]:
-        return _normalize_values(values)
+    def validate_canonical_values(cls, values: tuple[str, ...], info: object) -> tuple[str, ...]:
+        return _canonical_tuple(values, label=str(getattr(info, "field_name", "filter")))
 
 
 class GoldTableEvidence(_FrozenModel):
-    table_id: str = Field(pattern=_TABLE_ID_PATTERN)
-    relative_path: str = Field(min_length=1)
-    start_line: int = Field(ge=1)
-    end_line: int = Field(ge=1)
+    table_id: TableId
+    relative_path: NonEmptyString
+    line_start: int = Field(ge=1)
+    line_end: int = Field(ge=1)
     verified: Literal[True]
 
     @field_validator("relative_path")
     @classmethod
-    def safe_relative_path(cls, value: str) -> str:
-        path = Path(value)
-        if path.is_absolute() or ".." in path.parts:
-            raise ValueError("relative_path must stay within repository")
-        return path.as_posix()
+    def validate_safe_path(cls, value: str) -> str:
+        path = PurePosixPath(value)
+        if (
+            path.is_absolute()
+            or PureWindowsPath(value).drive
+            or ".." in path.parts
+            or "\\" in value
+        ):
+            raise ValueError("relative_path must be a safe POSIX-relative path")
+        return value
 
-    @field_validator("end_line")
+    @field_validator("line_end")
     @classmethod
-    def valid_line_span(cls, value: int, info: object) -> int:
-        data = getattr(info, "data", {})
-        if value < data.get("start_line", 1):
-            raise ValueError("end_line must be at least start_line")
+    def validate_span(cls, value: int, info: object) -> int:
+        if value < getattr(info, "data", {}).get("line_start", 1):
+            raise ValueError("line_end must be at least line_start")
         return value
 
 
 class GoldRetrievalQuestion(_FrozenModel):
-    question_id: str = Field(pattern=_QUESTION_ID_PATTERN)
-    question: str = Field(min_length=1)
-    intent: str = Field(min_length=1)
+    question_id: QuestionId
+    question: NonEmptyString
+    intent: RetrievalIntent
     filters: RetrievalFilters
-    gold_table_ids: tuple[str, ...] = Field(min_length=1)
-    gold_evidence: tuple[GoldTableEvidence, ...] = Field(min_length=1)
-    reviewed_by: str = Field(min_length=1)
+    gold_table_ids: tuple[TableId, ...]
+    reviewed_by: NonEmptyString
     reviewed_at: datetime
-    dataset_fingerprint: str = Field(pattern=_FINGERPRINT_PATTERN)
+    gold_evidence: tuple[GoldTableEvidence, ...]
+    dataset_fingerprint: Fingerprint
 
     @field_validator("gold_table_ids")
     @classmethod
-    def normalize_gold_table_ids(cls, values: tuple[str, ...]) -> tuple[str, ...]:
-        normalized = tuple(sorted(set(values)))
-        if not normalized or any(not value.strip() for value in normalized):
-            raise ValueError("gold_table_ids must contain non-blank values")
-        return normalized
+    def validate_gold_table_ids(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return _canonical_tuple(values, label="gold_table_ids", allow_empty=False)
+
+    @field_validator("gold_evidence")
+    @classmethod
+    def validate_gold_evidence(
+        cls, values: tuple[GoldTableEvidence, ...]
+    ) -> tuple[GoldTableEvidence, ...]:
+        if not values:
+            raise ValueError("gold_evidence must not be empty")
+        identifiers = tuple(item.table_id for item in values)
+        if identifiers != tuple(sorted(set(identifiers))):
+            raise ValueError("gold_evidence must be sorted and contain one item per table")
+        return values
 
     @field_validator("reviewed_at")
     @classmethod
-    def reviewed_at_is_timezone_aware(cls, value: datetime) -> datetime:
+    def validate_review_timestamp(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("reviewed_at must include a timezone")
         return value
 
 
 class TableMetadata(_FrozenModel):
-    table_id: str = Field(pattern=_TABLE_ID_PATTERN)
+    table_id: TableId
+    doc_id: str
     company_code: str | None = None
     period: str | None = None
     statement_type: str | None = None
     title: str | None = None
     source_path: str
-    start_line: int = Field(ge=1)
-    end_line: int = Field(ge=1)
+    line_start: int = Field(ge=1)
+    line_end: int = Field(ge=1)
 
 
 class TableDocument(_FrozenModel):
-    table_id: str = Field(pattern=_TABLE_ID_PATTERN)
-    text: str = Field(min_length=1)
+    table_id: TableId
+    doc_id: str
+    text: NonEmptyString
     metadata: TableMetadata
 
 
 class RetrievalCandidate(_FrozenModel):
-    table_id: str
+    table_id: TableId
     score: float
     rank: int = Field(ge=1)
     metadata: TableMetadata
     snippet: str
+    matched_tokens: tuple[str, ...] = ()
+
+    @field_validator("score")
+    @classmethod
+    def validate_finite_score(cls, value: float) -> float:
+        if not math.isfinite(value):
+            raise ValueError("score must be finite")
+        return value
 
 
-class FilterFieldDecision(_FrozenModel):
-    field_name: Literal["company_codes", "periods", "statement_types"]
+class FilterDecision(_FrozenModel):
+    field: Literal["company_codes", "periods", "statement_types"]
     requested_values: tuple[str, ...]
     matched_count_before_intersection: int = Field(ge=0)
     eligible_count_after_intersection: int = Field(ge=0)
 
 
-class FilterDecision(_FrozenModel):
-    filters: RetrievalFilters
-    indexed_count: int = Field(ge=0)
-    eligible_count: int = Field(ge=0)
-    excluded_count: int = Field(ge=0)
-    field_decisions: tuple[FilterFieldDecision, ...] = ()
-
-
 class RetrievalTrace(_FrozenModel):
-    question_id: str | None
+    question_id: QuestionId | None = None
     query: str
-    filter_decision: FilterDecision
+    query_tokens: tuple[str, ...]
+    eligible_count: int = Field(ge=0)
+    filter_decisions: tuple[FilterDecision, ...]
     results: tuple[RetrievalCandidate, ...]
+    empty_reason: EmptyReason | None = None
 
 
 class BM25IndexManifest(_FrozenModel):
-    dataset_fingerprint: str = Field(pattern=_FINGERPRINT_PATTERN)
+    dataset_fingerprint: Fingerprint
     document_count: int = Field(ge=0)
-    document_sha256: str = Field(pattern=_FINGERPRINT_PATTERN)
-    bm25s_version: str = Field(min_length=1)
+    document_sha256: Fingerprint
+    bm25s_version: NonEmptyString
     k1: float
     b: float
     delta: float
-    method: str
+    method: NonEmptyString
