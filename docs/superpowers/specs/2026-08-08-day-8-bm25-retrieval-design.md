@@ -21,7 +21,7 @@ directory. The loader must verify:
 - lock, gate result, and release manifest contain the same dataset fingerprint;
 - the release contains `documents.parquet`, `tables.parquet`, and `cells.parquet`;
 - the current release fingerprint is
-  `37a61be7aebae1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f`.
+  `37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f`.
 
 Source TXT and canonical Parquet files are immutable. Retrieval artifacts are rebuildable and
 live below `data/indexes/` or `artifacts/evaluations/`.
@@ -38,17 +38,32 @@ class RetrievalFilters(BaseModel):
     statement_types: tuple[str, ...] = ()
 
 
+class GoldTableEvidence(BaseModel):
+    table_id: str
+    relative_path: str
+    line_start: int
+    line_end: int
+    verified: Literal[True]
+
+
 class GoldRetrievalQuestion(BaseModel):
     question_id: str                 # retq_<64 lowercase hex>
     question: str                    # non-empty Vietnamese question
     intent: Literal["lookup", "compare", "growth"]
     filters: RetrievalFilters
     gold_table_ids: tuple[str, ...]  # sorted, unique, non-empty
+    reviewed_by: str
+    reviewed_at: datetime
+    gold_evidence: tuple[GoldTableEvidence, ...]
+    dataset_fingerprint: str
 ```
 
 `question_id` is derived from normalized question text, filters, gold table IDs, contract
 version, and dataset fingerprint. Gold table IDs must exist in the locked release and must be
-compatible with the declared filters. Filters are explicit expert annotations for Day 8;
+compatible with the declared filters. Evidence must cover every gold ID exactly once and match
+the released table's document path and source span. `reviewed_by` and `reviewed_at` must be
+non-empty/valid, and every evidence row must have `verified=true`. Filters are explicit expert
+annotations for Day 8;
 extracting filters from free text belongs to Day 10.
 
 The 30 questions cover all three intents, multiple companies and periods, and both single-table
@@ -79,7 +94,7 @@ The deterministic text serialization contains labeled fields in this order:
 1. raw table title;
 2. normalized statement type;
 3. sorted canonical metric names and their curated aliases observed from row labels;
-4. company ticker and canonical company name when registered;
+4. authoritative company ticker;
 5. sorted cell periods plus document report year;
 6. normalized table/cell units.
 
@@ -125,6 +140,9 @@ result with an auditable reason rather than silently falling back to the full co
 `bm25_score` is the Day 8 total score. The trace also records matched query tokens and the
 filter decisions. No undocumented boosts or penalties are allowed. Non-finite scores are an
 error; exact score ties are resolved by `table_id`.
+
+If no query token exists in the index vocabulary, return no candidates with
+`empty_reason="no_index_tokens"`; never rank arbitrary zero-score tables.
 
 ## Evaluation
 
