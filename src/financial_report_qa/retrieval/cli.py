@@ -5,9 +5,12 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from json import JSONDecodeError
 from pathlib import Path
 
-from financial_report_qa.core.errors import RetrievalError
+from pydantic import ValidationError
+
+from financial_report_qa.core.errors import RetrievalArtifactError, RetrievalInputError
 from financial_report_qa.retrieval.documents import build_table_documents
 from financial_report_qa.retrieval.evaluation import evaluate_retrieval, write_report
 from financial_report_qa.retrieval.gold import load_gold_questions
@@ -52,14 +55,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "validate-gold":
             print(f"validated {len(gold)} reviewed retrieval questions")
             return 0
-        index = load_bm25_index(args.index_dir)
+        try:
+            index = load_bm25_index(args.index_dir)
+        except ValueError as exc:
+            raise RetrievalArtifactError("BM25 index artifact is invalid") from exc
         if index.manifest.dataset_fingerprint != release.dataset_fingerprint:
-            raise RetrievalError("BM25 index fingerprint does not match release lock")
+            raise RetrievalArtifactError("BM25 index fingerprint does not match release lock")
         report = evaluate_retrieval(RetrievalService(index), gold)
         json_path, markdown_path = write_report(report, args.output_dir)
         print(json_path)
         print(markdown_path)
         return 0
-    except (RetrievalError, OSError, ValueError) as exc:
+    except (
+        RetrievalInputError,
+        RetrievalArtifactError,
+        ValidationError,
+        JSONDecodeError,
+        OSError,
+    ) as exc:
         print(f"retrieval error: {exc}", file=sys.stderr)
         return 2

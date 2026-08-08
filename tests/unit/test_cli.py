@@ -2,6 +2,8 @@
 
 from collections.abc import Sequence
 
+import pytest
+
 from financial_report_qa.cli import main
 
 
@@ -36,3 +38,27 @@ def test_inventory_data_forwards_arguments() -> None:
 
     assert exit_code == 0
     assert received == ["--root", "data/raw/vifinqa"]
+
+
+def test_retrieval_cli_does_not_hide_unexpected_programming_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Would fail if the product boundary turns programmer bugs into exit code 2."""
+    import financial_report_qa.retrieval.cli as retrieval_cli
+
+    def unexpected_resolver(*_: object, **__: object) -> object:
+        raise ValueError("programmer bug")
+
+    monkeypatch.setattr(retrieval_cli, "resolve_retrieval_release", unexpected_resolver)
+
+    with pytest.raises(ValueError, match="programmer bug"):
+        main(
+            [
+                "retrieval",
+                "validate-gold",
+                "--release-lock",
+                "lock.json",
+                "--gold-path",
+                "gold.jsonl",
+            ]
+        )
