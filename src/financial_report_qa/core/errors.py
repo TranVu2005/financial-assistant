@@ -55,3 +55,15 @@ class Week1GatePublicationError(Week1GateError):
 
 class QualityGateError(FinancialReportQAError):
     """A quality gate threshold or invariant was violated."""
+
+
+class RetrievalError(FinancialReportQAError):
+    """Base class for deterministic retrieval failures."""
+
+
+class RetrievalReleaseError(RetrievalError):
+    """The Week 1 release lock cannot be used for retrieval."""
+
+
+class RetrievalGoldError(RetrievalError):
+    """Reviewed retrieval gold data violates its immutable contract."""
