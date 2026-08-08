@@ -1,0 +1,4 @@
+interface:
+  display_name: "ViFinQA BM25 Retrieval"
+  short_description: "Build and verify Day 8 BM25 retrieval"
+  default_prompt: "Use $vifinqa-bm25-retrieval to implement or verify the Day 8 BM25 table-retrieval baseline."
