@@ -115,12 +115,17 @@ class TableMetadata(_FrozenModel):
     table_id: TableId
     doc_id: str
     company_code: str | None = None
-    period: str | None = None
+    periods: tuple[str, ...] = ()
     statement_type: str | None = None
     title: str | None = None
     source_path: str
     line_start: int = Field(ge=1)
     line_end: int = Field(ge=1)
+
+    @field_validator("periods")
+    @classmethod
+    def validate_periods(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return _canonical_tuple(values, label="periods")
 
 
 class TableDocument(_FrozenModel):

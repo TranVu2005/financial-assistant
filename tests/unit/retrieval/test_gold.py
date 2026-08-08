@@ -3,12 +3,22 @@ import json
 import unicodedata
 from pathlib import Path
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from financial_report_qa.core.errors import RetrievalGoldError
+from financial_report_qa.evaluation.week1_release import ReleaseLock
 from financial_report_qa.retrieval.contracts import RetrievalFilters
-from financial_report_qa.retrieval.gold import load_reviewed_gold, stable_question_id
-from financial_report_qa.retrieval.release import EXPECTED_FINGERPRINT
+from financial_report_qa.retrieval.gold import (
+    load_gold_questions,
+    load_reviewed_gold,
+    stable_question_id,
+)
+from financial_report_qa.retrieval.release import (
+    EXPECTED_FINGERPRINT,
+    ResolvedRetrievalRelease,
+)
 
 
 def _record(question_id: str = "retq_001") -> dict[str, object]:
@@ -116,3 +126,75 @@ def test_load_reviewed_gold_rejects_noncanonical_record_order(tmp_path: Path) ->
 
     with pytest.raises(RetrievalGoldError, match="sorted"):
         load_reviewed_gold(path)
+
+
+def test_gold_period_filter_accepts_cell_period_not_only_report_year(tmp_path: Path) -> None:
+    table_id = "tbl_" + "a" * 64
+    release_dir = tmp_path / "release"
+    release_dir.mkdir()
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.table(
+            {
+                "table_id": [table_id],
+                "doc_id": ["doc_a"],
+                "statement_type": ["income_statement"],
+                "line_start": [1],
+                "line_end": [3],
+            }
+        ),
+        release_dir / "tables.parquet",
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.table(
+            {
+                "doc_id": ["doc_a"],
+                "company_code": ["ACB"],
+                "report_year": [2024],
+                "relative_path": ["ACB/report.txt"],
+            }
+        ),
+        release_dir / "documents.parquet",
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.table({"table_id": [table_id], "period": ["2023"]}),
+        release_dir / "cells.parquet",
+    )
+    lock = ReleaseLock(
+        alias="dataset-pilot-v1",
+        sampling_version="week1-pilot-v1",
+        dataset_fingerprint=EXPECTED_FINGERPRINT,
+        source_manifest_sha256="0" * 64,
+        release_path="release",
+        gate_result_path="gate.json",
+        evaluation_inputs_sha256="1" * 64,
+    )
+    release = ResolvedRetrievalRelease(
+        lock=lock,
+        dataset_fingerprint=EXPECTED_FINGERPRINT,
+        release_dir=release_dir,
+        gate_result_path=tmp_path / "gate.json",
+        lock_path=tmp_path / "lock.json",
+        manifest={},
+        lock_sha256="2" * 64,
+    )
+    filters = RetrievalFilters(company_codes=("ACB",), periods=("2023",))
+    record = _record()
+    record["filters"] = filters.model_dump(mode="json")
+    record["question_id"] = stable_question_id(
+        str(record["question"]), filters, (table_id,), EXPECTED_FINGERPRINT
+    )
+    record["gold_evidence"] = [
+        {
+            "table_id": table_id,
+            "relative_path": "ACB/report.txt",
+            "line_start": 1,
+            "line_end": 3,
+            "verified": True,
+        }
+    ]
+    gold_path = tmp_path / "gold.jsonl"
+    gold_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    questions = load_gold_questions(gold_path, release, require_count=1)
+
+    assert questions[0].filters.periods == ("2023",)

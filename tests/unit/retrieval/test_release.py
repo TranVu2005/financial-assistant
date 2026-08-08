@@ -13,7 +13,7 @@ def _write_release(tmp_path: Path, *, fingerprint: str = EXPECTED_FINGERPRINT) -
     release = tmp_path / "data" / "release"
     release.mkdir(parents=True)
     for name in ("documents.parquet", "tables.parquet", "cells.parquet"):
-        pq.write_table(pa.table({"id": [name]}), release / name)
+        pq.write_table(pa.table({"id": [name]}), release / name)  # type: ignore[no-untyped-call]
     (release / "manifest.json").write_text(
         json.dumps(
             {

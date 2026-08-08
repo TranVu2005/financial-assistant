@@ -2,6 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from financial_report_qa.retrieval.contracts import RetrievalFilters, TableDocument, TableMetadata
@@ -9,6 +10,7 @@ from financial_report_qa.retrieval.index import (
     build_bm25_index,
     load_bm25_index,
     save_bm25_index,
+    tokenize_text,
 )
 from financial_report_qa.retrieval.service import RetrievalService
 
@@ -25,7 +27,7 @@ def _documents() -> tuple[TableDocument, ...]:
                 table_id=table_a,
                 doc_id="doc_a",
                 company_code="ACB",
-                period="2024",
+                periods=("2023", "2024"),
                 statement_type="income",
                 source_path="a.txt",
                 line_start=1,
@@ -40,7 +42,7 @@ def _documents() -> tuple[TableDocument, ...]:
                 table_id=table_b,
                 doc_id="doc_b",
                 company_code="VIC",
-                period="2024",
+                periods=("2024",),
                 statement_type="income",
                 source_path="v.txt",
                 line_start=1,
@@ -61,6 +63,24 @@ def test_filter_first_never_returns_ineligible_document() -> None:
     assert trace.filter_decisions[0].matched_count_before_intersection == 1
 
 
+def test_period_filter_ors_all_canonical_table_periods() -> None:
+    service = RetrievalService(build_bm25_index(_documents(), dataset_fingerprint="f" * 64))
+
+    trace = service.retrieve(
+        "doanh thu", filters=RetrievalFilters(periods=("2023", "2025")), k=10
+    )
+
+    assert [item.table_id for item in trace.results] == ["tbl_" + "a" * 64]
+    assert trace.filter_decisions[0].matched_count_before_intersection == 1
+
+
+def test_tokenize_text_uses_nfkc_casefold_and_regex_boundaries() -> None:
+    expected = ("lợi", "nhuận", "vcb", "năm", "2023")
+
+    assert tokenize_text("  LỢI NHUẬN—ＶＣＢ, năm 2023  ") == expected
+    assert tokenize_text("Lợi nhuận VCB năm 2023") == expected
+
+
 def test_empty_query_tokens_return_empty_without_padding() -> None:
     service = RetrievalService(build_bm25_index(_documents(), dataset_fingerprint="f" * 64))
 
@@ -75,6 +95,21 @@ def test_out_of_vocabulary_query_returns_empty_without_zero_score_ranking() -> N
     trace = service.retrieve("khongtontaitrongindex", filters=RetrievalFilters(), k=10)
 
     assert trace.results == ()
+
+
+def test_retrieval_rejects_nonfinite_score_outside_requested_top_k(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = build_bm25_index(_documents(), dataset_fingerprint="f" * 64)
+    monkeypatch.setattr(
+        index.retriever,
+        "get_scores",
+        lambda _tokens: np.asarray([10.0, np.nan], dtype=np.float32),
+    )
+    service = RetrievalService(index)
+
+    with pytest.raises(ValueError, match="non-finite"):
+        service.retrieve("doanh thu", filters=RetrievalFilters(), k=1)
 
 
 def test_persisted_index_manifest_hashes_exact_emitted_artifacts(tmp_path: Path) -> None:

@@ -86,6 +86,7 @@ class _RetrieverFixture:
                         table_id=_table_id("a"),
                         doc_id="doc_a",
                         company_code="VCB",
+                        periods=(),
                         source_path="VCB/report.txt",
                         line_start=1,
                         line_end=2,

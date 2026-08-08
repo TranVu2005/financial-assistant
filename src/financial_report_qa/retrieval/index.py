@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import tempfile
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +20,7 @@ B = 0.75
 DELTA = 0.5
 METHOD = "lucene"
 DTYPE = "float32"
+TOKEN_RE = re.compile(r"(?u)\b\w+\b")
 
 
 @dataclass(frozen=True)
@@ -27,10 +30,15 @@ class BM25Index:
     manifest: BM25IndexManifest
 
 
+def tokenize_text(text: str) -> tuple[str, ...]:
+    """Tokenize with the pinned Day 8 NFKC/casefold/regex policy."""
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    return tuple(TOKEN_RE.findall(normalized))
+
+
 def tokenize_query(query: str) -> list[str]:
-    """Use the same deterministic tokenizer for index and query text."""
-    tokens = bm25s.tokenize([query], return_ids=False, stopwords=None, show_progress=False)
-    return list(tokens[0])
+    """Compatibility wrapper using the same tokenizer as index documents."""
+    return list(tokenize_text(query))
 
 
 def _document_line(document: TableDocument) -> bytes:
@@ -102,12 +110,7 @@ def build_bm25_index(
     if len({document.table_id for document in ordered}) != len(ordered):
         raise ValueError("BM25 documents must have unique table IDs")
     retriever = bm25s.BM25(k1=K1, b=B, delta=DELTA, method=METHOD, dtype=DTYPE)
-    corpus_tokens = bm25s.tokenize(
-        [document.text for document in ordered],
-        return_ids=False,
-        stopwords=None,
-        show_progress=False,
-    )
+    corpus_tokens = [tokenize_text(document.text) for document in ordered]
     retriever.index(corpus_tokens, show_progress=False)
     return BM25Index(
         documents=ordered,

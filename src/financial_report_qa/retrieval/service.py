@@ -11,7 +11,7 @@ from financial_report_qa.retrieval.contracts import (
     RetrievalFilters,
     RetrievalTrace,
 )
-from financial_report_qa.retrieval.index import BM25Index, tokenize_query
+from financial_report_qa.retrieval.index import BM25Index, tokenize_text
 
 
 class RetrievalService:
@@ -29,7 +29,7 @@ class RetrievalService:
         if k < 1:
             raise ValueError("k must be positive")
         eligible, decisions = self._eligible_positions(filters)
-        query_tokens = tuple(tokenize_query(query))
+        query_tokens = tokenize_text(query)
         index_tokens = tuple(
             token for token in query_tokens if token in self._index.retriever.vocab_dict
         )
@@ -54,6 +54,8 @@ class RetrievalService:
                 empty_reason="no_index_tokens",
             )
         scores = self._index.retriever.get_scores(list(index_tokens))
+        if any(not math.isfinite(float(scores[position])) for position in eligible):
+            raise ValueError("BM25 produced a non-finite score")
         ranked_positions = sorted(
             eligible,
             key=lambda position: (
@@ -64,11 +66,9 @@ class RetrievalService:
         candidates: list[RetrievalCandidate] = []
         for rank, position in enumerate(ranked_positions, start=1):
             score = float(scores[position])
-            if not math.isfinite(score):
-                raise ValueError("BM25 produced a non-finite score")
             document = self._index.documents[position]
             matched_tokens = tuple(
-                sorted(set(index_tokens).intersection(tokenize_query(document.text)))
+                sorted(set(index_tokens).intersection(tokenize_text(document.text)))
             )
             candidates.append(
                 RetrievalCandidate(
@@ -96,17 +96,24 @@ class RetrievalService:
         decisions: list[FilterDecision] = []
         fields = (
             ("company_codes", filters.company_codes, "company_code"),
-            ("periods", filters.periods, "period"),
+            ("periods", filters.periods, "periods"),
             ("statement_types", filters.statement_types, "statement_type"),
         )
         for field, requested_values, metadata_field in fields:
             if not requested_values:
                 continue
-            matched = {
-                position
-                for position, document in enumerate(self._index.documents)
-                if getattr(document.metadata, metadata_field) in requested_values
-            }
+            if field == "periods":
+                matched = {
+                    position
+                    for position, document in enumerate(self._index.documents)
+                    if set(document.metadata.periods).intersection(requested_values)
+                }
+            else:
+                matched = {
+                    position
+                    for position, document in enumerate(self._index.documents)
+                    if getattr(document.metadata, metadata_field) in requested_values
+                }
             eligible.intersection_update(matched)
             decisions.append(
                 FilterDecision(

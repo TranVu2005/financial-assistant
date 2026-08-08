@@ -101,6 +101,13 @@ def load_gold_questions(
         str(row["doc_id"]): row
         for row in pq.read_table(release.release_dir / "documents.parquet").to_pylist()  # type: ignore[no-untyped-call]
     }
+    cell_periods: dict[str, set[str]] = {}
+    for row in pq.read_table(  # type: ignore[no-untyped-call]
+        release.release_dir / "cells.parquet", columns=["table_id", "period"]
+    ).to_pylist():
+        period = row.get("period")
+        if period is not None:
+            cell_periods.setdefault(str(row["table_id"]), set()).add(str(period))
     seen_questions: set[str] = set()
     for question in questions:
         if question.question_id != stable_question_id(
@@ -133,9 +140,13 @@ def load_gold_questions(
                 and document.get("company_code") not in question.filters.company_codes
             ):
                 raise RetrievalGoldError(f"gold table violates company filter: {evidence.table_id}")
-            if (
+            table_periods = cell_periods.get(evidence.table_id, set()).union(
+                {str(document.get("report_year"))}
+                if document.get("report_year") is not None
+                else set()
+            )
+            if question.filters.periods and not table_periods.intersection(
                 question.filters.periods
-                and str(document.get("report_year")) not in question.filters.periods
             ):
                 raise RetrievalGoldError(f"gold table violates period filter: {evidence.table_id}")
             if (
