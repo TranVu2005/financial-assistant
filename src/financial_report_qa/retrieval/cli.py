@@ -46,7 +46,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 release.release_dir / "tables.parquet",
                 release.release_dir / "cells.parquet",
             )
-            index = build_bm25_index(documents, dataset_fingerprint=release.dataset_fingerprint)
+            index = build_bm25_index(
+                documents,
+                dataset_fingerprint=release.dataset_fingerprint,
+                release_lock_sha256=release.lock_sha256,
+            )
             target = args.output_root / release.dataset_fingerprint
             save_bm25_index(index, target)
             print(target)
@@ -56,7 +60,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"validated {len(gold)} reviewed retrieval questions")
             return 0
         try:
-            index = load_bm25_index(args.index_dir)
+            index = load_bm25_index(
+                args.index_dir, release_lock_sha256=release.lock_sha256
+            )
         except ValueError as exc:
             raise RetrievalArtifactError("BM25 index artifact is invalid") from exc
         if index.manifest.dataset_fingerprint != release.dataset_fingerprint:

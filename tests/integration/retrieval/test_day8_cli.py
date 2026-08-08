@@ -106,7 +106,12 @@ def _write_fixture_gold(path: Path) -> None:
             }
         )
     path.write_text(
-        "\n".join(json.dumps(record, sort_keys=True) for record in records) + "\n", encoding="utf-8"
+        "\n".join(
+            json.dumps(record, sort_keys=True)
+            for record in sorted(records, key=lambda item: str(item["question_id"]))
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
 

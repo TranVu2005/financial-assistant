@@ -17,6 +17,7 @@ K1 = 1.5
 B = 0.75
 DELTA = 0.5
 METHOD = "lucene"
+DTYPE = "float32"
 
 
 @dataclass(frozen=True)
@@ -32,27 +33,75 @@ def tokenize_query(query: str) -> list[str]:
     return list(tokens[0])
 
 
-def _documents_hash(documents: tuple[TableDocument, ...]) -> str:
-    payload = "\n".join(
+def _document_line(document: TableDocument) -> bytes:
+    return (
         json.dumps(
             document.model_dump(mode="json"),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
         )
-        for document in documents
+        + "\n"
+    ).encode("utf-8")
+
+
+def _documents_hash(documents: tuple[TableDocument, ...]) -> str:
+    digest = hashlib.sha256()
+    for document in documents:
+        digest.update(_document_line(document))
+    return digest.hexdigest()
+
+
+def _write_documents(path: Path, documents: tuple[TableDocument, ...]) -> None:
+    with path.open("wb") as stream:
+        for document in documents:
+            stream.write(_document_line(document))
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _artifact_hashes(index_dir: Path) -> dict[str, str]:
+    return {
+        path.relative_to(index_dir).as_posix(): _file_sha256(path)
+        for path in sorted(index_dir.rglob("*"))
+        if path.is_file() and path.name != "manifest.json"
+    }
+
+
+def _manifest_identity(manifest: BM25IndexManifest) -> dict[str, object]:
+    return manifest.model_dump(mode="json", exclude={"artifact_sha256"})
+
+
+def _write_manifest(path: Path, manifest: BM25IndexManifest) -> None:
+    path.write_text(
+        json.dumps(
+            manifest.model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
     )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def build_bm25_index(
-    documents: tuple[TableDocument, ...], *, dataset_fingerprint: str
+    documents: tuple[TableDocument, ...],
+    *,
+    dataset_fingerprint: str,
+    release_lock_sha256: str | None = None,
 ) -> BM25Index:
     """Create an in-memory, stable BM25 index ordered by table ID."""
     ordered = tuple(sorted(documents, key=lambda document: document.table_id))
     if len({document.table_id for document in ordered}) != len(ordered):
         raise ValueError("BM25 documents must have unique table IDs")
-    retriever = bm25s.BM25(k1=K1, b=B, delta=DELTA, method=METHOD)
+    retriever = bm25s.BM25(k1=K1, b=B, delta=DELTA, method=METHOD, dtype=DTYPE)
     corpus_tokens = bm25s.tokenize(
         [document.text for document in ordered],
         return_ids=False,
@@ -65,6 +114,7 @@ def build_bm25_index(
         retriever=retriever,
         manifest=BM25IndexManifest(
             dataset_fingerprint=dataset_fingerprint,
+            release_lock_sha256=release_lock_sha256,
             document_count=len(ordered),
             document_sha256=_documents_hash(ordered),
             bm25s_version=bm25s.__version__,
@@ -80,35 +130,48 @@ def save_bm25_index(index: BM25Index, output_dir: Path) -> None:
     """Publish atomically; reject an existing non-identical content-addressed target."""
     if output_dir.exists():
         existing = load_bm25_index(output_dir)
-        if existing.manifest != index.manifest:
+        if _manifest_identity(existing.manifest) != _manifest_identity(index.manifest):
             raise ValueError(f"Index target already exists with different content: {output_dir}")
         return
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.", dir=output_dir.parent))
     try:
         index.retriever.save(temporary / "bm25s", corpus=None)
-        (temporary / "documents.jsonl").write_text(
-            "\n".join(document.model_dump_json() for document in index.documents) + "\n",
-            encoding="utf-8",
+        _write_documents(temporary / "documents.jsonl", index.documents)
+        persisted_manifest = index.manifest.model_copy(
+            update={"artifact_sha256": _artifact_hashes(temporary)}
         )
-        (temporary / "manifest.json").write_text(
-            index.manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"
-        )
+        _write_manifest(temporary / "manifest.json", persisted_manifest)
         temporary.replace(output_dir)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
 
 
-def load_bm25_index(index_dir: Path) -> BM25Index:
-    """Load a persisted index only when its document hash still matches the manifest."""
+def load_bm25_index(
+    index_dir: Path, *, release_lock_sha256: str | None = None
+) -> BM25Index:
+    """Verify every persisted artifact before loading executable BM25 state."""
+    manifest = BM25IndexManifest.model_validate_json(
+        (index_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    if (
+        release_lock_sha256 is not None
+        and manifest.release_lock_sha256 != release_lock_sha256
+    ):
+        raise ValueError("Persisted BM25 index release lock hash does not match")
+    actual_hashes = _artifact_hashes(index_dir)
+    if set(actual_hashes) != set(manifest.artifact_sha256):
+        raise ValueError("Persisted BM25 artifact set does not match manifest")
+    for relative_path, expected_hash in manifest.artifact_sha256.items():
+        if actual_hashes[relative_path] != expected_hash:
+            raise ValueError(f"Persisted BM25 artifact hash mismatch: {relative_path}")
+    if manifest.artifact_sha256.get("documents.jsonl") != manifest.document_sha256:
+        raise ValueError("Persisted BM25 document hash does not match artifact manifest")
     documents = tuple(
         TableDocument.model_validate_json(line)
         for line in (index_dir / "documents.jsonl").read_text(encoding="utf-8").splitlines()
         if line.strip()
-    )
-    manifest = BM25IndexManifest.model_validate_json(
-        (index_dir / "manifest.json").read_text(encoding="utf-8")
     )
     if manifest.document_count != len(documents) or manifest.document_sha256 != _documents_hash(
         documents

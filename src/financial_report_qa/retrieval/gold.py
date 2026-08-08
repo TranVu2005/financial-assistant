@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 from pathlib import Path
 
 import pyarrow.parquet as pq
 from pydantic import ValidationError
 
 from financial_report_qa.core.errors import RetrievalGoldError
-from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion
+from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion, RetrievalFilters
 from financial_report_qa.retrieval.release import EXPECTED_FINGERPRINT, ResolvedRetrievalRelease
 
 REQUIRED_GOLD_QUESTION_COUNT = 30
@@ -18,18 +19,19 @@ REQUIRED_GOLD_QUESTION_COUNT = 30
 
 def stable_question_id(
     question: str,
-    filters: object,
+    filters: RetrievalFilters,
     gold_table_ids: tuple[str, ...],
     dataset_fingerprint: str,
 ) -> str:
     """Derive an ID from immutable semantic fields, never BM25 predictions."""
+    normalized_question = " ".join(unicodedata.normalize("NFKC", question).split())
     payload = json.dumps(
         {
-            "contract_version": "v1",
+            "contract_version": "retrieval-gold-v1",
             "dataset_fingerprint": dataset_fingerprint,
-            "filters": getattr(filters, "model_dump")(),
-            "gold_table_ids": gold_table_ids,
-            "question": " ".join(question.split()),
+            "filters": filters.model_dump(mode="json"),
+            "gold_table_ids": list(gold_table_ids),
+            "question": normalized_question,
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -49,15 +51,20 @@ def load_reviewed_gold(
         raise RetrievalGoldError(f"Reviewed retrieval gold file not found: {path}")
     records: list[GoldRetrievalQuestion] = []
     seen_ids: set[str] = set()
+    previous_id: str | None = None
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
-            continue
+            raise RetrievalGoldError(f"Reviewed retrieval gold contains blank line {line_number}")
         try:
             record = GoldRetrievalQuestion.model_validate(json.loads(line))
         except (json.JSONDecodeError, ValidationError) as exc:
             raise RetrievalGoldError(f"Invalid reviewed gold record at line {line_number}") from exc
         if record.question_id in seen_ids:
             raise RetrievalGoldError(f"duplicate reviewed gold question_id: {record.question_id}")
+        if previous_id is not None and record.question_id < previous_id:
+            raise RetrievalGoldError(
+                "Reviewed retrieval gold records must be sorted by question_id"
+            )
         if record.dataset_fingerprint != expected_fingerprint:
             raise RetrievalGoldError(f"Reviewed gold fingerprint mismatch for {record.question_id}")
         evidence_ids = tuple(sorted(evidence.table_id for evidence in record.gold_evidence))
@@ -66,8 +73,9 @@ def load_reviewed_gold(
                 f"Gold table IDs and verified evidence differ for {record.question_id}"
             )
         seen_ids.add(record.question_id)
+        previous_id = record.question_id
         records.append(record)
-    result = tuple(sorted(records, key=lambda record: record.question_id))
+    result = tuple(records)
     if expected_count is not None and len(result) != expected_count:
         raise RetrievalGoldError(
             f"Expected {expected_count} reviewed gold questions, found {len(result)}"

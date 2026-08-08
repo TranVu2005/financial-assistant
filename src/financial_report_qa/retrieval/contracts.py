@@ -164,9 +164,15 @@ class RetrievalTrace(_FrozenModel):
 
 
 class BM25IndexManifest(_FrozenModel):
+    schema_version: Literal["bm25-index-v1"] = "bm25-index-v1"
+    builder_version: Literal["v1"] = "v1"
+    tokenizer_version: Literal["v1"] = "v1"
+    dtype: Literal["float32"] = "float32"
     dataset_fingerprint: Fingerprint
+    release_lock_sha256: Fingerprint | None = None
     document_count: int = Field(ge=0)
     document_sha256: Fingerprint
+    artifact_sha256: dict[str, Fingerprint] = Field(default_factory=dict)
     bm25s_version: NonEmptyString
     k1: float
     b: float
