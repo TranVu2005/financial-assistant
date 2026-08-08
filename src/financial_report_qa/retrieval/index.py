@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,16 +77,27 @@ def build_bm25_index(
 
 
 def save_bm25_index(index: BM25Index, output_dir: Path) -> None:
-    """Persist all artifacts needed to audit and reload an index."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    index.retriever.save(output_dir / "bm25s", corpus=None)
-    (output_dir / "documents.jsonl").write_text(
-        "\n".join(document.model_dump_json() for document in index.documents) + "\n",
-        encoding="utf-8",
-    )
-    (output_dir / "manifest.json").write_text(
-        index.manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"
-    )
+    """Publish atomically; reject an existing non-identical content-addressed target."""
+    if output_dir.exists():
+        existing = load_bm25_index(output_dir)
+        if existing.manifest != index.manifest:
+            raise ValueError(f"Index target already exists with different content: {output_dir}")
+        return
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.", dir=output_dir.parent))
+    try:
+        index.retriever.save(temporary / "bm25s", corpus=None)
+        (temporary / "documents.jsonl").write_text(
+            "\n".join(document.model_dump_json() for document in index.documents) + "\n",
+            encoding="utf-8",
+        )
+        (temporary / "manifest.json").write_text(
+            index.manifest.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
+        temporary.replace(output_dir)
+    except Exception:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
 
 
 def load_bm25_index(index_dir: Path) -> BM25Index:

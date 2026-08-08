@@ -1,77 +1,86 @@
-"""Deterministic conversion of canonical Parquet tables into BM25 documents."""
+"""Bounded, deterministic Parquet-to-document conversion for BM25."""
 
 from __future__ import annotations
 
-from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
-import pyarrow.parquet as pq
+import duckdb
 
 from financial_report_qa.retrieval.contracts import TableDocument, TableMetadata
 
 
-def _optional(row: dict[str, Any], key: str) -> str | None:
-    value = row.get(key)
-    return None if value is None else str(value)
+def _tokens(values: list[str | None]) -> tuple[str, ...]:
+    return tuple(sorted({" ".join(value.split()) for value in values if value and value.strip()}))
 
 
 def build_table_documents(
     documents_path: Path, tables_path: Path, cells_path: Path
 ) -> tuple[TableDocument, ...]:
-    """Build one canonical text document per table with stable row/column ordering."""
-    document_rows = pq.read_table(documents_path).to_pylist()  # type: ignore[no-untyped-call]
-    documents_by_id = {row["doc_id"]: row for row in document_rows}
-    cells_by_table: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for cell in pq.read_table(cells_path).to_pylist():  # type: ignore[no-untyped-call]
-        cells_by_table[str(cell["table_id"])].append(cell)
+    """Aggregate once per table in DuckDB; numeric values are intentionally excluded."""
+    connection = duckdb.connect(":memory:")
+    try:
+        rows = connection.execute(
+            """
+            SELECT
+                t.table_id, t.doc_id, d.company_code, CAST(d.report_year AS VARCHAR),
+                t.statement_type, t.title_raw, d.relative_path, t.line_start, t.line_end,
+                list(DISTINCT c.row_label_canonical)
+                    FILTER (WHERE c.row_label_canonical IS NOT NULL),
+                list(DISTINCT c.row_label_raw) FILTER (WHERE c.row_label_raw IS NOT NULL),
+                list(DISTINCT c.period) FILTER (WHERE c.period IS NOT NULL),
+                list(DISTINCT c.unit) FILTER (WHERE c.unit IS NOT NULL)
+            FROM read_parquet(?) AS t
+            JOIN read_parquet(?) AS d USING (doc_id)
+            LEFT JOIN read_parquet(?) AS c USING (table_id)
+            GROUP BY ALL
+            ORDER BY t.table_id
+            """,
+            [str(tables_path), str(documents_path), str(cells_path)],
+        ).fetchall()
+    finally:
+        connection.close()
 
     result: list[TableDocument] = []
-    for table in sorted(
-        pq.read_table(tables_path).to_pylist(),  # type: ignore[no-untyped-call]
-        key=lambda row: str(row["table_id"]),
-    ):
-        table_id = str(table["table_id"])
-        document = documents_by_id.get(table["doc_id"])
-        if document is None:
-            raise ValueError(f"No document metadata for table {table_id}")
+    for row in rows:
+        (
+            table_id,
+            doc_id,
+            company_code,
+            report_year,
+            statement_type,
+            title,
+            relative_path,
+            line_start,
+            line_end,
+            canonical_labels,
+            raw_labels,
+            periods,
+            units,
+        ) = row
         metadata = TableMetadata(
-            table_id=table_id,
-            doc_id=str(table["doc_id"]),
-            company_code=_optional(document, "company_code"),
-            period=_optional(document, "report_year"),
-            statement_type=_optional(table, "statement_type"),
-            title=_optional(table, "title_raw"),
-            source_path=str(document["relative_path"]),
-            line_start=int(table["line_start"]),
-            line_end=int(table["line_end"]),
+            table_id=str(table_id),
+            doc_id=str(doc_id),
+            company_code=company_code,
+            period=report_year,
+            statement_type=statement_type,
+            title=title,
+            source_path=str(relative_path),
+            line_start=int(line_start),
+            line_end=int(line_end),
         )
-        lines = [
-            f"table_id: {table_id}",
-            f"company_code: {metadata.company_code or ''}",
-            f"period: {metadata.period or ''}",
-            f"statement_type: {metadata.statement_type or ''}",
-            f"title: {metadata.title or ''}",
-        ]
-        for cell in sorted(
-            cells_by_table.get(table_id, []),
-            key=lambda row: (int(row["row_idx"]), int(row["col_idx"])),
-        ):
-            row_label = (
-                _optional(cell, "row_label_canonical") or _optional(cell, "row_label_raw") or ""
-            )
-            column_label = (
-                _optional(cell, "column_label_canonical")
-                or _optional(cell, "column_label_raw")
-                or ""
-            )
-            lines.append(f"{row_label} | {column_label} | {cell['value_raw']}")
+        lines = (
+            f"title: {title or ''}",
+            f"statement_type: {statement_type or ''}",
+            f"company_code: {company_code or ''}",
+            f"report_year: {report_year or ''}",
+            f"periods: {' | '.join(_tokens(periods or []))}",
+            f"units: {' | '.join(_tokens(units or []))}",
+            f"metrics: {' | '.join(_tokens(canonical_labels or []))}",
+            f"metric_aliases: {' | '.join(_tokens(raw_labels or []))}",
+        )
         result.append(
             TableDocument(
-                table_id=table_id,
-                doc_id=str(table["doc_id"]),
-                text="\n".join(lines),
-                metadata=metadata,
+                table_id=str(table_id), doc_id=str(doc_id), text="\n".join(lines), metadata=metadata
             )
         )
     return tuple(result)
