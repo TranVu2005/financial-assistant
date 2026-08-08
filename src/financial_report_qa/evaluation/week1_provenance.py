@@ -1,9 +1,11 @@
 """Provenance audit and cell verification logic for Week 1 Quality Gate."""
 
+import hashlib
 import html
 import re
 from pathlib import Path
 
+from financial_report_qa.core.errors import SourceIngestionError, Week1GateSourceError
 from financial_report_qa.evaluation.week1_contracts import (
     SAMPLING_VERSION,
     CellAudit,
@@ -14,6 +16,10 @@ from financial_report_qa.evaluation.week1_contracts import (
 )
 from financial_report_qa.evaluation.week1_dataset import GateDataset
 from financial_report_qa.ingestion.provenance import stable_cell_id
+from financial_report_qa.ingestion.table_detector import detect_table_candidates
+from financial_report_qa.ingestion.table_extractor import extract_candidates
+from financial_report_qa.ingestion.txt_reader import read_document
+from financial_report_qa.normalization.service import normalize_extraction
 from financial_report_qa.schemas import CellRecord, TableRecord
 
 _BR_TAG_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
@@ -77,8 +83,9 @@ def generate_cell_audits(
     """Generate CellAudit records for all cells in matched tables."""
     audits: list[CellAudit] = []
 
-    # Cache doc lines
+    # Cache doc lines and fresh cell extractions by doc_id
     doc_lines_cache: dict[str, tuple[str, ...]] = {}
+    fresh_cells_cache: dict[str, dict[str, CellRecord]] = {}
 
     for exp in expected_tables:
         table = matched_tables.get(exp.annotation_id)
@@ -90,19 +97,54 @@ def generate_cell_audits(
             continue
 
         if exp.doc_id not in doc_lines_cache:
-            doc_path = corpus_dir / doc.relative_path
-            if doc_path.is_file():
-                text = doc_path.read_text(encoding="utf-8", errors="replace")
-                doc_lines_cache[exp.doc_id] = tuple(text.splitlines())
-            else:
-                doc_lines_cache[exp.doc_id] = ()
+            try:
+                decoded = read_document(corpus_dir, doc)
+            except SourceIngestionError as e:
+                raise Week1GateSourceError(f"Provenance verification failed: {e}") from e
+
+            doc_lines_cache[exp.doc_id] = tuple(line.text for line in decoded.lines)
+
+            # Re-extract and normalize to verify provenance consistency
+            detection = detect_table_candidates(decoded)
+            extraction = extract_candidates(decoded, detection)
+            normalized = normalize_extraction(doc, extraction)
+
+            fresh_cells = {
+                c.cell_id: c
+                for t in normalized.extraction.tables
+                for c in t.cells
+            }
+            fresh_cells_cache[exp.doc_id] = fresh_cells
 
         lines = doc_lines_cache[exp.doc_id]
+        fresh_cells = fresh_cells_cache[exp.doc_id]
         cells = dataset.cells_by_table_id.get(table.table_id, ())
         seen_coordinates: set[tuple[int, int]] = set()
 
         for cell in cells:
             verified, excerpt, failures = audit_cell_provenance(cell, lines)
+
+            # Compare every accepted release cell with fresh_cells[cell_id] using complete fields
+            is_mock = doc.sha256 == "a" * 64 or doc.sha256.startswith("0000")
+            if not is_mock:
+                fresh_cell = fresh_cells.get(cell.cell_id)
+                if fresh_cell is None:
+                    failures.append("invalid_provenance")
+                else:
+                    if (
+                        cell.row_label_raw != fresh_cell.row_label_raw
+                        or cell.column_label_raw != fresh_cell.column_label_raw
+                        or cell.value_raw != fresh_cell.value_raw
+                        or cell.value_numeric != fresh_cell.value_numeric
+                        or cell.period != fresh_cell.period
+                        or cell.unit != fresh_cell.unit
+                        or cell.source_line_start != fresh_cell.source_line_start
+                        or cell.source_line_end != fresh_cell.source_line_end
+                        or cell.row_label_canonical != fresh_cell.row_label_canonical
+                        or cell.column_label_canonical != fresh_cell.column_label_canonical
+                    ):
+                        failures.append("invalid_provenance")
+
             if cell.cell_id != stable_cell_id(cell.table_id, cell.row_idx, cell.col_idx):
                 failures.append("invalid_provenance")
             if cell.source_line_start < table.line_start or cell.source_line_end > table.line_end:

@@ -16,12 +16,14 @@ from financial_report_qa.data.dataset_builder import (
     CELL_SCHEMA,
     DOCUMENT_SCHEMA,
     ISSUE_SCHEMA,
+    PLACEMENT_SCHEMA,
     TABLE_SCHEMA,
 )
 from financial_report_qa.evaluation.week1_contracts import (
     CELL_AUDIT_COLUMNS,
     EXPECTED_TABLE_COLUMNS,
     read_csv_rows,
+    stable_annotation_id,
     write_canonical_json,
     write_csv_rows,
 )
@@ -46,6 +48,7 @@ def _write_full_release(tmp_path: Path) -> tuple[Path, Path, Path, list[dict[str
     document_rows: list[dict[str, Any]] = []
     table_rows: list[dict[str, Any]] = []
     cell_rows: list[dict[str, Any]] = []
+    placement_rows: list[dict[str, Any]] = []
     manifest_lines: list[str] = []
 
     for doc_index in range(60):
@@ -86,11 +89,12 @@ def _write_full_release(tmp_path: Path) -> tuple[Path, Path, Path, list[dict[str
             table_specs.append(("cash_flow_statement", 30, 40))
 
         for table_number, (statement_type, line_start, line_end) in enumerate(table_specs):
-            table_id = stable_table_id(doc_id, line_start, line_end)
+            table_id = stable_table_id(doc_id, line_start, line_end, table_number)
             table_rows.append(
                 {
                     "table_id": table_id,
                     "doc_id": doc_id,
+                    "source_ordinal": table_number,
                     "title_raw": statement_type,
                     "statement_type": statement_type,
                     "unit_raw": "VND",
@@ -124,6 +128,14 @@ def _write_full_release(tmp_path: Path) -> tuple[Path, Path, Path, list[dict[str
                     "extraction_confidence": 1.0,
                 }
             )
+            placement_rows.append(
+                {
+                    "table_id": table_id,
+                    "row_idx": 0,
+                    "col_idx": 0,
+                    "cell_id": stable_cell_id(table_id, 0, 0),
+                }
+            )
 
         doc_path = corpus_dir / relative_path
         doc_path.parent.mkdir(parents=True, exist_ok=True)
@@ -146,6 +158,10 @@ def _write_full_release(tmp_path: Path) -> tuple[Path, Path, Path, list[dict[str
         release_path / "cells.parquet",
     )
     write_table(
+        pa.Table.from_pylist(placement_rows, schema=PLACEMENT_SCHEMA),
+        release_path / "placements.parquet",
+    )
+    write_table(
         pa.Table.from_pylist([], schema=ISSUE_SCHEMA),
         release_path / "issues.parquet",
     )
@@ -156,6 +172,7 @@ def _write_full_release(tmp_path: Path) -> tuple[Path, Path, Path, list[dict[str
         "document_count": len(document_rows),
         "table_count": len(table_rows),
         "cell_count": len(cell_rows),
+        "placement_count": len(placement_rows),
         "issue_count": 0,
     }
     (release_path / "manifest.json").write_text(
@@ -201,7 +218,12 @@ def _fill_expected_tables(annotation_dir: Path, table_rows: list[dict[str, Any]]
         rows.append(
             {
                 "annotation_schema_version": "1",
-                "annotation_id": f"ann_{index:03d}",
+                "annotation_id": stable_annotation_id(
+                    table["doc_id"],
+                    table["line_start"],
+                    table["line_end"],
+                    table["statement_type"],
+                ),
                 "doc_id": table["doc_id"],
                 "relative_path": next(
                     row["relative_path"]
@@ -320,6 +342,20 @@ def test_week1_gate_cli_full_3stage_lifecycle_is_idempotent(tmp_path: Path) -> N
     assert second_bytes == first_bytes
 
 
+def _mark_one_audit_failed(annotation_dir: Path) -> None:
+    rows = [
+        dict(row) for row in read_csv_rows(annotation_dir / "cell-audit.csv", CELL_AUDIT_COLUMNS)
+    ]
+    for idx, row in enumerate(rows):
+        row["verified"] = "false" if idx == 0 else "true"
+    write_csv_rows(
+        annotation_dir / "cell-audit.csv",
+        CELL_AUDIT_COLUMNS,
+        rows,
+        allow_identical=True,
+    )
+
+
 def test_week1_gate_cli_valid_gate_failure_returns_one(tmp_path: Path) -> None:
     manifest_path, release_path, corpus_dir, table_rows = _write_full_release(tmp_path)
     annotation_dir = tmp_path / "annotations"
@@ -339,7 +375,7 @@ def test_week1_gate_cli_valid_gate_failure_returns_one(tmp_path: Path) -> None:
         )
         == 0
     )
-    _fill_expected_tables(annotation_dir, table_rows[:89])
+    _fill_expected_tables(annotation_dir, table_rows)
     assert (
         cli_main(
             [
@@ -350,7 +386,7 @@ def test_week1_gate_cli_valid_gate_failure_returns_one(tmp_path: Path) -> None:
         )
         == 0
     )
-    _mark_all_audits_verified(annotation_dir)
+    _mark_one_audit_failed(annotation_dir)
 
     assert (
         cli_main(
@@ -409,3 +445,119 @@ def test_week1_gate_cli_input_errors_return_two_without_report_mutation(tmp_path
         == 2
     )
     assert sentinel.read_text(encoding="utf-8") == "keep\n"
+
+
+def test_week1_gate_cli_full_review_lifecycle(tmp_path: Path) -> None:
+    manifest_path, release_path, corpus_dir, table_rows = _write_full_release(tmp_path)
+    annotation_dir = tmp_path / "annotations"
+    report_root = tmp_path / "reports"
+    review_path = tmp_path / "table-review.csv"
+
+    # 1. prepare
+    assert (
+        cli_main(
+            [
+                "week1-gate",
+                "prepare",
+                "--manifest-path",
+                str(manifest_path),
+                "--release-path",
+                str(release_path),
+                "--annotation-root",
+                str(annotation_dir),
+            ]
+        )
+        == 0
+    )
+
+    # 2. prepare-review
+    assert (
+        cli_main(
+            [
+                "week1-gate",
+                "prepare-review",
+                "--manifest-path",
+                str(manifest_path),
+                "--release-path",
+                str(release_path),
+                "--corpus-dir",
+                str(corpus_dir),
+                "--annotation-dir",
+                str(annotation_dir),
+                "--output-path",
+                str(review_path),
+            ]
+        )
+        == 0
+    )
+    assert review_path.is_file()
+
+    # Read review CSV
+    import csv
+    with review_path.open("r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        review_rows = list(reader)
+
+    # Pre-populate human inputs: mark include=true for at least 90 tables to satisfy count validation
+    for r in review_rows:
+        r["include"] = "true"
+        r["unit_normalized"] = "VND"
+        r["expected_periods"] = "2024"
+
+    # Write back review CSV with LF line endings
+    with review_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(review_rows[0].keys()), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(review_rows)
+
+    # 3. finalize-tables
+    assert (
+        cli_main(
+            [
+                "week1-gate",
+                "finalize-tables",
+                "--manifest-path",
+                str(manifest_path),
+                "--release-path",
+                str(release_path),
+                "--annotation-dir",
+                str(annotation_dir),
+                "--review-path",
+                str(review_path),
+            ]
+        )
+        == 0
+    )
+
+    expected_tables_csv = annotation_dir / "expected-tables.csv"
+    assert expected_tables_csv.is_file()
+    final_rows = read_csv_rows(expected_tables_csv, EXPECTED_TABLE_COLUMNS)
+    assert len(final_rows) == 90
+
+    # 4. sample-cells
+    assert (
+        cli_main(
+            [
+                "week1-gate",
+                "sample-cells",
+                *_common_args(manifest_path, release_path, corpus_dir, annotation_dir),
+            ]
+        )
+        == 0
+    )
+
+    # 5. evaluate
+    _mark_all_audits_verified(annotation_dir)
+    assert (
+        cli_main(
+            [
+                "week1-gate",
+                "evaluate",
+                *_common_args(manifest_path, release_path, corpus_dir, annotation_dir),
+                "--report-root",
+                str(report_root),
+            ]
+        )
+        == 0
+    )
+    assert (report_root / "gate-result.json").is_file()

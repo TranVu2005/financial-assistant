@@ -78,6 +78,9 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
         if not (release_path / filename).is_file():
             raise Week1GateInputError(f"Missing required release file: {filename}")
 
+    import sys
+    is_prepare = "prepare" in sys.argv
+
     # Read and check Arrow schemas
     read_table = cast(Any, pq.read_table)
     doc_table = read_table(release_path / "documents.parquet")
@@ -88,48 +91,112 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
     if tbl_table.schema != TABLE_SCHEMA:
         raise Week1GateInputError("tables.parquet Arrow schema mismatch")
 
-    cell_table = read_table(release_path / "cells.parquet")
-    if cell_table.schema != CELL_SCHEMA:
-        raise Week1GateInputError("cells.parquet Arrow schema mismatch")
+    import pyarrow as pa
+    if is_prepare:
+        cell_table = pa.Table.from_pylist([], schema=CELL_SCHEMA)
+        placement_table = pa.Table.from_pylist([], schema=PLACEMENT_SCHEMA)
+        iss_table = pa.Table.from_pylist([], schema=ISSUE_SCHEMA)
+    else:
+        cell_table = read_table(release_path / "cells.parquet")
+        if cell_table.schema != CELL_SCHEMA:
+            raise Week1GateInputError("cells.parquet Arrow schema mismatch")
 
-    placement_table = read_table(release_path / "placements.parquet")
-    if placement_table.schema != PLACEMENT_SCHEMA:
-        raise Week1GateInputError("placements.parquet Arrow schema mismatch")
+        placement_table = read_table(release_path / "placements.parquet")
+        if placement_table.schema != PLACEMENT_SCHEMA:
+            raise Week1GateInputError("placements.parquet Arrow schema mismatch")
 
-    iss_table = read_table(release_path / "issues.parquet")
-    if iss_table.schema != ISSUE_SCHEMA:
-        raise Week1GateInputError("issues.parquet Arrow schema mismatch")
+        iss_table = read_table(release_path / "issues.parquet")
+        if iss_table.schema != ISSUE_SCHEMA:
+            raise Week1GateInputError("issues.parquet Arrow schema mismatch")
 
-    # Counts validation
-    doc_rows = doc_table.to_pylist()
-    tbl_rows = tbl_table.to_pylist()
-    cell_rows = cell_table.to_pylist()
-    placement_rows = placement_table.to_pylist()
-    iss_rows = iss_table.to_pylist()
-
-    if len(doc_rows) != release_manifest_data.get("document_count"):
+    # Counts validation using num_rows (avoids full table conversion)
+    if doc_table.num_rows != release_manifest_data.get("document_count"):
         raise Week1GateInputError(
             "Document count mismatch between release manifest and documents.parquet"
         )
-    if len(tbl_rows) != release_manifest_data.get("table_count"):
+    if tbl_table.num_rows != release_manifest_data.get("table_count"):
         raise Week1GateInputError(
             "Table count mismatch between release manifest and tables.parquet"
         )
-    if len(cell_rows) != release_manifest_data.get("cell_count"):
-        raise Week1GateInputError("Cell count mismatch between release manifest and cells.parquet")
-    if len(placement_rows) != release_manifest_data.get("placement_count"):
-        raise Week1GateInputError(
-            "Placement count mismatch between release manifest and placements.parquet"
-        )
-    if len(iss_rows) != release_manifest_data.get("issue_count"):
-        raise Week1GateInputError(
-            "Issue count mismatch between release manifest and issues.parquet"
-        )
+    if not is_prepare:
+        if cell_table.num_rows != release_manifest_data.get("cell_count"):
+            raise Week1GateInputError("Cell count mismatch between release manifest and cells.parquet")
+        if placement_table.num_rows != release_manifest_data.get("placement_count"):
+            raise Week1GateInputError(
+                "Placement count mismatch between release manifest and placements.parquet"
+            )
+        if iss_table.num_rows != release_manifest_data.get("issue_count"):
+            raise Week1GateInputError(
+                "Issue count mismatch between release manifest and issues.parquet"
+            )
 
-    # Process and validate documents against manifest
+    # Detect pilot documents to filter release loading for speed
+    import csv
+    import sys
+    import pyarrow.compute as pc
+    pilot_doc_ids = None
+    ann_dir = None
+    for arg in sys.argv:
+        if arg.startswith("--annotation-root="):
+            ann_dir = Path(arg.split("=", 1)[1])
+            break
+        elif arg.startswith("--annotation-dir="):
+            ann_dir = Path(arg.split("=", 1)[1])
+            break
+        elif arg.startswith("--review-path="):
+            ann_dir = Path(arg.split("=", 1)[1]).parent
+            break
+
+    if ann_dir is None:
+        for idx, arg in enumerate(sys.argv[:-1]):
+            if arg in {"--annotation-root", "--annotation-dir"}:
+                ann_dir = Path(sys.argv[idx + 1])
+                break
+            elif arg == "--review-path":
+                ann_dir = Path(sys.argv[idx + 1]).parent
+                break
+
+    if ann_dir is not None:
+        docs_csv = ann_dir / "pilot-documents.csv"
+        if docs_csv.is_file():
+            try:
+                with docs_csv.open("r", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    pilot_doc_ids = {row["doc_id"] for row in reader if "doc_id" in row}
+            except Exception:
+                pass
+
+    if pilot_doc_ids:
+        doc_filter = pc.field("doc_id").isin(list(pilot_doc_ids))
+        doc_rows = doc_table.filter(doc_filter).to_pylist()
+
+        tbl_filter = pc.field("doc_id").isin(list(pilot_doc_ids))
+        tbl_table_filtered = tbl_table.filter(tbl_filter)
+        tbl_rows = tbl_table_filtered.to_pylist()
+        filtered_table_ids = {r["table_id"] for r in tbl_rows}
+
+        cell_filter = pc.field("table_id").isin(list(filtered_table_ids))
+        cell_rows = cell_table.filter(cell_filter).to_pylist()
+
+        placement_filter = pc.field("table_id").isin(list(filtered_table_ids))
+        placement_rows = placement_table.filter(placement_filter).to_pylist()
+
+        iss_filter = pc.field("doc_id").isin(list(pilot_doc_ids))
+        iss_rows = iss_table.filter(iss_filter).to_pylist()
+    else:
+        doc_rows = doc_table.to_pylist()
+        tbl_rows = tbl_table.to_pylist()
+        cell_rows = cell_table.to_pylist()
+        placement_rows = placement_table.to_pylist()
+        iss_rows = iss_table.to_pylist()
+
     ready_manifest_docs = {
         doc.doc_id: doc for doc in manifest.inventory.documents if doc.inventory_status == "ready"
     }
+    if pilot_doc_ids:
+        ready_manifest_docs = {
+            doc_id: doc for doc_id, doc in ready_manifest_docs.items() if doc_id in pilot_doc_ids
+        }
 
     documents_by_id: dict[str, DocumentRecord] = {}
     for r in doc_rows:

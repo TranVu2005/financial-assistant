@@ -35,16 +35,17 @@ Hệ thống phải xử lý được sáu nhóm câu hỏi:
 5. Tổng hợp, trung bình, xếp hạng trên một nhóm doanh nghiệp/kỳ.
 6. Phát hiện câu hỏi không đủ dữ liệu, không rõ kỳ hoặc không rõ đơn vị và trả lời từ chối.
 
-Mỗi kết quả hợp lệ gồm:
+Hệ thống duy trì hai contract tách biệt:
 
-- `id`
-- `question`
-- `answer`
-- `relevant_docs`
-- `relevant_tables`
-- `pandas_query`
-- `csv_path`
-- thông tin giải thích và provenance bổ sung cho giao diện
+- `AnswerPackage` nội bộ chứa trạng thái, lỗi và provenance tới cell để đánh giá/audit.
+- `SubmissionItem` là contract công khai duy nhất được ghi vào file JSON nộp Dashboard,
+  chỉ gồm `id`, `question`, `answer`, `relevant_docs`, `relevant_tables`, `evidence` và
+  `pandas_query`.
+
+Artifact nộp chính thức là **một file ZIP duy nhất**. Ở thư mục gốc của ZIP phải có đúng
+một file `.json` chứa dự đoán cho toàn bộ câu hỏi kiểm thử và một thư mục `data/` chứa
+đầy đủ mọi CSV được tham chiếu bởi `evidence[*].csv_path`. Thiếu câu hỏi, trùng ID, sai
+kiểu dữ liệu, thiếu CSV hoặc truy vấn không chạy lại được đều làm contract validation thất bại.
 
 ### 1.2. Mục tiêu định lượng
 
@@ -128,7 +129,7 @@ class FinancialQueryPlan(BaseModel):
     candidate_table_ids: list[str]
 
 
-class EvidenceRef(BaseModel):
+class CellEvidenceRef(BaseModel):
     doc_id: str
     table_id: str
     cell_ids: list[str]
@@ -137,16 +138,98 @@ class EvidenceRef(BaseModel):
 
 
 class AnswerPackage(BaseModel):
-    id: str
+    id: int
     question: str
-    answer: str
+    answer: Decimal | None
     relevant_docs: list[str]
     relevant_tables: list[str]
     pandas_query: str
-    csv_path: str
-    evidence: list[EvidenceRef]
+    evidence: list[CellEvidenceRef]
     status: Literal["answered", "abstained", "error"]
+
+
+class SubmissionEvidence(BaseModel):
+    variable: str
+    csv_path: str
+
+
+class SubmissionItem(BaseModel):
+    id: int
+    question: str
+    answer: float = Field(allow_inf_nan=False)
+    relevant_docs: list[str]
+    relevant_tables: list[str]
+    evidence: list[SubmissionEvidence]
+    pandas_query: str
 ```
+
+`AnswerPackage` không được serialize trực tiếp thành bài nộp. Exporter chỉ chuyển một kết quả
+`answered` đã qua numeric/provenance verification thành `SubmissionItem`; còn `abstained`,
+`error` hoặc `answer=None` là lỗi chặn phát hành vì Dashboard yêu cầu một đáp án số cho mọi câu.
+
+### 2.4. Contract gói nộp Dashboard
+
+Cấu trúc archive chuẩn của dự án:
+
+```text
+submission.zip
+├── submission.json
+└── data/
+    ├── q000001_df1.csv
+    ├── q000002_df1.csv
+    └── q000002_df2.csv
+```
+
+`submission.json` là một JSON array, không có object bọc ngoài. Mỗi phần tử tuân thủ chính xác
+cấu trúc sau; không xuất các field nội bộ như `status`, `run_id`, `cell_ids`, `page`, `bbox` hay
+error detail:
+
+```json
+[
+  {
+    "id": 1,
+    "question": "Doanh thu thuần của Công ty CP Sữa Việt Nam (VNM) năm 2023 là bao nhiêu?",
+    "answer": 63075000000.0,
+    "relevant_docs": ["AAA_financial_statements_2015_consolidated"],
+    "relevant_tables": ["AAA_financial_statements_2015_consolidated|350"],
+    "evidence": [
+      {
+        "variable": "df1",
+        "csv_path": "data/AAA_financial_statements_2015_consolidated_table_1.csv"
+      }
+    ],
+    "pandas_query": "df1[(df1.company == 'VNM') & (df1.year == 2023)]['net_revenue'].iloc[0]"
+  }
+]
+```
+
+Quy tắc ánh xạ và validation bắt buộc:
+
+1. `id` là integer thật, không nhận boolean; tập ID phải khớp chính xác tập câu hỏi kiểm thử,
+   không thiếu, thừa hoặc trùng.
+2. `question` phải là chuỗi không rỗng và khớp nguyên văn câu hỏi có cùng `id` trong file kiểm
+   thử; exporter không tự sửa dấu câu hoặc Unicode.
+3. `answer` được ghi thành JSON number hữu hạn dạng float; cấm `null`, chuỗi số, `NaN`,
+   `Infinity` và boolean. Validator chạy lại `pandas_query` và so kết quả với `answer` theo
+   tolerance số được cấu hình.
+4. `relevant_docs` lấy từ basename của `relative_path` nguồn sau khi bỏ đúng hậu tố `.txt`;
+   không dùng `doc_id` nội bộ dạng hash và không tự dựng từ mã công ty/năm.
+5. `relevant_tables` có dạng `<report_id>|<line_start>`, trong đó `line_start` là dòng bắt đầu
+   one-based của bảng trong file OCR gốc. Với bảng canonical ghép từ nhiều occurrence, chỉ liệt
+   kê các occurrence thực sự cung cấp cell cho phép tính, dựa trên `placements.parquet` và
+   `source_table_occurrences.parquet`.
+6. Mỗi phần tử `evidence` ánh xạ một biến DataFrame được dùng trực tiếp trong
+   `pandas_query`. `variable` phải khớp `^[A-Za-z_][A-Za-z0-9_]*$` và duy nhất trong một câu;
+   `csv_path` phải là đường dẫn POSIX tương đối nằm dưới `data/`, không có ổ đĩa, `..` hoặc
+   dấu `\\`.
+7. CSV trong ZIP là đúng DataFrame đầu vào mà compiler đã dùng. Exporter ghi UTF-8, header một
+   lần, schema/cột ổn định và không ghi index ngầm; validator nạp từng CSV vào đúng tên biến rồi
+   replay biểu thức Pandas trong sandbox whitelist, không dùng `eval`/`exec` không kiểm soát.
+8. ZIP có đúng một JSON ở root và thư mục `data/`; mọi `csv_path` phải tồn tại đúng chữ hoa/thường,
+   không có symlink/path traversal, không thiếu file và không chứa CSV mồ côi. Entry được sắp xếp
+   ổn định để cùng input sinh cùng SHA-256.
+9. Validator chạy offline trước khi upload. Giới hạn số lần nộp mỗi ngày là quy tắc vận hành trên
+   Dashboard; chỉ upload artifact đã qua validator và lưu lại SHA-256/run metadata ở ngoài ZIP.
 
 ---
 
@@ -185,6 +268,8 @@ financial-assistant/
 │   │   ├── dev.jsonl
 │   │   ├── test_locked.jsonl
 │   │   └── adjudication_log.jsonl
+│   ├── official/
+│   │   └── test_questions.json
 │   └── indexes/
 │       ├── bm25/
 │       ├── dense/
@@ -228,8 +313,12 @@ financial-assistant/
 │   │   ├── operations.py
 │   │   ├── sandbox.py
 │   │   └── verifier.py
+│   ├── submission/
+│   │   ├── __init__.py
+│   │   ├── contracts.py
+│   │   ├── exporter.py
+│   │   └── validator.py
 │   ├── pipeline.py
-│   ├── export.py
 │   └── telemetry.py
 ├── app/
 │   ├── streamlit_app.py
@@ -242,10 +331,12 @@ financial-assistant/
 │   ├── create_qa_set.py
 │   ├── evaluate.py
 │   ├── benchmark_models.py
-│   └── export_submission.py
+│   ├── export_submission.py
+│   └── validate_submission.py
 ├── tests/
 │   ├── fixtures/
 │   ├── unit/
+│   │   └── submission/
 │   ├── integration/
 │   ├── golden/
 │   ├── security/
@@ -267,7 +358,10 @@ Quy tắc lưu trữ:
 - `data/raw/` chỉ thêm mới; tên file thay đổi không được thay nội dung đã băm.
 - Không commit PDF, model, index và secrets. Commit manifest, schema, mã nguồn và mẫu dữ liệu nhỏ được phép phân phối.
 - Mọi artifact đánh giá có `run_id`, Git commit, config, model, dataset fingerprint và thời gian chạy.
-- `submissions/` chỉ chứa gói nộp đã được kiểm tra bằng script; không dùng làm thư mục làm việc.
+- `data/official/test_questions.json` là input bất biến dùng để kiểm tra đủ câu và đối chiếu
+  nguyên văn `id`/`question`; lưu SHA-256 cùng run metadata.
+- `submissions/` chỉ chứa file ZIP đã vượt full contract validator và file metadata ở ngoài ZIP;
+  không dùng làm thư mục làm việc, không trộn source code/slide/video vào ZIP gửi Dashboard.
 
 ---
 
@@ -571,6 +665,16 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 - [ ] Đóng version `dataset-pilot-v1` bằng fingerprint.
 - **Cổng:** ≥ 85% bảng chính Pilot dùng được và 100% gold cells có provenance. Nếu không đạt, dùng ngày 8 để sửa extraction, chưa làm dense retrieval.
 
+> **✅ HOÀN TẤT ngày 2026-08-07:** Week 1 Quality Gate đã pass trên corpus thật.
+> - Release: `data/processed/release_v2_37a61be7aebd` (fingerprint `37a61be7aebde1fbcfe3...`)
+> - Annotations: `data/qa/week1_pilot_37a61be7aebd/` — 60 docs, 20 companies × 3, 277 expected tables
+> - Gate result: `data/interim/week1_gate/37a61be7aebd/gate-result.json` — **passed: true**
+>   - `pilot_document_count`: 60/60 ✅ | `overall_table_usability`: 256/277 (92.4% ≥ 85%) ✅
+>   - `accepted_cell_provenance`: 30866/30866 ✅ | `manual_cell_audit`: 30/30 ✅
+> - Replay determinism: identical SHA-256 on all 3 report files (gate-result.json, gate-report.md, pareto-errors.csv)
+> - Release lock: `data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json` (alias `dataset-pilot-v1`)
+> - `pytest -q`: 510 passed, 1 skipped | `ruff check`: clean | `mypy`: clean | `git diff --check`: clean
+
 ### Tuần 2 — Retrieval và GTR-lite
 
 #### Ngày 8 — BM25 baseline
@@ -695,10 +799,22 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 24 — Export và contract submission
 
-- [ ] Xuất đúng bảy field bắt buộc và encoding UTF-8.
-- [ ] Xác nhận `csv_path` tồn tại, `pandas_query` chạy lại được.
-- [ ] Validator kiểm tra ID duy nhất, field rỗng và source không tồn tại.
-- **Đầu ra:** một gói submission thử nghiệm vượt contract tests.
+- [ ] Viết contract tests trước cho JSON root array và đúng bảy field của `SubmissionItem`:
+  `id`, `question`, `answer`, `relevant_docs`, `relevant_tables`, `evidence`, `pandas_query`.
+- [ ] Cài ánh xạ `relative_path → report_id` và provenance
+  `canonical cell → source occurrence → <report_id>|<line_start>`; test riêng bảng thường,
+  bảng continuation và duplicate document.
+- [ ] Materialize đúng các DataFrame mà compiler dùng thành CSV UTF-8 dưới `data/`; đặt biến
+  Python hợp lệ/duy nhất và ghi `csv_path` POSIX tương đối vào từng phần tử `evidence`.
+- [ ] Xuất đủ và chỉ đúng toàn bộ `id`/`question` của `data/official/test_questions.json`;
+  chặn `abstained`, `error`, đáp án không hữu hạn, ID thiếu/thừa/trùng và question bị sửa.
+- [ ] Replay mọi `pandas_query` trong sandbox whitelist từ chính CSV trong staging directory;
+  xác nhận scalar số khớp `answer` theo tolerance trước khi nén.
+- [ ] Tạo ZIP quyết định gồm đúng một JSON ở root và `data/`; validator mở lại ZIP trong thư
+  mục tạm, chặn path traversal/symlink, CSV thiếu/mồ côi, path sai chữ hoa/thường và field thừa.
+- [ ] Chạy unit, integration, golden và security tests cho contract nộp bài.
+- **Đầu ra:** `submissions/submission_<dataset-fingerprint>.zip` vượt validator offline, có
+  SHA-256 được lưu ngoài ZIP và sẵn sàng upload Dashboard.
 
 #### Ngày 25 — Benchmark model
 
@@ -736,7 +852,8 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 - [ ] Chọn 10 câu demo: đơn giản, nhiều kỳ, tỷ lệ, ranking, scan, và abstain.
 - [ ] Viết `docs/demo_script.md` với thời lượng và phương án khi model timeout.
 - [ ] Hoàn thiện slide: vấn đề, kiến trúc, điểm khác biệt, đánh giá, ablation, demo, giới hạn.
-- [ ] Chạy quy trình nộp từ máy sạch/config sạch.
+- [ ] Trên máy sạch/config sạch, tạo lại ZIP từ predictions, chạy validator, mở ZIP và replay
+  100% `pandas_query` từ CSV đóng gói; không upload thử nếu việc đó tiêu tốn lượt nộp Dashboard.
 - **Đầu ra:** video thử, slide hoàn chỉnh và submission RC2.
 
 #### Ngày 30 — Freeze và bàn giao
@@ -744,7 +861,8 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 - [ ] Không thêm feature; chỉ sửa lỗi chặn nộp.
 - [ ] Chạy final evaluation, lưu dataset fingerprint và model hash.
 - [ ] Kiểm tra README từ đầu trên môi trường mới.
-- [ ] Đóng gói source, requirements/lock, submission, slide, video và model instructions.
+- [ ] Đóng gói riêng: ZIP gửi Dashboard chỉ có một JSON + `data/`; source,
+  requirements/lock, slide, video và model instructions nằm trong artifact bàn giao khác.
 - [ ] Lưu bản dự phòng cục bộ và cloud; xác nhận mở được từng tệp.
 - **Đầu ra:** release `v1.0-stage2` có thể tái lập.
 
@@ -806,18 +924,75 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 - [ ] Chạy `uv run pytest tests/unit/execution tests/security -q`.
 - [ ] Commit: `feat: execute verified pandas plans safely`.
 
-### Task F — Pipeline, evaluation và export
+### Task F — Pipeline và evaluation
 
-**Files:** `src/financial_report_qa/pipeline.py`, `src/financial_report_qa/export.py`, `scripts/evaluate.py`, `scripts/export_submission.py`, `tests/integration/`, `tests/golden/answers/`.
+**Files:** `src/financial_report_qa/pipeline.py`, `scripts/evaluate.py`, `tests/integration/test_answer_pipeline.py`, `tests/golden/answers/`.
 
-- [ ] Viết E2E contract test trước.
-- [ ] Nối các stage và lưu trace có `run_id`.
-- [ ] Cài metrics theo intent và error taxonomy.
-- [ ] Cài submission validator.
-- [ ] Chạy `uv run pytest tests/integration tests/golden/answers -q`.
+**Interfaces:**
+
+- Consumes: retrieval candidates, `FinancialQueryPlan`, compiler output và cell provenance.
+- Produces: `AnswerPackage` nội bộ có integer `id`, `Decimal | None` answer, computation trace,
+  source cells và `status`; Task G là consumer duy nhất chuyển nó thành contract Dashboard.
+
+- [ ] Viết E2E contract test trước cho answered/abstained/error và sáu nhóm câu hỏi.
+- [ ] Nối các stage và lưu trace có `run_id`, dataset fingerprint, model hash và config hash.
+- [ ] Cài metrics theo intent và error taxonomy; không tính abstain/error thành answer hợp lệ.
+- [ ] Chứng minh mọi `answered` có source cells đủ để truy ngược tới occurrence/dòng OCR.
+- [ ] Chạy `uv run --frozen --no-sync pytest -q tests/integration/test_answer_pipeline.py tests/golden/answers`.
 - [ ] Commit: `feat: deliver evaluated end-to-end answer pipeline`.
 
-### Task G — UI và demo
+### Task G — Gói nộp Dashboard có thể tái chạy
+
+**Files:**
+
+- Create: `src/financial_report_qa/submission/contracts.py`
+- Create: `src/financial_report_qa/submission/exporter.py`
+- Create: `src/financial_report_qa/submission/validator.py`
+- Create: `scripts/export_submission.py`
+- Create: `scripts/validate_submission.py`
+- Test: `tests/unit/submission/test_contracts.py`
+- Test: `tests/unit/submission/test_exporter.py`
+- Test: `tests/unit/submission/test_validator.py`
+- Test: `tests/integration/test_submission_bundle.py`
+- Test: `tests/security/test_submission_archive.py`
+
+**Interfaces:**
+
+- Consumes: `Sequence[AnswerPackage]`, official questions JSON, `documents.parquet`,
+  `tables.parquet`, `cells.parquet`, `placements.parquet` và
+  `source_table_occurrences.parquet` của cùng dataset fingerprint.
+- Produces: `export_submission(...) -> SubmissionManifest` và
+  `validate_submission(...) -> ValidationReport`; chỉ publish ZIP khi report có
+  `passed=True` và `validated_question_count == official_question_count`.
+
+- [ ] Viết failing schema tests: root phải là array; field set chính xác; `id` integer;
+  `answer` hữu hạn; `variable` là Python identifier; `csv_path` an toàn dưới `data/`.
+- [ ] Cài `SubmissionEvidence` và `SubmissionItem` bằng Pydantic `extra="forbid"`; serialize
+  UTF-8 không ASCII-escape tiếng Việt và không phát sinh `NaN`/`Infinity`.
+- [ ] Viết failing provenance tests cho tên báo cáo và dòng bắt đầu bảng, gồm `.txt`, đường dẫn
+  Unicode/Windows đã canonicalize, continuation placements và duplicate source occurrence.
+- [ ] Cài ánh xạ source: basename bỏ `.txt` → `relevant_docs`; placements/cell IDs → đúng tập
+  `source_table_occurrences` → `relevant_tables` dạng `<report_id>|<line_start>`.
+- [ ] Viết failing exporter tests chứng minh mỗi `evidence.variable` nhận đúng DataFrame và mỗi
+  CSV chứa đúng header/rows/values mà compiler đã dùng, không có index ngầm.
+- [ ] Cài staging export nguyên tử: ghi JSON + CSV vào thư mục tạm, tên CSV ổn định theo
+  `question id`/`variable`, rồi chỉ chuyển thành ZIP sau khi validation qua.
+- [ ] Viết failing validator tests cho ID thiếu/thừa/trùng, question mismatch, answer string/null/
+  NaN/Infinity, field thiếu/thừa, docs/tables sai format, variable trùng, CSV thiếu/mồ côi,
+  query tham chiếu biến/cột không tồn tại và answer replay lệch tolerance.
+- [ ] Cài full-corpus validation: so exact ID/question set; tải CSV theo evidence; parse
+  `pandas_query` qua AST whitelist; thực thi với time/row/memory limits; ép kết quả thành một
+  scalar float hữu hạn và so với `answer`.
+- [ ] Viết security tests cho ZIP Slip (`../`, absolute path, drive path), symlink, duplicate ZIP
+  entry, compression bomb limit và query chứa import/call/I/O ngoài whitelist.
+- [ ] Cài deterministic packaging: đúng một JSON root + `data/`, entry sort cố định, metadata ZIP
+  cố định; cùng input phải cho cùng SHA-256.
+- [ ] Chạy `uv run --frozen --no-sync pytest -q tests/unit/submission tests/integration/test_submission_bundle.py tests/security/test_submission_archive.py`.
+- [ ] Chạy `uv run --frozen --no-sync ruff check src/financial_report_qa/submission scripts/export_submission.py scripts/validate_submission.py tests/unit/submission tests/integration/test_submission_bundle.py tests/security/test_submission_archive.py`.
+- [ ] Chạy `uv run --frozen --no-sync mypy src/financial_report_qa/submission scripts/export_submission.py scripts/validate_submission.py tests/unit/submission tests/integration/test_submission_bundle.py tests/security/test_submission_archive.py`.
+- [ ] Commit: `feat: export replayable dashboard submission bundle`.
+
+### Task H — UI và demo
 
 **Files:** `app/`, `docs/demo_script.md`, `tests/integration/test_app_smoke.py`.
 
@@ -898,11 +1073,28 @@ Nguyên tắc retry: mỗi stage tối đa một retry có lý do; không tạo 
 uv run --frozen --no-sync ruff check .
 uv run --frozen --no-sync mypy src tests
 uv run --frozen --no-sync pytest --cov=src --cov-report=term-missing
-uv run python scripts/evaluate.py --config configs/evaluation.yaml --split test_locked
-uv run python scripts/export_submission.py --validate-only
+uv run --frozen --no-sync python scripts/evaluate.py --config configs/evaluation.yaml --split test_locked
+
+$releasePath = "data/processed/release_v2_7fc5d5d57bf6"
+$questionsPath = "data/official/test_questions.json"
+$predictionsPath = "artifacts/predictions/test.jsonl"
+$submissionPath = "submissions/submission_7fc5d5d57bf6.zip"
+
+uv run --frozen --no-sync python scripts/export_submission.py `
+  --release-path $releasePath `
+  --questions-path $questionsPath `
+  --predictions-path $predictionsPath `
+  --output-path $submissionPath
+
+uv run --frozen --no-sync python scripts/validate_submission.py `
+  --submission-path $submissionPath `
+  --questions-path $questionsPath `
+  --replay-all
+Get-FileHash -Algorithm SHA256 $submissionPath
 ```
 
-Không công bố “đã xong” nếu lệnh trên chưa chạy trên đúng dataset fingerprint và model hash của release.
+Thay bốn biến bằng release chính thức của run cần nộp. Không công bố “đã xong” nếu lệnh trên
+chưa chạy trên đúng dataset fingerprint/model hash hoặc validator chưa replay đủ 100% câu hỏi.
 
 ---
 
@@ -938,6 +1130,10 @@ Mỗi ngày chỉ chọn một “must win”. Nếu lỗi chặn metric kéo d�
 
 ## 11. Dashboard theo dõi hằng ngày
 
+Dashboard ở mục này là dashboard **nội bộ** theo dõi thí nghiệm, tách biệt với Dashboard chính
+thức dùng để upload bài thi. Hệ thống không tự động dò quota hoặc nộp lặp; trước mỗi lần upload,
+người vận hành xác nhận số lượt còn lại và chỉ chọn ZIP có SHA-256 trùng với artifact đã validate.
+
 Ghi một dòng cho mỗi experiment:
 
 ```text
@@ -954,6 +1150,8 @@ Dashboard cần có:
 - Ablation retrieval.
 - So sánh model theo accuracy/latency/VRAM.
 - Tỷ lệ dữ liệu theo ngành, năm, loại PDF và statement type.
+- Nhật ký nộp chính thức gồm thời điểm, SHA-256 ZIP, dataset/model/config fingerprint, trạng thái
+  validator, điểm Dashboard (khi có) và số lượt còn lại trong ngày; nhật ký nằm ngoài ZIP.
 
 Quy tắc quyết định:
 
@@ -989,15 +1187,31 @@ Ablation bắt buộc trên slide:
 
 - [ ] Source code chạy từ hướng dẫn README trên môi trường sạch.
 - [ ] Dependency lock và config không chứa secret/path máy cá nhân.
-- [ ] Kết quả có đủ `id`, `question`, `answer`, `relevant_docs`, `relevant_tables`, `pandas_query`, `csv_path`.
-- [ ] Mọi `csv_path` tồn tại trong gói nộp hoặc đúng quy ước ban tổ chức.
-- [ ] `pandas_query` chạy lại được trên CSV tương ứng.
-- [ ] Không có ID trùng, output rỗng hoặc encoding lỗi.
+- [ ] ZIP gửi Dashboard có đúng một file `.json` ở root và một thư mục `data/`; không trộn
+  source code, slide, video, log hoặc metadata nội bộ vào ZIP này.
+- [ ] JSON root là array; mỗi item có đúng `id`, `question`, `answer`, `relevant_docs`,
+  `relevant_tables`, `evidence`, `pandas_query`, không thiếu hoặc thừa field.
+- [ ] Tập `id`/`question` khớp chính xác toàn bộ file test chính thức; không thiếu, thừa, trùng
+  hoặc thay đổi nội dung câu hỏi.
+- [ ] Mọi `answer` là JSON number hữu hạn; không có `null`, chuỗi số, boolean, `NaN` hoặc
+  `Infinity`.
+- [ ] Mọi `relevant_docs` là basename báo cáo bỏ `.txt`; mọi `relevant_tables` có dạng
+  `<report_id>|<dòng bắt đầu one-based>` và được chứng minh bởi provenance nguồn.
+- [ ] Mỗi `evidence` có `variable` hợp lệ/duy nhất và `csv_path` POSIX tương đối dưới `data/`;
+  mọi CSV tồn tại đúng case, không có CSV mồ côi và không có path traversal/symlink.
+- [ ] Validator tải DataFrame từ từng CSV, replay 100% `pandas_query` trong sandbox whitelist
+  và kết quả scalar float khớp `answer` theo tolerance.
+- [ ] JSON/CSV dùng UTF-8; ZIP mở được trên máy sạch, không có duplicate entry và vượt giới hạn
+  kích thước/số file đã cấu hình.
+- [ ] ZIP được tạo lại hai lần từ cùng input cho cùng SHA-256; lưu SHA-256, dataset fingerprint,
+  model hash, config hash và run ID ở metadata bên ngoài ZIP.
+- [ ] Chỉ upload file đã vượt validator; ghi nhận số lượt nộp còn lại trong ngày trước khi dùng
+  Dashboard để tránh lãng phí quota.
 - [ ] Báo cáo metric ghi rõ dataset split và fingerprint.
 - [ ] Slide có architecture, dataset, evaluation, ablation, error analysis và giới hạn.
 - [ ] Video/demo có phương án offline và câu fallback khi model timeout.
 - [ ] License/nguồn PDF, model và thư viện được ghi nhận.
-- [ ] Gói cuối đã mở thử sau khi nén và có ít nhất hai bản dự phòng.
+- [ ] ZIP nộp và artifact bàn giao riêng đã mở thử sau khi nén và có ít nhất hai bản dự phòng.
 
 ---
 
@@ -1036,6 +1250,10 @@ Dự án chỉ được coi là hoàn tất khi:
 - Không thực thi Python tùy ý từ LLM; security tests qua.
 - 100% câu được trả lời có provenance; câu thiếu bằng chứng được abstain.
 - 10 kịch bản demo chạy ổn định, gồm ít nhất một câu từ chối hợp lệ.
-- Gói nộp đã qua contract validator, có source, slide, hướng dẫn chạy và artifact đánh giá.
+- ZIP nộp Dashboard chứa đúng một JSON + `data/`, phủ chính xác 100% câu hỏi test, replay được
+  100% `pandas_query` từ CSV đóng gói, qua security/contract validator và có SHA-256 tái lập.
+- Source, slide, hướng dẫn chạy và artifact đánh giá được bàn giao riêng, không nằm trong ZIP
+  Dashboard.
 
-Khi bắt đầu thực hiện, đi theo thứ tự Task A → B → C → D → E → F → G; mỗi task dùng test trước, commit nhỏ và chỉ chuyển bước khi cổng tương ứng đã đạt.
+Khi bắt đầu thực hiện, đi theo thứ tự Task A → B → C → D → E → F → G → H; mỗi task dùng test
+trước, commit nhỏ và chỉ chuyển bước khi cổng tương ứng đã đạt.

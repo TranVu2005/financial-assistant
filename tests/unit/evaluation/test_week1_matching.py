@@ -1,6 +1,6 @@
 """Unit tests for table matching logic."""
 
-from financial_report_qa.evaluation.week1_contracts import ExpectedTable
+from financial_report_qa.evaluation.week1_contracts import ExpectedTable, stable_annotation_id
 from financial_report_qa.evaluation.week1_matching import (
     assess_table_matching,
     derive_table_match_key,
@@ -34,9 +34,10 @@ def test_assess_table_matching_exact_and_missing() -> None:
         csv_path=None,
     )
 
+    exp1_id = stable_annotation_id(doc_id, 10, 20, "balance_sheet")
     exp1 = ExpectedTable(
         annotation_schema_version="1",
-        annotation_id="exp_001",
+        annotation_id=exp1_id,
         doc_id=doc_id,
         relative_path="VCB/2024/Consolidated/report.txt",
         statement_type="balance_sheet",
@@ -49,9 +50,10 @@ def test_assess_table_matching_exact_and_missing() -> None:
         notes="",
     )
 
+    exp2_id = stable_annotation_id(doc_id, 50, 70, "income_statement")
     exp2 = ExpectedTable(
         annotation_schema_version="1",
-        annotation_id="exp_002",
+        annotation_id=exp2_id,
         doc_id=doc_id,
         relative_path="VCB/2024/Consolidated/report.txt",
         statement_type="income_statement",
@@ -67,15 +69,15 @@ def test_assess_table_matching_exact_and_missing() -> None:
     assessments, matched = assess_table_matching((exp1, exp2), (extracted_tbl,))
 
     assert len(assessments) == 2
-    assert assessments[0].annotation.annotation_id == "exp_001"
+    assert assessments[0].annotation.annotation_id == exp1_id
     assert assessments[0].table_id == tbl_id
     assert assessments[0].usable is True
 
-    assert assessments[1].annotation.annotation_id == "exp_002"
+    assert assessments[1].annotation.annotation_id == exp2_id
     assert assessments[1].table_id is None
     assert assessments[1].usable is False
 
-    assert matched == {"exp_001": extracted_tbl}
+    assert matched == {exp1_id: extracted_tbl}
 
 
 def _table(
@@ -108,9 +110,10 @@ def _annotation(
     line_end: int,
     statement_type: str = "balance_sheet",
 ) -> ExpectedTable:
+    ann_id = stable_annotation_id(doc_id, line_start, line_end, statement_type)  # type: ignore[arg-type]
     return ExpectedTable(
         annotation_schema_version="1",
-        annotation_id=annotation_id,
+        annotation_id=ann_id,
         doc_id=doc_id,
         relative_path="VCB/2024/Consolidated/report.txt",
         statement_type=statement_type,  # type: ignore[arg-type]
@@ -153,7 +156,10 @@ def test_matcher_uses_global_optimum_not_greedy_pair_order() -> None:
 
     assessments, _ = assess_table_matching((ann_a, ann_b), (tbl_b, tbl_a))
 
-    assert [a.table_id for a in assessments] == [tbl_a.table_id, tbl_b.table_id]
+    assert {a.annotation.annotation_id: a.table_id for a in assessments} == {
+        ann_a.annotation_id: tbl_a.table_id,
+        ann_b.annotation_id: tbl_b.table_id,
+    }
 
 
 def test_matcher_accepts_partial_span_overlap_at_eighty_percent() -> None:

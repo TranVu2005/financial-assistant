@@ -4,6 +4,7 @@ from financial_report_qa.evaluation.week1_contracts import (
     ExpectedTable,
     FailureEvent,
     TableAssessment,
+    stable_annotation_id,
 )
 from financial_report_qa.evaluation.week1_pareto import compute_pareto_analysis
 
@@ -13,9 +14,10 @@ def test_compute_pareto_analysis_empty() -> None:
 
 
 def test_compute_pareto_analysis_distribution() -> None:
+    ann_id = stable_annotation_id("doc_1", 10, 20, "balance_sheet")
     exp = ExpectedTable(
         annotation_schema_version="1",
-        annotation_id="exp_001",
+        annotation_id=ann_id,
         doc_id="doc_1",
         relative_path="VCB/2024/Consolidated/report.txt",
         statement_type="balance_sheet",

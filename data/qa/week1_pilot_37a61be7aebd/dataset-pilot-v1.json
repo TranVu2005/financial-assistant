@@ -1,0 +1,9 @@
+{
+  "alias": "dataset-pilot-v1",
+  "sampling_version": "week1-pilot-v1",
+  "dataset_fingerprint": "37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f",
+  "source_manifest_sha256": "924d165211c63bbfc718b790f217ec356f80236e21fa0d8aa2acb497e186a5cf",
+  "release_path": "data/processed/release_v2_37a61be7aebd",
+  "gate_result_path": "data/interim/week1_gate/37a61be7aebd/gate-result.json",
+  "evaluation_inputs_sha256": "2384e5178c858d174ac5be3c2d887068e827507de4579f1d331695f3846ce7c1"
+}

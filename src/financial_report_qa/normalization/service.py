@@ -13,6 +13,7 @@ from financial_report_qa.normalization._shared import (
 from financial_report_qa.normalization.companies import normalize_company
 from financial_report_qa.normalization.metrics import normalize_metric
 from financial_report_qa.normalization.numbers import (
+    NumberContext,
     is_numeric_candidate,
     parse_number,
 )
@@ -20,6 +21,7 @@ from financial_report_qa.normalization.periods import has_period_evidence, norma
 from financial_report_qa.normalization.statements import normalize_statement_type
 from financial_report_qa.normalization.units import (
     has_unit_evidence,
+    is_monetary_unit,
     normalize_unit,
     resolve_unit,
 )
@@ -93,6 +95,17 @@ def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> 
 
         # Table unit normalization
         tbl_unit_dec = normalize_unit(table_rec.unit_raw)
+        if tbl_unit_dec.issue_code is not None and has_unit_evidence(table_rec.unit_raw):
+            issues.append(
+                _issue(
+                    code=tbl_unit_dec.issue_code,
+                    field="unit",
+                    document=document,
+                    table_id=table_id,
+                    cell_id=None,
+                    raw_value=table_rec.unit_raw,
+                )
+            )
 
         # Group cells by row_idx to normalize row labels (metrics)
         rows: dict[int, list[CellRecord]] = {}
@@ -106,10 +119,18 @@ def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> 
                 m_dec = normalize_metric(first_label)
                 row_metric_decisions[row_idx] = (m_dec.value, m_dec.issue_code)
                 if m_dec.issue_code is not None:
-                    if not (
-                        m_dec.issue_code == "metric_unknown"
-                        and (stmt_dec.value is None or stmt_dec.value == "notes")
-                    ):
+                    row_has_numeric_value = any(
+                        candidate.value_raw is not None
+                        and candidate.value_raw != candidate.row_label_raw
+                        and is_numeric_candidate(candidate.value_raw)
+                        for candidate in cell_list
+                    )
+                    metric_issue_is_actionable = m_dec.issue_code != "metric_unknown" or (
+                        stmt_dec.value
+                        in {"income_statement", "balance_sheet", "cash_flow_statement"}
+                        and row_has_numeric_value
+                    )
+                    if metric_issue_is_actionable:
                         # Emit one metric issue per logical row for lowest (col_idx, cell_id)
                         target_cell = min(cell_list, key=lambda c: (c.col_idx, c.cell_id))
                         issues.append(
@@ -132,27 +153,38 @@ def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> 
                 if has_period_evidence(cell.column_label_raw):
                     p_dec = normalize_period(cell.column_label_raw, document.report_year)
                     col_period_decisions[cell.column_label_raw] = (p_dec.value, p_dec.issue_code)
+                    if p_dec.issue_code is not None:
+                        issues.append(
+                            _issue(
+                                code=p_dec.issue_code,
+                                field="period",
+                                document=document,
+                                table_id=table_id,
+                                cell_id=cell.cell_id,
+                                raw_value=cell.column_label_raw,
+                            )
+                        )
                 else:
                     col_period_decisions[cell.column_label_raw] = (None, None)
+
+        # Cache column-level unit evidence once. Cell hints remain more specific
+        # and are resolved per cell below.
+        col_unit_decisions = {}
+        for cell in extracted.cells:
+            raw_column = cell.column_label_raw
+            if raw_column and raw_column not in col_unit_decisions:
+                if has_unit_evidence(raw_column):
+                    col_unit_decisions[raw_column] = resolve_unit(
+                        cell_hint=None,
+                        column_raw=raw_column,
+                        table_raw=table_rec.unit_raw,
+                    )
 
         # Process cells
         normalized_cells: list[CellRecord] = []
         for cell in extracted.cells:
             metric_val, _ = row_metric_decisions.get(cell.row_idx, (None, None))
             p_val, p_issue = col_period_decisions.get(cell.column_label_raw or "", (None, None))
-
-            if p_issue is not None and cell.column_label_raw:
-                # Add period issue for cell if period has issue
-                issues.append(
-                    _issue(
-                        code=p_issue,
-                        field="period",
-                        document=document,
-                        table_id=table_id,
-                        cell_id=cell.cell_id,
-                        raw_value=cell.column_label_raw,
-                    )
-                )
 
             # Determine if cell is a value candidate
             is_value_candidate = (
@@ -169,9 +201,30 @@ def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> 
             unit_val = None
 
             if is_value_candidate and cell.value_raw is not None:
+                has_unit_ctx = (
+                    has_unit_evidence(cell.value_raw)
+                    or has_unit_evidence(cell.column_label_raw)
+                    or has_unit_evidence(table_rec.unit_raw)
+                )
+                provisional_unit_dec = None
+                if has_unit_ctx:
+                    provisional_unit_dec = col_unit_decisions.get(cell.column_label_raw or "")
+                    if provisional_unit_dec is None:
+                        provisional_unit_dec = resolve_unit(
+                            cell_hint=None,
+                            column_raw=None,
+                            table_raw=table_rec.unit_raw,
+                        )
+                number_context: NumberContext = "unknown"
+                if provisional_unit_dec is not None:
+                    if provisional_unit_dec.value == "percent":
+                        number_context = "percent"
+                    elif is_monetary_unit(provisional_unit_dec.value):
+                        number_context = "monetary"
+
                 num_dec = None
                 if is_numeric_candidate(cell.value_raw):
-                    num_dec = parse_number(cell.value_raw)
+                    num_dec = parse_number(cell.value_raw, context=number_context)
                     if num_dec.value is not None:
                         val_num = num_dec.value
                     elif num_dec.issue_code is not None:
@@ -190,21 +243,34 @@ def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> 
                             )
 
                 cell_hint = num_dec.unit_hint if num_dec is not None else None
-                has_unit_ctx = (
-                    cell_hint is not None
-                    or has_unit_evidence(cell.value_raw)
-                    or has_unit_evidence(cell.column_label_raw)
-                    or has_unit_evidence(table_rec.unit_raw)
-                )
+                has_unit_ctx = cell_hint is not None or has_unit_ctx
                 if has_unit_ctx:
-                    unit_dec = resolve_unit(
-                        cell_hint=cell_hint,
-                        column_raw=cell.column_label_raw,
-                        table_raw=table_rec.unit_raw,
-                    )
+                    if cell_hint is not None:
+                        unit_dec = resolve_unit(
+                            cell_hint=cell_hint,
+                            column_raw=cell.column_label_raw,
+                            table_raw=table_rec.unit_raw,
+                        )
+                    else:
+                        unit_dec = col_unit_decisions.get(
+                            cell.column_label_raw or "",
+                            resolve_unit(
+                                cell_hint=None,
+                                column_raw=None,
+                                table_raw=table_rec.unit_raw,
+                            ),
+                        )
                     if unit_dec.value is not None:
                         unit_val = unit_dec.value
-                    elif unit_dec.issue_code is not None:
+                    elif unit_dec.issue_code is not None and (
+                        num_dec is not None
+                        and num_dec.value is not None
+                        and (
+                            cell_hint is not None
+                            or has_unit_evidence(cell.column_label_raw)
+                            or not has_unit_evidence(table_rec.unit_raw)
+                        )
+                    ):
                         issues.append(
                             _issue(
                                 code=unit_dec.issue_code,
@@ -227,9 +293,27 @@ def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> 
             )
             normalized_cells.append(updated_cell)
 
+        stmt_val = stmt_dec.value
+        if stmt_val is None:
+            import unicodedata
+            def clean_label(s):
+                if not s:
+                    return ""
+                s = unicodedata.normalize("NFKC", s)
+                return " ".join(s.lower().split())
+
+            labels = {clean_label(c.row_label_raw) for c in normalized_cells if c.row_label_raw}
+
+            if any("lưu chuyển tiền" in lbl or "net cash flows" in lbl or "khấu hao" in lbl or "depreciation" in lbl for lbl in labels):
+                stmt_val = "cash_flow_statement"
+            elif any("lợi nhuận gộp" in lbl or "lợi nhuận trước thuế" in lbl or "lợi nhuận sau thuế" in lbl or "doanh thu thuần" in lbl or "thu nhập lãi thuần" in lbl or "doanh thu bán hàng" in lbl for lbl in labels):
+                stmt_val = "income_statement"
+            elif any("tài sản ngắn hạn" in lbl or "tài sản dài hạn" in lbl or "nợ phải trả" in lbl or "vốn chủ sở hữu" in lbl or "tổng cộng tài sản" in lbl or "tổng tài sản" in lbl or "total assets" in lbl for lbl in labels):
+                stmt_val = "balance_sheet"
+
         updated_table_rec = table_rec.model_copy(
             update={
-                "statement_type": stmt_dec.value,
+                "statement_type": stmt_val,
                 "unit_normalized": tbl_unit_dec.value,
             }
         )
@@ -240,6 +324,7 @@ def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> 
             evidence=extracted.evidence,
         )
         normalized_tables.append(updated_extracted)
+
 
     # De-duplicate issues and sort
     unique_issues_dict: dict[tuple[Any, ...], NormalizationIssue] = {}

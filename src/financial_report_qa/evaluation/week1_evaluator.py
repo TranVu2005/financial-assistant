@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from financial_report_qa.core.errors import Week1GateInputError
+from financial_report_qa.evaluation.week1_annotations import load_annotation_bundle
 from financial_report_qa.evaluation.week1_contracts import (
     ANNOTATION_SCHEMA_VERSION,
     CELL_AUDIT_COLUMNS,
@@ -40,57 +41,19 @@ def evaluate_week1_gate(
     annotation_dir: Path,
 ) -> tuple[GateResult, tuple[TableAssessment, ...], tuple[CellAudit, ...]]:
     """Run full Week 1 quality gate evaluation against canonical dataset and annotations."""
-    metadata_path = annotation_dir / "pilot-metadata.json"
-    if not metadata_path.is_file():
-        raise Week1GateInputError(f"Missing pilot-metadata.json in {annotation_dir}")
-
-    meta = PilotMetadata.model_validate_json(metadata_path.read_bytes())
-    if meta.sampling_version != SAMPLING_VERSION:
-        raise Week1GateInputError(f"Unsupported sampling version: {meta.sampling_version}")
-    if meta.annotation_schema_version != ANNOTATION_SCHEMA_VERSION:
-        raise Week1GateInputError(f"Unsupported schema version: {meta.annotation_schema_version}")
-
-    if meta.dataset_fingerprint != dataset.dataset_fingerprint:
-        raise Week1GateInputError("dataset fingerprint mismatch")
-    if meta.source_manifest_sha256 != dataset.source_manifest_sha256:
-        raise Week1GateInputError("source manifest fingerprint mismatch")
+    bundle = load_annotation_bundle(dataset, annotation_dir, require_expected_tables=True)
 
     docs_csv_path = annotation_dir / "pilot-documents.csv"
-    doc_rows = read_csv_rows(docs_csv_path, PILOT_DOCUMENT_COLUMNS)
     docs_sha256 = hashlib.sha256(docs_csv_path.read_bytes()).hexdigest()
-    if docs_sha256 != meta.pilot_documents_sha256:
-        raise Week1GateInputError("pilot-documents.csv content hash mismatch with metadata")
-
-    pilot_docs = tuple(PilotDocument.model_validate(row) for row in doc_rows)
 
     exp_csv_path = annotation_dir / "expected-tables.csv"
-    exp_rows = read_csv_rows(exp_csv_path, EXPECTED_TABLE_COLUMNS)
     expected_tables_sha256 = hashlib.sha256(exp_csv_path.read_bytes()).hexdigest()
 
-    expected_tables: list[ExpectedTable] = []
-    for r in exp_rows:
-        periods_tuple = tuple(p.strip() for p in r["expected_periods"].split(";") if p.strip())
-        expected_tables.append(
-            ExpectedTable(
-                annotation_schema_version="1",
-                annotation_id=r["annotation_id"],
-                doc_id=r["doc_id"],
-                relative_path=r["relative_path"],
-                statement_type=r["statement_type"],  # type: ignore[arg-type]
-                line_start=int(r["line_start"]),
-                line_end=int(r["line_end"]),
-                row_count=int(r["row_count"]),
-                column_count=int(r["column_count"]),
-                unit_normalized=r["unit_normalized"],
-                expected_periods=periods_tuple,
-                notes=r.get("notes", ""),
-            )
-        )
-
-    expected_tables_tuple = tuple(expected_tables)
+    expected_tables_tuple = bundle.expected_tables
+    pilot_docs = bundle.pilot_documents
 
     # Filter dataset extracted tables to pilot documents
-    pilot_doc_ids = {doc.doc_id for doc in pilot_docs}
+    pilot_doc_ids = {doc.doc_id for doc in bundle.pilot_documents}
     pilot_extracted_tables = tuple(
         tbl for tbl in dataset.tables_by_id.values() if tbl.doc_id in pilot_doc_ids
     )

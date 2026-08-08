@@ -11,6 +11,7 @@ from financial_report_qa.evaluation.week1_contracts import (
     GateCheck,
     GateResult,
     percentage_passes,
+    stable_annotation_id,
     write_canonical_json,
     write_csv_rows,
 )
@@ -86,7 +87,7 @@ def test_evaluate_and_publish_week1_gate(tmp_path: Path) -> None:
     # Populate an expected table matching extracted table
     exp_table_row = {
         "annotation_schema_version": "1",
-        "annotation_id": "exp_001",
+        "annotation_id": stable_annotation_id(document.doc_id, 10, 20, "balance_sheet"),
         "doc_id": document.doc_id,
         "relative_path": document.relative_path,
         "statement_type": "balance_sheet",

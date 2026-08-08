@@ -8,6 +8,7 @@ from financial_report_qa.evaluation.week1_contracts import (
     EXPECTED_TABLE_COLUMNS,
     ExpectedTable,
     PilotDocument,
+    parse_expected_periods,
     read_csv_rows,
     stable_annotation_id,
     write_csv_rows,
@@ -101,3 +102,42 @@ def test_csv_reader_rejects_contract_drift(tmp_path: Path, raw: bytes) -> None:
     path.write_bytes(raw)
     with pytest.raises(Week1GateInputError):
         read_csv_rows(path, EXPECTED_TABLE_COLUMNS)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("", ()),
+        ("2023", ("2023",)),
+        ("2023|2024", ("2023", "2024")),
+    ],
+)
+def test_parse_expected_periods_uses_pipe_contract(
+    raw: str, expected: tuple[str, ...]
+) -> None:
+    assert parse_expected_periods(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["2024|2023", "2023|2023", "2023;2024", " 2023"])
+def test_parse_expected_periods_rejects_noncanonical_values(raw: str) -> None:
+    with pytest.raises(Week1GateInputError):
+        parse_expected_periods(raw)
+
+
+def test_expected_table_rejects_annotation_id_not_derived_from_source_identity() -> None:
+    payload = {
+        "annotation_schema_version": "1",
+        "annotation_id": "ann_" + "0" * 64,
+        "doc_id": DOC_ID,
+        "relative_path": "VCB/2024/Consolidated/report.txt",
+        "statement_type": "balance_sheet",
+        "line_start": 10,
+        "line_end": 20,
+        "row_count": 5,
+        "column_count": 3,
+        "unit_normalized": "VND_million",
+        "expected_periods": ("2023", "2024"),
+        "notes": "",
+    }
+    with pytest.raises(ValidationError, match="annotation_id"):
+        ExpectedTable.model_validate(payload)

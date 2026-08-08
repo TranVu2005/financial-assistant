@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import orjson
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from financial_report_qa.core.errors import Week1GateInputError
 
@@ -169,6 +169,15 @@ class ExpectedTable(BaseModel):
     expected_periods: tuple[str, ...]
     notes: str = ""
 
+    @field_validator("unit_normalized")
+    @classmethod
+    def validate_unit_normalized(cls, v: str) -> str:
+        if v not in {"", "VND", "VND_thousand", "VND_million", "VND_billion", "percent", "ratio"}:
+            raise ValueError(
+                f"unit_normalized must be one of empty, VND, VND_thousand, VND_million, VND_billion, percent, ratio"
+            )
+        return v
+
     @field_validator("line_end")
     @classmethod
     def validate_line_range(cls, v: int, info: Any) -> int:
@@ -179,11 +188,32 @@ class ExpectedTable(BaseModel):
     @field_validator("expected_periods")
     @classmethod
     def validate_periods(cls, v: tuple[str, ...]) -> tuple[str, ...]:
-        if not v:
-            raise ValueError("expected_periods cannot be empty")
         if list(v) != sorted(set(v)):
             raise ValueError("expected_periods must be sorted and duplicate-free")
         return v
+
+    @model_validator(mode="after")
+    def validate_annotation_id(self) -> "ExpectedTable":
+        expected_id = stable_annotation_id(
+            self.doc_id, self.line_start, self.line_end, self.statement_type
+        )
+        if self.annotation_id != expected_id:
+            raise ValueError(
+                f"annotation_id '{self.annotation_id}' does not match stable_annotation_id "
+                f"derived from source identity ({expected_id})"
+            )
+        return self
+
+
+def parse_expected_periods(raw: str) -> tuple[str, ...]:
+    if raw == "":
+        return ()
+    if raw != raw.strip() or ";" in raw:
+        raise Week1GateInputError("expected_periods must use canonical pipe separators")
+    periods = tuple(raw.split("|"))
+    if any(not period for period in periods) or periods != tuple(sorted(set(periods))):
+        raise Week1GateInputError("expected_periods must be sorted and duplicate-free")
+    return periods
 
 
 class CellAudit(BaseModel):

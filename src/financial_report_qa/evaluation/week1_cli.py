@@ -6,14 +6,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from financial_report_qa.core.errors import Week1GateError, Week1GateInputError
+from financial_report_qa.evaluation.week1_annotations import (
+    finalize_review_worksheet,
+    generate_review_worksheet,
+    load_annotation_bundle,
+)
 from financial_report_qa.evaluation.week1_contracts import (
     CELL_AUDIT_COLUMNS,
-    EXPECTED_TABLE_COLUMNS,
-    PILOT_DOCUMENT_COLUMNS,
-    ExpectedTable,
-    PilotDocument,
-    PilotMetadata,
-    read_csv_rows,
     write_csv_rows,
 )
 from financial_report_qa.evaluation.week1_dataset import GateDataset, load_gate_dataset
@@ -23,6 +22,7 @@ from financial_report_qa.evaluation.week1_evaluator import (
 )
 from financial_report_qa.evaluation.week1_matching import assess_table_matching
 from financial_report_qa.evaluation.week1_provenance import generate_cell_audits
+from financial_report_qa.evaluation.week1_release import publish_release_lock
 from financial_report_qa.evaluation.week1_sampling import prepare_pilot, select_audit_cells
 
 
@@ -36,57 +36,16 @@ def sample_cells_workflow(
     if cell_audit_csv_path.is_file():
         raise Week1GateInputError(f"cell-audit.csv already exists at {cell_audit_csv_path}")
 
-    metadata_path = annotation_dir / "pilot-metadata.json"
-    if not metadata_path.is_file():
-        raise Week1GateInputError(f"Missing pilot-metadata.json in {annotation_dir}")
+    bundle = load_annotation_bundle(dataset, annotation_dir, require_expected_tables=True)
 
-    meta = PilotMetadata.model_validate_json(metadata_path.read_bytes())
-    if meta.dataset_fingerprint != dataset.dataset_fingerprint:
-        raise Week1GateInputError("dataset fingerprint mismatch")
-    if meta.source_manifest_sha256 != dataset.source_manifest_sha256:
-        raise Week1GateInputError("source manifest fingerprint mismatch")
-
-    exp_csv_path = annotation_dir / "expected-tables.csv"
-    if not exp_csv_path.is_file():
-        raise Week1GateInputError(f"Missing expected-tables.csv in {annotation_dir}")
-
-    exp_rows = read_csv_rows(exp_csv_path, EXPECTED_TABLE_COLUMNS)
-    if not exp_rows:
-        raise Week1GateInputError(f"expected-tables.csv is empty in {annotation_dir}")
-
-    expected_tables: list[ExpectedTable] = []
-    for r in exp_rows:
-        periods_tuple = tuple(p.strip() for p in r["expected_periods"].split(";") if p.strip())
-        expected_tables.append(
-            ExpectedTable(
-                annotation_schema_version="1",
-                annotation_id=r["annotation_id"],
-                doc_id=r["doc_id"],
-                relative_path=r["relative_path"],
-                statement_type=r["statement_type"],  # type: ignore[arg-type]
-                line_start=int(r["line_start"]),
-                line_end=int(r["line_end"]),
-                row_count=int(r["row_count"]),
-                column_count=int(r["column_count"]),
-                unit_normalized=r["unit_normalized"],
-                expected_periods=periods_tuple,
-                notes=r.get("notes", ""),
-            )
-        )
-
-    docs_csv_path = annotation_dir / "pilot-documents.csv"
-    doc_rows = read_csv_rows(docs_csv_path, PILOT_DOCUMENT_COLUMNS)
-    pilot_docs = tuple(PilotDocument.model_validate(row) for row in doc_rows)
-
-    pilot_doc_ids = {doc.doc_id for doc in pilot_docs}
+    pilot_doc_ids = {doc.doc_id for doc in bundle.pilot_documents}
     pilot_extracted_tables = tuple(
         tbl for tbl in dataset.tables_by_id.values() if tbl.doc_id in pilot_doc_ids
     )
 
-    expected_tables_tuple = tuple(expected_tables)
-    _, matched_tables = assess_table_matching(expected_tables_tuple, pilot_extracted_tables)
+    _, matched_tables = assess_table_matching(bundle.expected_tables, pilot_extracted_tables)
     all_cell_audits = generate_cell_audits(
-        dataset, corpus_dir, expected_tables_tuple, matched_tables
+        dataset, corpus_dir, bundle.expected_tables, matched_tables
     )
 
     sampled_cells = select_audit_cells(all_cell_audits, sample_size=30)
@@ -130,6 +89,72 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         required=True,
         help="Target directory to initialize pilot annotation templates",
+    )
+
+    # prepare-review subcommand
+    prep_review_parser = subparsers.add_parser(
+        "prepare-review",
+        help="Generate advisory table review worksheet.",
+    )
+    prep_review_parser.add_argument(
+        "--manifest-path",
+        type=Path,
+        required=True,
+        help="Path to source manifest documents.jsonl",
+    )
+    prep_review_parser.add_argument(
+        "--release-path",
+        type=Path,
+        required=True,
+        help="Path to normalized dataset release directory",
+    )
+    prep_review_parser.add_argument(
+        "--corpus-dir",
+        type=Path,
+        required=True,
+        help="Path to raw source text report corpus directory",
+    )
+    prep_review_parser.add_argument(
+        "--annotation-dir",
+        type=Path,
+        required=True,
+        help="Path to pilot annotation directory",
+    )
+    prep_review_parser.add_argument(
+        "--output-path",
+        type=Path,
+        required=True,
+        help="Output CSV path for the review worksheet",
+    )
+
+    # finalize-tables subcommand
+    finalize_parser = subparsers.add_parser(
+        "finalize-tables",
+        help="Finalize expected-tables.csv from completed table-review.csv.",
+    )
+    finalize_parser.add_argument(
+        "--manifest-path",
+        type=Path,
+        required=True,
+        help="Path to source manifest documents.jsonl",
+    )
+    finalize_parser.add_argument(
+        "--release-path",
+        type=Path,
+        required=True,
+        help="Path to normalized dataset release directory",
+    )
+    finalize_parser.add_argument(
+        "--annotation-dir",
+        type=Path,
+        required=True,
+        help="Path to pilot annotation directory",
+    )
+    finalize_parser.add_argument(
+        "--review-path",
+        type=Path,
+        required=True,
+        help="Path to completed table-review.csv review worksheet",
     )
 
     # sample-cells subcommand
@@ -200,6 +225,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target directory to publish gate evaluation reports",
     )
 
+    # lock-release subcommand
+    lock_parser = subparsers.add_parser(
+        "lock-release",
+        help="Publish an immutable dataset-pilot-v1.json release lock from a passing gate result.",
+    )
+    lock_parser.add_argument(
+        "--release-path",
+        type=Path,
+        required=True,
+        help="Path to normalized dataset release directory",
+    )
+    lock_parser.add_argument(
+        "--gate-result-path",
+        type=Path,
+        required=True,
+        help="Path to canonical gate-result.json from a passing evaluate run",
+    )
+    lock_parser.add_argument(
+        "--output-path",
+        type=Path,
+        required=True,
+        help="Output path for dataset-pilot-v1.json release lock",
+    )
+
     return parser
 
 
@@ -212,11 +261,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         return exc.code if isinstance(exc.code, int) else 2
 
     try:
+        if args.subcommand == "lock-release":
+            # lock-release does not need the full GateDataset
+            publish_release_lock(
+                args.release_path,
+                args.gate_result_path,
+                args.output_path,
+            )
+            print(f"Successfully published release lock to {args.output_path}")
+            return 0
+
         dataset = load_gate_dataset(args.manifest_path, args.release_path)
 
         if args.subcommand == "prepare":
             prepare_pilot(dataset, args.annotation_root)
             print(f"Successfully prepared pilot annotation workspace at {args.annotation_root}")
+            return 0
+
+        if args.subcommand == "prepare-review":
+            generate_review_worksheet(
+                dataset, args.corpus_dir, args.annotation_dir, args.output_path
+            )
+            print(f"Successfully generated review worksheet at {args.output_path}")
+            return 0
+
+        if args.subcommand == "finalize-tables":
+            finalize_review_worksheet(dataset, args.annotation_dir, args.review_path)
+            print(f"Successfully finalized expected tables in {args.annotation_dir}")
             return 0
 
         if args.subcommand == "sample-cells":

@@ -152,3 +152,70 @@ Actions theo lịch hàng tuần.
 - [Môi trường phát triển](docs/development.md)
 - [Tải dataset](docs/data-download.md)
 - [Kế hoạch sản phẩm 30 ngày](plan.md)
+
+## Week 1 Quality Gate (`dataset-pilot-v1`)
+
+Tuần 1 kết thúc với một bộ annotation cố định trên 60 tài liệu pilot và một cổng chất lượng
+tái lập được. Toàn bộ retrieval work tiêu thụ **release lock**, không phải thư mục `data/processed/` tùy ý.
+
+### Lệnh vận hành chuẩn
+
+```powershell
+# 1. Chọn 60 tài liệu pilot và khởi tạo thư mục annotation
+uv run --frozen --no-sync financial-report-qa week1-gate prepare `
+  --manifest-path data/manifests/documents.jsonl `
+  --release-path  data/processed/release_v2_37a61be7aebd `
+  --annotation-root data/qa/week1_pilot_37a61be7aebd
+
+# 2. Sinh worksheet gợi ý (không tự approve)
+uv run --frozen --no-sync financial-report-qa week1-gate prepare-review `
+  --manifest-path data/manifests/documents.jsonl `
+  --release-path  data/processed/release_v2_37a61be7aebd `
+  --corpus-dir    data/raw/financial_statements `
+  --annotation-dir data/qa/week1_pilot_37a61be7aebd `
+  --output-path   data/interim/week1_gate_review/37a61be7aebd/table-review.csv
+
+# 3. Sau khi review thủ công, finalize
+uv run --frozen --no-sync financial-report-qa week1-gate finalize-tables `
+  --manifest-path data/manifests/documents.jsonl `
+  --release-path  data/processed/release_v2_37a61be7aebd `
+  --annotation-dir data/qa/week1_pilot_37a61be7aebd `
+  --review-path   data/interim/week1_gate_review/37a61be7aebd/table-review.csv
+
+# 4. Lấy mẫu 30 cell để audit thủ công
+uv run --frozen --no-sync financial-report-qa week1-gate sample-cells `
+  --manifest-path data/manifests/documents.jsonl `
+  --release-path  data/processed/release_v2_37a61be7aebd `
+  --corpus-dir    data/raw/financial_statements `
+  --annotation-dir data/qa/week1_pilot_37a61be7aebd
+
+# 5. Evaluate (sau khi đã đánh verified=true trong cell-audit.csv)
+uv run --frozen --no-sync financial-report-qa week1-gate evaluate `
+  --manifest-path data/manifests/documents.jsonl `
+  --release-path  data/processed/release_v2_37a61be7aebd `
+  --corpus-dir    data/raw/financial_statements `
+  --annotation-dir data/qa/week1_pilot_37a61be7aebd `
+  --report-root   data/interim/week1_gate/37a61be7aebd
+
+# 6. Publish release lock (chỉ sau khi gate passed)
+uv run --frozen --no-sync financial-report-qa week1-gate lock-release `
+  --release-path    data/processed/release_v2_37a61be7aebd `
+  --gate-result-path data/interim/week1_gate/37a61be7aebd/gate-result.json `
+  --output-path     data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json
+```
+
+### Kết quả cổng Tuần 1 (2026-08-07)
+
+| Check | Kết quả |
+|---|---|
+| `pilot_document_count` | 60/60 ✅ |
+| `statement_type_coverage` | 70/30 (>100%) ✅ |
+| `overall_table_usability` | 256/277 = 92.4% ≥ 85% ✅ |
+| `accepted_cell_provenance` | 30 866/30 866 ✅ |
+| `manual_cell_audit` | 30/30 ✅ |
+| `eligible_strata_usability` | n/a (0 strata ≥10 annotations) ✅ |
+
+- **Release fingerprint:** `37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f`
+- **Manifest SHA-256:** `924d165211c63bbfc718b790f217ec356f80236e21fa0d8aa2acb497e186a5cf`
+- **Release lock:** `data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json`
+- **Replay determinism:** SHA-256 identiques sur 3 fichiers rapport (gate-result.json, gate-report.md, pareto-errors.csv)
