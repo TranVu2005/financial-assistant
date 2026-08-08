@@ -40,6 +40,7 @@ def _fixture_release(tmp_path: Path) -> ResolvedRetrievalRelease:
                 "doc_id": ["doc_a", "doc_b", "doc_d"],
                 "title_raw": ["Doanh thu", "Chi phi", "Loi nhuan"],
                 "statement_type": ["income", "income", "income"],
+                "unit_normalized": [None, None, None],
                 "line_start": [1, 3, 5],
                 "line_end": [2, 4, 6],
             }
