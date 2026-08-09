@@ -25,12 +25,12 @@ def classify_cell_eligibility(
         and cell.value_numeric is not None
     )
 
-    blocking_reasons = tuple(issue for issue in issue_codes if issue in BLOCKING_ISSUES)
+    blocking_reasons = tuple(sorted({issue for issue in issue_codes if issue in BLOCKING_ISSUES}))
     has_blocking = len(blocking_reasons) > 0
     is_monetary = cell.unit in MONETARY_UNITS
 
-    calculable = is_comparable_base and is_monetary and not has_blocking
-    comparable = is_comparable_base and not calculable
+    comparable = is_comparable_base and not has_blocking
+    calculable = comparable and is_monetary
 
     has_labels = cell.row_label_canonical is not None and cell.period is not None
     non_empty_raw = bool(cell.value_raw and cell.value_raw.strip())

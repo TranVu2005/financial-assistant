@@ -30,6 +30,13 @@ _STATEMENT_FAMILIES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+_NARRATIVE_MARKERS = (
+    "thể hiện trên",
+    "trích từ",
+    "bao gồm các khoản",
+    "thay đổi trên",
+)
+
 
 def normalize_statement_type(title_raw: str | None) -> Decision[str]:
     if title_raw is None:
@@ -49,6 +56,8 @@ def normalize_statement_type(title_raw: str | None) -> Decision[str]:
     if not matched_families:
         return Decision(value=None)
     if len(matched_families) > 1:
+        if any(marker in key for marker in _NARRATIVE_MARKERS):
+            return Decision(value=None)
         if "notes" in matched_families and not key.startswith("thuyết minh"):
             primary = matched_families - {"notes"}
             if len(primary) == 1:

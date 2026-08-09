@@ -5,7 +5,9 @@ from typing import Literal
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 
+from financial_report_qa.core.errors import DatasetBuildError
 from financial_report_qa.data.dataset_builder import (
     CELL_SCHEMA,
     PLACEMENT_SCHEMA,
@@ -331,6 +333,57 @@ def test_build_dataset_creates_atomic_parquet_release(tmp_path: Path) -> None:
     assert (result.release_path / "manifest.json").exists()
     cell_table = pq.read_table(result.release_path / "cells.parquet")  # type: ignore[no-untyped-call]
     assert CELL_SCHEMA.equals(cell_table.schema)
+
+
+def test_build_dataset_reuses_matching_release_and_preserves_mismatch(
+    tmp_path: Path,
+) -> None:
+    snapshot_root = tmp_path / "snapshot"
+    snapshot_root.mkdir()
+    doc_path = snapshot_root / "VCB/2024/Consolidated/report.txt"
+    doc_path.parent.mkdir(parents=True)
+    doc_path.write_text(
+        "<table><tr><td>Doanh thu</td><td>1.500</td></tr></table>",
+        encoding="utf-8",
+    )
+    raw_bytes = doc_path.read_bytes()
+    digest = hashlib.sha256(raw_bytes).hexdigest()
+    document = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="rev-1",
+        relative_path="VCB/2024/Consolidated/report.txt",
+        company_code="VCB",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=len(raw_bytes),
+        encoding="utf-8",
+        inventory_status="ready",
+    )
+    manifest_path = tmp_path / "documents.jsonl"
+    write_manifest(InventoryResult(documents=(document,), issues=()), manifest_path)
+    config = DatasetBuildConfig(
+        snapshot_root=snapshot_root,
+        manifest_path=manifest_path,
+        processed_root=tmp_path / "processed",
+    )
+
+    first = build_dataset(config)
+    manifest_file = first.release_path / "manifest.json"
+    original_bytes = manifest_file.read_bytes()
+    original_mtime = manifest_file.stat().st_mtime_ns
+
+    second = build_dataset(config)
+    assert second.release_path == first.release_path
+    assert manifest_file.read_bytes() == original_bytes
+    assert manifest_file.stat().st_mtime_ns == original_mtime
+
+    corrupt_bytes = b'{"corrupt": true}\n'
+    manifest_file.write_bytes(corrupt_bytes)
+    with pytest.raises(DatasetBuildError, match="existing release"):
+        build_dataset(config)
+    assert manifest_file.read_bytes() == corrupt_bytes
 
 
 def test_build_dataset_emits_source_occurrence_artifact_with_duplicate_rows(

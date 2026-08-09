@@ -10,3 +10,4 @@ issue_limits:
   number_ambiguous: 100
   period_incomplete: 100
   period_ambiguous: 100
+  company_conflict: 200

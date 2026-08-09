@@ -12,7 +12,7 @@ from financial_report_qa.schemas.normalization import NormalizationIssue
 
 
 def test_shared_primitives_constants_and_decision() -> None:
-    assert RULESET_VERSION == "2026.08.1"
+    assert RULESET_VERSION == "2026.08.6"
     decision = Decision(value="ok", issue_code=None)
     assert decision.value == "ok"
 

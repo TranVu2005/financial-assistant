@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from financial_report_qa.ingestion.provenance import ExtractionResult, stable_cell_id
+from financial_report_qa.ingestion.provenance import (
+    DetectionResult,
+    ExtractionResult,
+    stable_cell_id,
+)
 from financial_report_qa.ingestion.table_detector import detect_table_candidates
 from financial_report_qa.ingestion.table_extractor import extract_candidates
 from financial_report_qa.ingestion.txt_reader import read_document
@@ -289,7 +293,7 @@ def test_does_not_merge_different_headers(tmp_path: Path) -> None:
     assert len(extract(tmp_path, source).tables) == 2
 
 
-def test_three_page_merge_rebuilds_ids_rows_and_span_placements(tmp_path: Path) -> None:
+def test_three_page_merge_preserves_ids_rows_and_span_placements(tmp_path: Path) -> None:
     header = (
         '<tr><th rowspan="2">Metric</th><th colspan="2">Year</th></tr>'
         "<tr><th>2024</th><th>2023</th></tr>"
@@ -325,8 +329,13 @@ def test_three_page_merge_rebuilds_ids_rows_and_span_placements(tmp_path: Path) 
         "Expense": 4,
         "Profit": 5,
     }
-    assert cells["Revenue"].cell_id == stable_cell_id(expected_table_id, 2, 0)
-    assert cells["Audited"].cell_id == stable_cell_id(expected_table_id, 3, 1)
+    first_source_table_id = stable_table_id(result.doc_id, 2, 2, 0)
+    second_source_table_id = stable_table_id(result.doc_id, 5, 5, 0)
+    third_source_table_id = stable_table_id(result.doc_id, 8, 8, 0)
+    assert cells["Revenue"].cell_id == stable_cell_id(first_source_table_id, 2, 0)
+    assert cells["Audited"].cell_id == stable_cell_id(first_source_table_id, 3, 1)
+    assert cells["Expense"].cell_id == stable_cell_id(second_source_table_id, 2, 0)
+    assert cells["Profit"].cell_id == stable_cell_id(third_source_table_id, 2, 0)
     assert all(cell.table_id == expected_table_id for cell in extracted.cells)
     placements = {
         (placement.row_idx, placement.col_idx): placement.cell_id
@@ -336,6 +345,57 @@ def test_three_page_merge_rebuilds_ids_rows_and_span_placements(tmp_path: Path) 
     assert placements[(3, 1)] == placements[(3, 2)] == cells["Audited"].cell_id
     assert placements[(4, 0)] == cells["Expense"].cell_id
     assert placements[(5, 0)] == cells["Profit"].cell_id
+
+
+def test_continuation_merge_preserves_source_cell_ids(tmp_path: Path) -> None:
+    source = (
+        "INCOME STATEMENT\n"
+        "<table><tr><th>Metric</th><th>2024</th></tr>"
+        "<tr><td>Revenue</td><td>100</td></tr></table>\n"
+        "===== PAGE 2 =====\n"
+        "INCOME STATEMENT\n"
+        "<table><tr><th>Metric</th><th>2024</th></tr>"
+        "<tr><td>Profit</td><td>20</td></tr></table>\n"
+    )
+    content = source.encode()
+    relative = "AAA/2024/AAA_consolidated/source.txt"
+    path = tmp_path / Path(relative)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    digest = hashlib.sha256(content).hexdigest()
+    record = DocumentRecord(
+        doc_id=stable_document_id(digest),
+        repo_id="org/vifinqa",
+        revision="abc123",
+        relative_path=relative,
+        company_code="AAA",
+        report_year=2024,
+        statement_scope="consolidated",
+        sha256=digest,
+        file_size_bytes=len(content),
+        encoding="utf-8",
+        inventory_status="ready",
+        notes=(),
+    )
+    decoded = read_document(tmp_path, record)
+    detection = detect_table_candidates(decoded)
+    individual = {}
+    for candidate in detection.candidates:
+        single = extract_candidates(
+            decoded,
+            DetectionResult(
+                candidates=(candidate,),
+                rejected=detection.rejected,
+                blocks=detection.blocks,
+            ),
+        )
+        individual.update({cell.value_raw: cell.cell_id for cell in single.tables[0].cells})
+
+    merged = extract_candidates(decoded, detection).tables[0]
+    merged_ids = {cell.value_raw: cell.cell_id for cell in merged.cells}
+
+    assert merged_ids["Revenue"] == individual["Revenue"]
+    assert merged_ids["Profit"] == individual["Profit"]
 
 
 def test_does_not_merge_compatible_headers_across_prose(tmp_path: Path) -> None:

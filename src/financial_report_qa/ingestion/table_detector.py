@@ -254,7 +254,11 @@ def _with_ordinals(
 ) -> tuple[tuple[TableCandidate, ...], tuple[RejectedCandidate, ...]]:
     candidates: list[TableCandidate] = []
     rejected: list[RejectedCandidate] = []
-    for ordinal, (_, item) in enumerate(sorted(events, key=lambda event: event[0])):
+    ordinals: dict[tuple[str, int, int], int] = {}
+    for _, item in sorted(events, key=lambda event: event[0]):
+        key = (item.kind, item.line_start, item.line_end)
+        ordinal = ordinals.get(key, 0)
+        ordinals[key] = ordinal + 1
         if isinstance(item, TableCandidate):
             candidates.append(item.model_copy(update={"ordinal": ordinal}))
         else:

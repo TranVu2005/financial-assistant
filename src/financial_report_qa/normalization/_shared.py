@@ -7,7 +7,7 @@ from financial_report_qa.core.errors import NormalizationError
 from financial_report_qa.schemas.normalization import NormalizationIssue, NormalizationIssueCode
 
 T = TypeVar("T")
-RULESET_VERSION = "2026.08.1"
+RULESET_VERSION = "2026.08.6"
 
 
 @dataclass(frozen=True)

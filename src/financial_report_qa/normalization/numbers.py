@@ -7,6 +7,7 @@ from typing import Literal
 from financial_report_qa.schemas.normalization import NormalizationIssueCode
 
 MISSING_MARKERS = {"-", "—", "–", "n/a", "na", "null", "none", "", "."}
+NumberContext = Literal["unknown", "monetary", "percent"]
 
 
 def is_missing_number(raw: str) -> bool:
@@ -20,6 +21,10 @@ def is_numeric_candidate(raw: str) -> bool:
     normalized = unicodedata.normalize("NFKC", raw).strip()
     s = " ".join(normalized.split())
     if is_missing_number(raw):
+        return False
+    if re.fullmatch(r"\d{1,2}\s*[-–—]\s*\d{1,2}", s):
+        return False
+    if re.fullmatch(r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}", s):
         return False
     if (s.endswith("O") or s.endswith("o")) and re.search(r"\d", s):
         s = s[:-1] + "0"
@@ -43,19 +48,24 @@ def _valid_grouping(groups: list[str]) -> bool:
     return all(len(g) == 3 and g.isdigit() for g in groups[1:])
 
 
-def _resolve_single_separator(integer: str, separator: str) -> str | None:
+def _resolve_single_separator(
+    integer: str, separator: str, *, allow_single_group: bool = False
+) -> str | None:
     groups = integer.split(separator)
     if len(groups) > 2:
         return "".join(groups) if _valid_grouping(groups) else None
     left, right = groups
     if len(right) == 3 and left.isdigit() and 1 <= len(left) <= 3:
-        return left + right
+        # A lone three-digit separator is ambiguous unless an explicit
+        # financial-negative wrapper or trailing OCR punctuation supplies
+        # evidence that it is thousands grouping.
+        return left + right if allow_single_group else None
     if len(right) != 3 and left.isdigit() and right.isdigit():
         return f"{left}.{right}"
     return None
 
 
-def parse_number(raw: str) -> NumberDecision:
+def parse_number(raw: str, *, context: NumberContext = "unknown") -> NumberDecision:
     # 1. Normalize Unicode space variants in working copy; keep raw untouched
     normalized = unicodedata.normalize("NFKC", raw).strip()
     # Normalize non-breaking spaces and whitespace
@@ -67,9 +77,11 @@ def parse_number(raw: str) -> NumberDecision:
         return NumberDecision(value=None, issue_code="number_missing")
 
     # OCR cleanup for trailing O/o as 0 or trailing sentence point
+    had_trailing_separator = False
     if (s.endswith("O") or s.endswith("o")) and re.search(r"\d", s):
         s = s[:-1] + "0"
     if (s.endswith(".") or s.endswith(",")) and len(s) > 1 and s[-2].isdigit():
+        had_trailing_separator = True
         s = s[:-1].strip()
 
     unit_hint: Literal["percent"] | None = None
@@ -119,20 +131,36 @@ def parse_number(raw: str) -> NumberDecision:
     if not has_dot and not has_comma:
         canonical_str = s
     elif has_dot and not has_comma:
-        resolved = _resolve_single_separator(s, ".")
+        if (unit_hint == "percent" or context == "percent") and re.fullmatch(r"\d+\.\d{1,3}", s):
+            canonical_str = s
+            resolved = None
+        else:
+            resolved = _resolve_single_separator(
+                s,
+                ".",
+                allow_single_group=is_negative or had_trailing_separator or context == "monetary",
+            )
         if resolved is not None:
             canonical_str = resolved
-        else:
+        elif canonical_str is None:
             groups = s.split(".")
             if len(groups) > 2 and not _valid_grouping(groups):
                 issue_code = "number_invalid"
             else:
                 issue_code = "number_ambiguous"
     elif has_comma and not has_dot:
-        resolved = _resolve_single_separator(s, ",")
+        if (unit_hint == "percent" or context == "percent") and re.fullmatch(r"\d+,\d{1,3}", s):
+            canonical_str = s.replace(",", ".")
+            resolved = None
+        else:
+            resolved = _resolve_single_separator(
+                s,
+                ",",
+                allow_single_group=is_negative or had_trailing_separator or context == "monetary",
+            )
         if resolved is not None:
             canonical_str = resolved
-        else:
+        elif canonical_str is None:
             groups = s.split(",")
             if len(groups) > 2 and not _valid_grouping(groups):
                 issue_code = "number_ambiguous"

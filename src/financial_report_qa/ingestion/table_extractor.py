@@ -657,7 +657,7 @@ def _merge_pair(first: ExtractedTable, second: ExtractedTable) -> ExtractedTable
     second_cells_by_id = {cell.cell_id: cell for cell in second.cells}
     for cell, row_idx, col_idx in retained:
         source_number = 0 if cell.cell_id in first_ids else 1
-        cell_id = stable_cell_id(merged_table_id, row_idx, col_idx)
+        cell_id = cell.cell_id
         cell_ids[(source_number, cell.cell_id)] = cell_id
         is_header = row_idx < first_header_rows
         column_label = None if is_header else first_headers[col_idx] or cell.column_label_raw

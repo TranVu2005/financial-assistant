@@ -1,11 +1,8 @@
 from decimal import Decimal
 
 import pytest
-from hypothesis import given
-from hypothesis import strategies as st
 
 from financial_report_qa.normalization.numbers import (
-    NumberDecision,
     is_missing_number,
     is_numeric_candidate,
     parse_number,
@@ -13,58 +10,89 @@ from financial_report_qa.normalization.numbers import (
 
 
 @pytest.mark.parametrize(
-    ("raw", "value", "unit_hint", "issue"),
+    ("raw", "expected"),
     [
-        ("1.500", Decimal("1500"), None, None),
-        ("1,500", Decimal("1500"), None, None),
-        ("1 500 000", Decimal("1500000"), None, None),
-        ("1.500,25", Decimal("1500.25"), None, None),
-        ("1,500.25", Decimal("1500.25"), None, None),
-        ("(1.500)", Decimal("-1500"), None, None),
-        ("+12,5", Decimal("12.5"), None, None),
-        ("12,5%", Decimal("12.5"), "percent", None),
-        ("-", None, None, "number_missing"),
-        ("N/A", None, None, "number_missing"),
-        ("1.50.0", None, None, "number_invalid"),
-        ("(100", None, None, "number_invalid"),
-        ("1,23,456", None, None, "number_ambiguous"),
+        ("0", Decimal("0")),
+        ("1.234.567", Decimal("1234567")),
+        ("1,234,567", Decimal("1234567")),
+        ("1 234 567", Decimal("1234567")),
+        ("1.234,56", Decimal("1234.56")),
+        ("1,234.56", Decimal("1234.56")),
+        ("12,5", Decimal("12.5")),
+        ("(1.250)", Decimal("-1250")),
+        ("-42", Decimal("-42")),
+        ("+42", Decimal("42")),
+        ("123O", Decimal("1230")),
     ],
 )
-def test_parse_number_examples(
-    raw: str,
-    value: Decimal | None,
-    unit_hint: str | None,
-    issue: str | None,
-) -> None:
-    assert parse_number(raw) == NumberDecision(
-        value=value,
-        unit_hint=unit_hint,  # type: ignore[arg-type]
-        issue_code=issue,  # type: ignore[arg-type]
-    )
+def test_parse_number_supports_vietnamese_and_english_formats(raw: str, expected: Decimal) -> None:
+    decision = parse_number(raw)
+
+    assert decision.value == expected
+    assert decision.issue_code is None
 
 
-@given(
-    value=st.decimals(
-        min_value=Decimal("-1000000000000000000"),
-        max_value=Decimal("1000000000000000000"),
-        allow_nan=False,
-        allow_infinity=False,
-        places=2,
-    ),
-)
-def test_controlled_decimal_rendering_round_trips(value: Decimal) -> None:
-    raw = format(value, "f")
-    assert parse_number(raw).value == value
+def test_parse_number_keeps_percentage_as_explicit_unit_hint() -> None:
+    decision = parse_number("12,5%")
+
+    assert decision.value == Decimal("12.5")
+    assert decision.unit_hint == "percent"
+    assert decision.issue_code is None
 
 
-@given(raw=st.text(max_size=40))
-def test_parse_number_never_mutates_input(raw: str) -> None:
-    before = raw
-    parse_number(raw)
-    assert raw == before
+@pytest.mark.parametrize("raw", ["-", "—", "N/A", "null", "", "."])
+def test_parse_number_preserves_missing_values(raw: str) -> None:
+    decision = parse_number(raw)
+
+    assert is_missing_number(raw) is True
+    assert decision.value is None
+    assert decision.issue_code == "number_missing"
 
 
-def test_number_candidate_rejects_text_but_keeps_malformed_numeric_input() -> None:
-    assert is_numeric_candidate("Thuyết minh") is False
-    assert is_numeric_candidate("1.50.0") is True
-    assert is_missing_number("—") is True
+@pytest.mark.parametrize("raw", ["(123", "123)", "12 34", "12A", "1.2.34"])
+def test_parse_number_rejects_malformed_values(raw: str) -> None:
+    decision = parse_number(raw)
+
+    assert decision.value is None
+    assert decision.issue_code == "number_invalid"
+
+
+@pytest.mark.parametrize("raw", ["0,123", "0.123", "1,234", "1.234"])
+def test_parse_number_does_not_guess_a_single_three_digit_separator(raw: str) -> None:
+    decision = parse_number(raw)
+
+    assert decision.value is None
+    assert decision.issue_code == "number_ambiguous"
+
+
+def test_numeric_candidate_filter_excludes_labels_and_missing_markers() -> None:
+    assert is_numeric_candidate("1.234,56") is True
+    assert is_numeric_candidate("(123)") is True
+    assert is_numeric_candidate("123O") is True
+    assert is_numeric_candidate("Doanh thu 2024") is False
+    assert is_numeric_candidate("—") is False
+
+
+@pytest.mark.parametrize("raw", ["4 - 5", "10 - 39", "31.12.2021"])
+def test_numeric_candidate_excludes_ranges_and_dates(raw: str) -> None:
+    assert is_numeric_candidate(raw) is False
+
+
+def test_numeric_candidate_keeps_malformed_merged_percent_for_audit() -> None:
+    assert is_numeric_candidate("50%30%") is True
+    assert parse_number("50%30%").issue_code == "number_invalid"
+
+
+def test_monetary_context_resolves_single_three_digit_group() -> None:
+    assert parse_number("1.764", context="monetary").value == Decimal("1764")
+
+
+def test_percent_context_resolves_decimal_comma() -> None:
+    decision = parse_number("99,999%", context="percent")
+
+    assert decision.value == Decimal("99.999")
+    assert decision.unit_hint == "percent"
+
+
+def test_unknown_context_preserves_separator_ambiguity() -> None:
+    assert parse_number("25.967", context="unknown").issue_code == "number_ambiguous"

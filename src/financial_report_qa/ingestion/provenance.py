@@ -142,6 +142,16 @@ class ExtractedTable(_FrozenModel):
             for item in self.placements
         ):
             raise ValueError("placements must remain inside the table grid")
+        placements_by_cell: dict[str, set[tuple[int, int]]] = {}
+        for item in self.placements:
+            placements_by_cell.setdefault(item.cell_id, set()).add((item.row_idx, item.col_idx))
+        if any(cell.cell_id not in placements_by_cell for cell in self.cells):
+            raise ValueError("every source cell must have a placement")
+        if any(
+            (cell.row_idx, cell.col_idx) not in placements_by_cell[cell.cell_id]
+            for cell in self.cells
+        ):
+            raise ValueError("placements must include source cell origin coordinates")
         return self
 
 

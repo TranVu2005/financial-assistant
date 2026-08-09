@@ -31,6 +31,7 @@ _RAW_UNIT_ALIASES: dict[str, CanonicalUnit] = validate_aliases(
         "ngàn đồng": "VND_thousand",
         "thousand vnd": "VND_thousand",
         "nghìn vnd": "VND_thousand",
+        "ngàn vnd": "VND_thousand",
         "1.000 vnd": "VND_thousand",
         "1,000 vnd": "VND_thousand",
         "triệu đồng": "VND_million",
@@ -66,8 +67,43 @@ def _strip_prefix(key: str) -> str:
 
 
 _UNIT_EVIDENCE_RE = re.compile(
-    r"(?i)(vnd|vnđ|đồng|dong|nghìn|ngàn|ngan|triệu|trieu|tỷ|ty|%|phần trăm|lần|lầ?n)"
+    r"(?i)(vnd|vnđ|đồng|dong|nghìn|ngàn|ngan|triệu|trieu|tỷ|%|phần trăm|lần|lầ?n)"
 )
+
+_UNIT_CONTEXT_ALIASES: tuple[tuple[str, CanonicalUnit], ...] = tuple(
+    sorted(
+        (
+            (alias, canonical)
+            for alias, canonical in _RAW_UNIT_ALIASES.items()
+            if alias not in {"percent", "ratio", "lần", "%"}
+        ),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+)
+
+
+def _period_like_without_unit(key: str) -> bool:
+    return bool(
+        re.match(
+            r"^(?:năm|ngay|ngày|tháng|thang|quý|quy|q)?\s*\d{2,4}$",
+            key,
+            re.IGNORECASE,
+        )
+        or key.startswith("năm ")
+        or key.startswith("ngày ")
+        or key.startswith("tháng ")
+        or key.startswith("quý ")
+    )
+
+
+def _extract_unit(key: str) -> CanonicalUnit | None:
+    for alias, canonical in _UNIT_CONTEXT_ALIASES:
+        if alias and alias in key:
+            return canonical
+    if "%" in key or "phần trăm" in key:
+        return "percent"
+    return None
 
 
 def _has_unit_evidence(value: str) -> bool:
@@ -85,13 +121,7 @@ def has_unit_evidence(raw: str | None) -> bool:
         if key.startswith(prefix):
             return True
     stripped = _strip_prefix(key)
-    if (
-        re.match(r"^(?:năm|ngay|ngày|tháng|thang|quý|quy|q)?\s*\d{2,4}$", stripped, re.IGNORECASE)
-        or stripped.startswith("năm ")
-        or stripped.startswith("ngày ")
-        or stripped.startswith("tháng ")
-        or stripped.startswith("quý ")
-    ):
+    if _period_like_without_unit(stripped) and not _extract_unit(stripped):
         return False
     return _has_unit_evidence(stripped)
 
@@ -106,13 +136,7 @@ def normalize_unit(raw: str | None) -> Decision[CanonicalUnit]:
 
     stripped = _strip_prefix(key)
 
-    if (
-        re.match(r"^(?:năm|ngay|ngày|tháng|thang|quý|quy|q)?\s*\d{2,4}$", stripped, re.IGNORECASE)
-        or stripped.startswith("năm ")
-        or stripped.startswith("ngày ")
-        or stripped.startswith("tháng ")
-        or stripped.startswith("quý ")
-    ):
+    if _period_like_without_unit(stripped) and not _extract_unit(stripped):
         return Decision(value=None)
 
     if stripped in _RAW_UNIT_ALIASES:
@@ -125,53 +149,53 @@ def normalize_unit(raw: str | None) -> Decision[CanonicalUnit]:
         if inner in _RAW_UNIT_ALIASES:
             return Decision(value=_RAW_UNIT_ALIASES[inner])
 
+    extracted = _extract_unit(stripped)
+    if extracted is not None:
+        return Decision(value=extracted)
+
     return Decision(value=None, issue_code="unit_unknown")
+
+
+def strip_unit_context(raw: str | None) -> str:
+    """Remove unit tokens from a composite header before period parsing."""
+    if raw is None:
+        return ""
+    key = normalized_key(raw)
+    for alias, _ in _UNIT_CONTEXT_ALIASES:
+        key = key.replace(alias, " ")
+    key = key.replace("%", " ").replace("phần trăm", " ")
+    return " ".join(key.split())
+
+
+def is_monetary_unit(unit: CanonicalUnit | None) -> bool:
+    return unit in _MONETARY_UNITS
 
 
 def resolve_unit(
     cell_hint: str | None, column_raw: str | None, table_raw: str | None
 ) -> Decision[CanonicalUnit]:
-    decisions: list[Decision[CanonicalUnit]] = []
-
+    # Resolve from the most specific evidence outward. A valid cell hint or
+    # column unit must not conflict with a broader table default.
+    unknown_seen = False
     if cell_hint is not None:
         cell_dec = normalize_unit(cell_hint)
-        decisions.append(cell_dec)
+        if cell_dec.value is not None:
+            return cell_dec
+        unknown_seen = unknown_seen or cell_dec.issue_code == "unit_unknown"
 
     if column_raw is not None and _has_unit_evidence(column_raw):
         col_dec = normalize_unit(column_raw)
-        if col_dec.value is not None or col_dec.issue_code is not None:
-            decisions.append(col_dec)
+        if col_dec.value is not None:
+            return col_dec
+        unknown_seen = unknown_seen or col_dec.issue_code == "unit_unknown"
 
     if table_raw is not None:
         tbl_dec = normalize_unit(table_raw)
-        if tbl_dec.value is not None or tbl_dec.issue_code is not None:
-            decisions.append(tbl_dec)
+        if tbl_dec.value is not None:
+            return tbl_dec
+        unknown_seen = unknown_seen or tbl_dec.issue_code == "unit_unknown"
 
-    units: set[CanonicalUnit] = set()
-    has_unknown = False
-
-    for dec in decisions:
-        if dec.value is not None:
-            units.add(dec.value)
-        elif dec.issue_code == "unit_unknown":
-            has_unknown = True
-
-    if len(units) > 1:
-        non_monetary = {u for u in units if u in ("percent", "ratio")}
-        if non_monetary:
-            if cell_hint is not None:
-                ch_dec = normalize_unit(cell_hint)
-                if ch_dec.value in non_monetary:
-                    return Decision(value=ch_dec.value)
-            if column_raw is not None:
-                cr_dec = normalize_unit(column_raw)
-                if cr_dec.value in non_monetary:
-                    return Decision(value=cr_dec.value)
-        return Decision(value=None, issue_code="unit_conflict")
-    if len(units) == 1:
-        return Decision(value=next(iter(units)))
-
-    if has_unknown:
+    if unknown_seen:
         return Decision(value=None, issue_code="unit_unknown")
     return Decision(value=None)
 

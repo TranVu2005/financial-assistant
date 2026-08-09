@@ -1,32 +1,106 @@
 import pytest
 
-from financial_report_qa.normalization._shared import Decision
-from financial_report_qa.normalization.metrics import normalize_metric
+from financial_report_qa.normalization.metrics import (
+    DERIVED_METRICS,
+    METRIC_ALIASES,
+    SOURCE_METRICS_BY_STATEMENT,
+    is_non_metric_label,
+    normalize_metric,
+)
 
 
 @pytest.mark.parametrize(
-    ("raw", "expected"),
+    ("raw", "canonical"),
     [
         ("Doanh thu bán hàng và cung cấp dịch vụ", "revenue"),
-        ("Doanh thu thuần về bán hàng và cung cấp dịch vụ", "net_revenue"),
-        ("Lợi nhuận kế toán trước thuế", "profit_before_tax"),
-        ("Lợi nhuận sau thuế thu nhập doanh nghiệp", "profit_after_tax"),
-        ("Tổng cộng tài sản", "total_assets"),
-        ("Nợ phải trả", "total_liabilities"),
-        ("Vốn chủ sở hữu", "equity"),
-        ("Tiền và các khoản tương đương tiền", "cash_and_cash_equivalents"),
-        ("Lưu chuyển tiền thuần từ hoạt động kinh doanh", "operating_cash_flow"),
+        ("  LNST  ", "profit_after_tax"),
+        ("Lợi nhuận thuần từ HĐKD", "operating_profit"),
+        ("Chi phí thuế TNDN hoãn lại", "deferred_income_tax_expense"),
+        ("Basic EPS", "basic_eps"),
+        ("Tổng tài sản", "total_assets"),
+        ("TSCĐ hữu hình", "property_plant_equipment"),
+        ("VCSH", "equity"),
+        ("Tổng nguồn vốn", "total_equity_and_liabilities"),
+        ("Tiền thuần từ hoạt động đầu tư", "investing_cash_flow"),
+        ("Thuế TNDN đã nộp", "income_tax_paid"),
+        ("Capital expenditure", "capital_expenditure"),
     ],
 )
-def test_metric_aliases(raw: str, expected: str) -> None:
-    assert normalize_metric(raw) == Decision(value=expected)
+def test_normalize_metric_supports_core_financial_statement_aliases(
+    raw: str, canonical: str
+) -> None:
+    decision = normalize_metric(raw)
+
+    assert decision.value == canonical
+    assert decision.issue_code is None
 
 
-def test_metric_matching_collapses_unicode_and_whitespace_only() -> None:
-    assert normalize_metric("  TỔNG   CỘNG TÀI SẢN ") == Decision(value="total_assets")
+def test_every_registered_alias_resolves_to_its_declared_metric() -> None:
+    for alias, canonical in METRIC_ALIASES.items():
+        decision = normalize_metric(alias)
+        assert decision.value == canonical, alias
+        assert decision.issue_code is None, alias
 
 
-def test_unknown_metric_is_auditable() -> None:
-    assert normalize_metric("Chỉ tiêu chưa ánh xạ") == Decision(
-        value=None, issue_code="metric_unknown"
-    )
+@pytest.mark.parametrize("raw", [None, "", "  ", "Chỉ tiêu", "Mã số", "Tổng cộng"])
+def test_normalize_metric_ignores_structural_labels(raw: str | None) -> None:
+    decision = normalize_metric(raw)
+
+    assert decision.value is None
+    assert decision.issue_code is None
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["Doanh thu", "Tiền", "EBIT", "EBITDA", "ROE", "Biên lợi nhuận ròng"],
+)
+def test_normalize_metric_does_not_guess_ambiguous_or_derived_labels(raw: str) -> None:
+    decision = normalize_metric(raw)
+
+    assert decision.value is None
+    assert decision.issue_code == "metric_unknown"
+
+
+def test_derived_metrics_are_separate_from_source_aliases() -> None:
+    source_metrics = set().union(*SOURCE_METRICS_BY_STATEMENT.values())
+
+    assert {"ebit", "ebitda", "return_on_equity", "free_cash_flow"} <= DERIVED_METRICS
+    assert DERIVED_METRICS.isdisjoint(source_metrics)
+    assert DERIVED_METRICS.isdisjoint(METRIC_ALIASES.values())
+
+
+def test_source_taxonomy_contains_all_three_primary_statements() -> None:
+    assert set(SOURCE_METRICS_BY_STATEMENT) == {
+        "income_statement",
+        "balance_sheet",
+        "cash_flow_statement",
+    }
+    assert all(SOURCE_METRICS_BY_STATEMENT.values())
+
+
+def test_total_sources_keep_distinct_accounting_provenance() -> None:
+    assets = normalize_metric("Tổng tài sản")
+    funding = normalize_metric("Tổng nguồn vốn")
+
+    assert assets.value == "total_assets"
+    assert funding.value == "total_equity_and_liabilities"
+    assert assets.value != funding.value
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Năm hiện hành",
+        "2.",
+        "5.",
+        "3. Cam kết cho vay không hủy ngang",
+        "6. Outstanding shares",
+    ],
+)
+def test_reviewed_structural_rows_are_not_metrics(raw: str) -> None:
+    assert is_non_metric_label(raw) is True
+    assert normalize_metric(raw).issue_code is None
+
+
+def test_ordinal_prefix_does_not_hide_supported_metric() -> None:
+    assert is_non_metric_label("1. Doanh thu thuần") is False

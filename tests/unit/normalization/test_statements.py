@@ -22,3 +22,20 @@ def test_statement_conflict_is_not_guessed() -> None:
     assert normalize_statement_type(
         "Bảng cân đối kế toán / Báo cáo lưu chuyển tiền tệ"
     ) == Decision(value=None, issue_code="statement_conflict")
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        (
+            "Tiền và các khoản tương đương tiền thể hiện trên báo cáo lưu chuyển "
+            "tiền tệ bao gồm các khoản trên bảng cân đối kế toán sau đây"
+        ),
+        (
+            "Thông tin tài chính được trích từ bảng cân đối kế toán và báo cáo "
+            "kết quả hoạt động kinh doanh của các công ty liên kết"
+        ),
+    ],
+)
+def test_narrative_statement_references_are_not_headings(raw: str) -> None:
+    assert normalize_statement_type(raw) == Decision(value=None)

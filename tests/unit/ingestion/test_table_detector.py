@@ -50,6 +50,22 @@ def test_detector_prefers_closed_html_and_preserves_span(tmp_path: Path) -> None
     assert candidate.evidence == ("html_table_marker",)
 
 
+def test_detector_ordinals_are_local_to_candidate_kind_and_span(tmp_path: Path) -> None:
+    source = (
+        "Metric\t2024\n"
+        "Revenue\t100\n"
+        "Profit\t200\n"
+        "<table><tr><td>Expense</td><td>50</td></tr></table>\n"
+    )
+
+    result = detect_table_candidates(decoded(tmp_path, source))
+
+    assert [(item.kind, item.ordinal) for item in result.candidates] == [
+        ("structured_text", 0),
+        ("html", 0),
+    ]
+
+
 @pytest.mark.parametrize(
     ("source", "reason"),
     [
@@ -101,7 +117,7 @@ def test_detector_orders_html_and_text_candidates_by_source_offset(tmp_path: Pat
     result = detect_table_candidates(decoded(tmp_path, source))
 
     assert [item.kind for item in result.candidates] == ["html", "structured_text"]
-    assert [item.ordinal for item in result.candidates] == [0, 1]
+    assert [item.ordinal for item in result.candidates] == [0, 0]
 
 
 def test_fallback_accepts_only_consistent_financial_rows(tmp_path: Path) -> None:

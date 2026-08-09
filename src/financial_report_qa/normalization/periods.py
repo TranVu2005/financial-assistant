@@ -2,22 +2,29 @@ import datetime
 import re
 
 from financial_report_qa.normalization._shared import Decision, normalized_key
+from financial_report_qa.normalization.units import strip_unit_context
 
 _ROMAN_QUARTERS = {"i": 1, "ii": 2, "iii": 3, "iv": 4, "1": 1, "2": 2, "3": 3, "4": 4}
 
 _DATE_2DIGIT_YEAR_RE = re.compile(r"^\b(\d{1,2})[/\-](\d{1,2})[/\-](\d{2})\b$")
-_DATE_4DIGIT_YEAR_RE = re.compile(r"^(?:ngày\s+)?(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$")
+_DATE_4DIGIT_YEAR_RE = re.compile(r"^(?:(?:tại\s+)?ngày\s+)?(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$")
 _QUARTER_RE = re.compile(
     r"^(?:quý|q)\s*(i{1,3}|iv|[1-4])(?:\s*(?:năm|/|-)?\s*(\d{4}))?$", re.IGNORECASE
 )
 _YEAR_RE = re.compile(r"^(?:năm\s+)?((?:19|20)\d{2})$", re.IGNORECASE)
 _MONTH_ONLY_RE = re.compile(r"^(?:tháng\s+)?(\d{1,2})$", re.IGNORECASE)
+_QUARTER_SEARCH_RE = re.compile(
+    r"(?:quý|q)\s*(iv|i{1,3}|[1-4])(?:\s*(?:năm|/|-)\s*(\d{4}))?",
+    re.IGNORECASE,
+)
+_NOISY_DATE_RE = re.compile(r"^năm.*?(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})\b", re.IGNORECASE)
+_EMBEDDED_YEAR_RE = re.compile(r"^năm.*?\b((?:19|20)\d{2})\b", re.IGNORECASE)
 
 
 def has_period_evidence(raw: str | None) -> bool:
     if raw is None:
         return False
-    key = normalized_key(raw)
+    key = normalized_key(strip_unit_context(raw))
     if not key:
         return False
     if _DATE_2DIGIT_YEAR_RE.match(key):
@@ -25,6 +32,8 @@ def has_period_evidence(raw: str | None) -> bool:
     if _DATE_4DIGIT_YEAR_RE.match(key):
         return True
     if _QUARTER_RE.match(key):
+        return True
+    if _QUARTER_SEARCH_RE.search(key):
         return True
     if _YEAR_RE.match(key):
         return True
@@ -36,9 +45,23 @@ def has_period_evidence(raw: str | None) -> bool:
 
 
 def normalize_period(raw: str, report_year: int) -> Decision[str]:
-    key = normalized_key(raw)
+    key = normalized_key(strip_unit_context(raw).replace(r"\n", " "))
+    key = " ".join(re.sub(r"[()[\]]", " ", key).split())
     if not key:
         return Decision(value=None)
+
+    if key.startswith(("năm nay", "năm hiện hành")):
+        return Decision(value=str(report_year))
+    if key.startswith(("năm trước", "năm trước đó")):
+        return Decision(value=str(report_year - 1))
+
+    noisy_date = _NOISY_DATE_RE.match(key)
+    if noisy_date:
+        day, month, year = (int(value) for value in noisy_date.groups())
+        try:
+            return Decision(value=datetime.date(year, month, day).isoformat())
+        except ValueError:
+            return Decision(value=None, issue_code="period_invalid")
 
     # Check 2-digit year date first
     m_2yr = _DATE_2DIGIT_YEAR_RE.match(key)
@@ -55,7 +78,8 @@ def normalize_period(raw: str, report_year: int) -> Decision[str]:
         except ValueError:
             return Decision(value=None, issue_code="period_invalid")
 
-    # Check 4-digit year date (DD/MM/YYYY or DD-MM-YYYY)
+    # Check 4-digit year date (DD/MM/YYYY or DD-MM-YYYY), including
+    # balance-sheet headers prefixed with "tại ngày".
     date_match = _DATE_4DIGIT_YEAR_RE.match(key)
     if date_match:
         day_s, month_s, year_s = date_match.groups()
@@ -65,6 +89,19 @@ def normalize_period(raw: str, report_year: int) -> Decision[str]:
             return Decision(value=d.isoformat())
         except ValueError:
             return Decision(value=None, issue_code="period_invalid")
+
+    # Multi-level headers often carry a report label, quarter, and year on
+    # separate lines. normalized_key() flattens whitespace, so search for a
+    # quarter token and use its explicit year or the adjacent standalone year.
+    quarter_search = _QUARTER_SEARCH_RE.search(key)
+    if quarter_search:
+        q_str, year_str = quarter_search.groups()
+        if year_str is None:
+            year_match = re.search(r"(?:năm\s+)?((?:19|20)\d{2})", key, re.IGNORECASE)
+            year_str = year_match.group(1) if year_match else None
+        q_num = _ROMAN_QUARTERS[q_str.lower()]
+        yr = int(year_str) if year_str else report_year
+        return Decision(value=f"{yr}-Q{q_num}")
 
     # Check Quarter
     quarter_match = _QUARTER_RE.match(key)
@@ -78,6 +115,10 @@ def normalize_period(raw: str, report_year: int) -> Decision[str]:
     year_match = _YEAR_RE.match(key)
     if year_match:
         return Decision(value=year_match.group(1))
+
+    embedded_year = _EMBEDDED_YEAR_RE.match(key)
+    if embedded_year:
+        return Decision(value=embedded_year.group(1))
 
     # Check month only (or "tháng X")
     m_month = re.match(r"^(?:tháng\s+)?(\d{1,2})$", key, re.IGNORECASE)

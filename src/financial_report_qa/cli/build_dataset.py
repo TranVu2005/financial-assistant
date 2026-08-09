@@ -4,7 +4,11 @@ import sys
 from pathlib import Path
 
 from financial_report_qa.core.errors import DatasetBuildError
-from financial_report_qa.data.dataset_builder import DatasetBuildConfig, build_dataset
+from financial_report_qa.data.dataset_builder import (
+    DATASET_SCHEMA_VERSION,
+    DatasetBuildConfig,
+    build_dataset,
+)
 
 
 def main() -> None:
@@ -32,8 +36,9 @@ def main() -> None:
     parser.add_argument(
         "--schema-version",
         type=str,
-        default="1",
-        help="Release schema version string (default: 1).",
+        default=DATASET_SCHEMA_VERSION,
+        choices=(DATASET_SCHEMA_VERSION,),
+        help=f"Release schema version string (default: {DATASET_SCHEMA_VERSION}).",
     )
 
     args = parser.parse_args()
@@ -54,6 +59,7 @@ def main() -> None:
             "document_count": result.document_count,
             "table_count": result.table_count,
             "cell_count": result.cell_count,
+            "placement_count": result.placement_count,
             "issue_count": result.issue_count,
             "issue_counts_by_code": result.issue_counts_by_code,
         }

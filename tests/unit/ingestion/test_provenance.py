@@ -149,3 +149,60 @@ def test_extracted_table_rejects_unknown_cell_reference() -> None:
             placements=(CellPlacement(row_idx=0, col_idx=0, cell_id="cell_" + "f" * 64),),
             evidence=("html_table_marker",),
         )
+
+
+def test_extracted_table_requires_every_source_cell_and_its_origin() -> None:
+    table = TableRecord(
+        table_id=TABLE_ID,
+        doc_id=DOC_ID,
+        title_raw=None,
+        statement_type=None,
+        unit_raw=None,
+        unit_normalized=None,
+        line_start=2,
+        line_end=6,
+        row_count=1,
+        column_count=2,
+        quality_score=1.0,
+        csv_path=None,
+    )
+    first = CellRecord(
+        cell_id=stable_cell_id(TABLE_ID, 0, 0),
+        table_id=TABLE_ID,
+        row_idx=0,
+        col_idx=0,
+        row_label_raw=None,
+        row_label_canonical=None,
+        column_label_raw=None,
+        column_label_canonical=None,
+        value_raw="1",
+        value_numeric=None,
+        period=None,
+        unit=None,
+        source_line_start=3,
+        source_line_end=3,
+        extraction_confidence=1.0,
+    )
+    second = first.model_copy(
+        update={
+            "cell_id": stable_cell_id(TABLE_ID, 0, 1),
+            "col_idx": 1,
+            "value_raw": "2",
+        }
+    )
+
+    with pytest.raises(ValidationError, match="every source cell"):
+        ExtractedTable(
+            table=table,
+            cells=(first, second),
+            placements=(CellPlacement(row_idx=0, col_idx=0, cell_id=first.cell_id),),
+            evidence=("html_table_marker",),
+        )
+
+    with pytest.raises(ValidationError, match="origin coordinates"):
+        ExtractedTable(
+            table=table,
+            cells=(first,),
+            placements=(CellPlacement(row_idx=0, col_idx=1, cell_id=first.cell_id),),
+            evidence=("html_table_marker",),
+        )

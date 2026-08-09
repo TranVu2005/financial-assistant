@@ -5,11 +5,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
+from typing import Final, Literal
 
 import orjson
 import pyarrow as pa
 import pyarrow.parquet as pq
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from financial_report_qa.core.errors import DatasetBuildError
 from financial_report_qa.data.manifests import read_manifest
@@ -27,6 +28,8 @@ from financial_report_qa.normalization import normalize_extraction
 from financial_report_qa.normalization._shared import issue_sort_key
 from financial_report_qa.schemas.documents import DocumentRecord
 from financial_report_qa.schemas.normalization import NormalizedDocument
+
+DATASET_SCHEMA_VERSION: Final = "2"
 
 DOCUMENT_SCHEMA = pa.schema(
     [
@@ -127,7 +130,7 @@ class DatasetBuildConfig(BaseModel):
     snapshot_root: Path
     manifest_path: Path
     processed_root: Path
-    schema_version: str = Field(default="2", min_length=1)
+    schema_version: Literal["2"] = DATASET_SCHEMA_VERSION
 
 
 class DatasetBuildResult(BaseModel):
@@ -669,8 +672,23 @@ def build_dataset(config: DatasetBuildConfig) -> DatasetBuildResult:
         if release_dir.exists():
             import shutil
 
-            shutil.rmtree(release_dir)
-        temp_dir.replace(release_dir)
+            expected_files = {
+                path.relative_to(temp_dir) for path in temp_dir.rglob("*") if path.is_file()
+            }
+            existing_files = {
+                path.relative_to(release_dir) for path in release_dir.rglob("*") if path.is_file()
+            }
+            if existing_files != expected_files or any(
+                (release_dir / relative_path).read_bytes()
+                != (temp_dir / relative_path).read_bytes()
+                for relative_path in expected_files
+            ):
+                raise DatasetBuildError(
+                    f"existing release does not match generated artifacts: {release_dir}"
+                )
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        else:
+            temp_dir.replace(release_dir)
     except Exception:
         import shutil
 

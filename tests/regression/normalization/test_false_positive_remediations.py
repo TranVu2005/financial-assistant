@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from financial_report_qa.ingestion.provenance import (
+    CellPlacement,
     ExtractedTable,
     ExtractionResult,
     stable_cell_id,
@@ -77,7 +78,7 @@ def test_remediate_number_missing_legitimate_on_non_metric_row() -> None:
         unit_normalized="VND_million",
         line_start=1,
         line_end=10,
-        row_count=1,
+        row_count=2,
         column_count=2,
         quality_score=1.0,
         csv_path=None,
@@ -103,7 +104,7 @@ def test_remediate_number_missing_legitimate_on_non_metric_row() -> None:
     ext_table = ExtractedTable(
         table=table_rec,
         cells=(cell_rec,),
-        placements=(),
+        placements=(CellPlacement(row_idx=1, col_idx=1, cell_id=cell_id),),
         evidence=("html_table_marker",),
     )
     res = ExtractionResult(doc_id=doc_id, blocks=(), tables=(ext_table,), rejected=())

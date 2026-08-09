@@ -1,67 +1,93 @@
-# mypy: ignore-errors
 from decimal import Decimal
 
-import pytest
-
 from financial_report_qa.normalization.eligibility import classify_cell_eligibility
+from financial_report_qa.schemas.normalization import NormalizationIssueCode
 from financial_report_qa.schemas.tables import CellRecord
 
 
-@pytest.fixture
-def cell_factory():
-    def _factory(**kwargs):
-        tbl_id = "tbl_" + "a" * 64
-        defaults = {
-            "cell_id": "cell_" + "b" * 64,
-            "table_id": tbl_id,
-            "row_idx": 0,
-            "col_idx": 0,
-            "row_label_raw": "Metric",
-            "row_label_canonical": "net_revenue",
-            "column_label_raw": "2024",
-            "column_label_canonical": "2024",
-            "value_raw": "1000",
-            "value_numeric": Decimal("1000"),
-            "period": "2024",
-            "unit": "VND_million",
-            "source_line_start": 1,
-            "source_line_end": 1,
-            "extraction_confidence": 1.0,
-        }
-        defaults.update(kwargs)
-        return CellRecord(**defaults)
-
-    return _factory
-
-
-def test_cell_eligibility_levels(cell_factory):
-    raw = classify_cell_eligibility(cell_factory(value_numeric=None), set())
-    assert raw.searchable and not raw.comparable and not raw.calculable
-
-    comparable = classify_cell_eligibility(
-        cell_factory(value_numeric=Decimal("10"), period="2024", unit=None), set()
+def _cell(
+    *,
+    metric: str | None = "net_revenue",
+    period: str | None = "2024",
+    value_raw: str = "100",
+    value_numeric: Decimal | None = Decimal("100"),
+    unit: str | None = "VND_million",
+) -> CellRecord:
+    return CellRecord(
+        cell_id="cell_" + "a" * 64,
+        table_id="tbl_" + "b" * 64,
+        row_idx=0,
+        col_idx=0,
+        row_label_raw="Doanh thu thuần",
+        row_label_canonical=metric,
+        column_label_raw="2024",
+        column_label_canonical=period,
+        value_raw=value_raw,
+        value_numeric=value_numeric,
+        period=period,
+        unit=unit,
+        source_line_start=1,
+        source_line_end=1,
+        extraction_confidence=1.0,
     )
-    assert comparable.comparable and not comparable.calculable
 
-    calculable = classify_cell_eligibility(
-        cell_factory(value_numeric=Decimal("10"), period="2024", unit="VND"), set()
-    )
-    assert calculable.calculable
 
-    # Verify unit_conflict blocks calculable
-    blocked_unit = classify_cell_eligibility(
-        cell_factory(value_numeric=Decimal("10"), period="2024", unit="VND"), {"unit_conflict"}
+def _classify(
+    cell: CellRecord, issue_codes: tuple[NormalizationIssueCode, ...] = ()
+) -> tuple[bool, bool, bool, tuple[str, ...]]:
+    result = classify_cell_eligibility(cell, issue_codes)
+    return (
+        result.searchable,
+        result.comparable,
+        result.calculable,
+        result.blocking_reasons,
     )
-    assert not blocked_unit.calculable
 
-    # Verify number_ambiguous blocks calculable
-    blocked_num = classify_cell_eligibility(
-        cell_factory(value_numeric=Decimal("10"), period="2024", unit="VND"), {"number_ambiguous"}
-    )
-    assert not blocked_num.calculable
 
-    # Verify period_ambiguous blocks calculable
-    blocked_per = classify_cell_eligibility(
-        cell_factory(value_numeric=Decimal("10"), period="2024", unit="VND"), {"period_ambiguous"}
+def test_complete_monetary_cell_is_comparable_and_calculable() -> None:
+    assert _classify(_cell()) == (False, True, True, ())
+
+
+def test_complete_non_monetary_cell_is_comparable_but_not_monetary_calculable() -> None:
+    assert _classify(_cell(unit="percent")) == (False, True, False, ())
+
+
+def test_missing_unit_keeps_comparison_but_blocks_monetary_calculation() -> None:
+    assert _classify(_cell(unit=None)) == (False, True, False, ())
+
+
+def test_blocking_issue_disables_comparison_and_calculation() -> None:
+    assert _classify(_cell(), ("number_ambiguous",)) == (
+        False,
+        False,
+        False,
+        ("number_ambiguous",),
     )
-    assert not blocked_per.calculable
+
+
+def test_unparsed_labeled_raw_cell_remains_searchable() -> None:
+    assert _classify(_cell(value_raw="chưa kiểm toán", value_numeric=None, unit=None)) == (
+        True,
+        False,
+        False,
+        (),
+    )
+
+
+def test_unlabeled_or_empty_cell_is_not_eligible() -> None:
+    assert _classify(_cell(metric=None, value_numeric=None, unit=None)) == (
+        False,
+        False,
+        False,
+        (),
+    )
+    assert _classify(_cell(value_raw="  ", value_numeric=None, unit=None)) == (
+        False,
+        False,
+        False,
+        (),
+    )
+
+
+def test_non_blocking_issue_does_not_hide_valid_cell() -> None:
+    assert _classify(_cell(), ("metric_unknown",)) == (False, True, True, ())
