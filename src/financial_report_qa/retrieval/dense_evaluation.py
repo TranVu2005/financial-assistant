@@ -99,7 +99,8 @@ class Day9ComparisonReport(_FrozenModel):
 
 
 class DenseRetrievalClient(Protocol):
-    encoder_spec: DenseEncoderSpec
+    @property
+    def encoder_spec(self) -> DenseEncoderSpec: ...
 
     def retrieve(
         self,
