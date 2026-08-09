@@ -46,3 +46,17 @@ Acceptance is the existing provisional floor: Recall@10 >= `0.8833333333333333`,
 - No change to `data/qa/retrieval-gold-v1.jsonl`.
 - No automatic filter extraction, dense retrieval, rank fusion, or structural boosts.
 - No claim that the residual HDB gold-fragment mismatch is solved.
+
+## Verification evidence
+
+The immutable lock and 30 reviewed gold questions validated successfully. Two independently
+built v3 indexes had zero artifact hash differences. Their document SHA-256 was
+`b1206d17e7a870da727fd4ec70bb06bc707ede14de6641814ce1dfba418b7dd6` and their v3 manifest
+SHA-256 was `0BE3D9B118A99E9BAB95C98765D2B58DE9ADF64A01532BD230C6DCAFFA33E3B8`.
+
+Two evaluations were byte-identical: JSON SHA-256
+`9950487D141B397882506D452BE5484ED502CCCE856AAF3F5F1F86C959D0BA73` and Markdown SHA-256
+`F43DD03CECB5CE25A4B4694B63ABE90C1F40AD106907820BAD274C47AEC8E4C9`.
+Macro Precision@10 was `0.1466667`, Recall@10 `0.8833333`, F2@10 `0.4312169`, and true
+positives `44`. Failure counts were 3 zero-hit and 1 partial-hit; the three residual zero-hit
+questions all target HDB table `tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0`.

@@ -31,7 +31,7 @@
 - Produces: v3 `BM25IndexManifest` with `b=0.25`.
 - Rejects: persisted v2 manifests before executable artifacts are loaded.
 
-- [ ] **Step 1: Write the failing regression test**
+- [x] **Step 1: Write the failing regression test**
 
 Add a `TableDocument` pair with the same company and metric tokens: a short note and a longer
 primary statement containing the additional relevant `consolidated` title token. Assert that
@@ -39,7 +39,7 @@ primary statement containing the additional relevant `consolidated` title token.
 Also change persistence assertions to require `bm25-index-v3`/`v3` and make the rejection
 fixture use `bm25-index-v2`.
 
-- [ ] **Step 2: Run the focused test and observe RED**
+- [x] **Step 2: Run the focused test and observe RED**
 
 Run:
 
@@ -50,13 +50,13 @@ D:\GitHub\financial-assistant\.venv\Scripts\python.exe -m pytest -q tests/unit/r
 Expected: the new ranking regression fails with `b=0.75`, and v3 manifest assertions fail
 because production code still publishes v2.
 
-- [ ] **Step 3: Write the minimal v3 change**
+- [x] **Step 3: Write the minimal v3 change**
 
 In `index.py`, set `B = 0.25`. In `contracts.py`, change only manifest literals to
 `bm25-index-v3` and `v3`. In `load_bm25_index`, reject every schema other than v3 with the
 existing rebuild-required error. Do not add score boosts, query rules, or new metadata fields.
 
-- [ ] **Step 4: Run focused quality gates**
+- [x] **Step 4: Run focused quality gates**
 
 ```powershell
 D:\GitHub\financial-assistant\.venv\Scripts\python.exe -m pytest -q tests/unit/retrieval/test_index_service.py tests/unit/retrieval/test_contracts.py
@@ -65,7 +65,7 @@ D:\GitHub\financial-assistant\.venv\Scripts\python.exe -m mypy src/financial_rep
 git diff --check
 ```
 
-- [ ] **Step 5: Commit the code change**
+- [x] **Step 5: Commit the code change**
 
 ```powershell
 git add src/financial_report_qa/retrieval/contracts.py src/financial_report_qa/retrieval/index.py tests/unit/retrieval/test_index_service.py
@@ -88,7 +88,7 @@ git commit -m "fix(retrieval): reduce bm25 length normalization"
 - Consumes: exact release lock and reviewed v1 gold.
 - Produces: replay-identical v3 index/report evidence and recorded metrics.
 
-- [ ] **Step 1: Validate immutable inputs**
+- [x] **Step 1: Validate immutable inputs**
 
 ```powershell
 $lock = 'data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json'
@@ -96,7 +96,7 @@ $gold = 'data/qa/retrieval-gold-v1.jsonl'
 D:\GitHub\financial-assistant\.venv\Scripts\python.exe -m financial_report_qa.cli retrieval validate-gold --release-lock $lock --gold-path $gold
 ```
 
-- [ ] **Step 2: Build two v3 indexes**
+- [x] **Step 2: Build two v3 indexes**
 
 ```powershell
 $lock = 'data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json'
@@ -104,11 +104,11 @@ D:\GitHub\financial-assistant\.venv\Scripts\python.exe -m financial_report_qa.cl
 D:\GitHub\financial-assistant\.venv\Scripts\python.exe -m financial_report_qa.cli retrieval build-index --release-lock $lock --output-root data/indexes/bm25-length-v3-b
 ```
 
-- [ ] **Step 3: Compare deterministic index artifacts**
+- [x] **Step 3: Compare deterministic index artifacts**
 
 Compare all relative file SHA-256 values of the two fingerprint directories. Expected: zero differences.
 
-- [ ] **Step 4: Evaluate both indexes and compare reports**
+- [x] **Step 4: Evaluate both indexes and compare reports**
 
 ```powershell
 $fingerprint = '37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f'
@@ -121,7 +121,7 @@ D:\GitHub\financial-assistant\.venv\Scripts\python.exe -m financial_report_qa.cl
 Compare JSON and Markdown SHA-256 values. Expected: exact identity, Recall >= `0.8833333333333333`,
 F2 >= `0.41798941798941797`, and zero-hit <= `3`.
 
-- [ ] **Step 5: Record evidence and commit docs**
+- [x] **Step 5: Record evidence and commit docs**
 
 Update the design with measured hashes/metrics and mark the plan evidence steps complete. Stage
 only the two docs and commit with `docs(retrieval): record bm25 v3 length evidence`.
