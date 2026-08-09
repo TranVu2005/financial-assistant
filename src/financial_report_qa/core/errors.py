@@ -75,3 +75,15 @@ class RetrievalReleaseError(RetrievalInputError):
 
 class RetrievalGoldError(RetrievalInputError):
     """Reviewed retrieval gold data violates its immutable contract."""
+
+
+class DenseInputError(RetrievalInputError):
+    """Dense retrieval inputs or encoder configuration are invalid."""
+
+
+class DenseArtifactError(RetrievalArtifactError):
+    """A dense corpus, index, cache, or evaluation artifact is invalid."""
+
+
+class DenseModelError(RetrievalInputError):
+    """A pinned dense encoder model cannot be loaded exactly."""
