@@ -196,8 +196,8 @@ class RetrievalTrace(_FrozenModel):
 
 
 class BM25IndexManifest(_FrozenModel):
-    schema_version: Literal["bm25-index-v2"] = "bm25-index-v2"
-    builder_version: Literal["v2"] = "v2"
+    schema_version: Literal["bm25-index-v3"] = "bm25-index-v3"
+    builder_version: Literal["v3"] = "v3"
     tokenizer_version: Literal["v1"] = "v1"
     query_expansion_version: Literal["v1"] = "v1"
     dtype: Literal["float32"] = "float32"

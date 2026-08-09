@@ -16,7 +16,7 @@ import bm25s  # type: ignore[import-untyped]
 from financial_report_qa.retrieval.contracts import BM25IndexManifest, TableDocument
 
 K1 = 1.5
-B = 0.75
+B = 0.25
 DELTA = 0.5
 METHOD = "lucene"
 DTYPE = "float32"
@@ -162,7 +162,7 @@ def load_bm25_index(
     manifest_payload = json.loads((index_dir / "manifest.json").read_text(encoding="utf-8"))
     if not isinstance(manifest_payload, dict):
         raise ValueError("BM25 index manifest must be a JSON object")
-    if manifest_payload.get("schema_version") != "bm25-index-v2":
+    if manifest_payload.get("schema_version") != "bm25-index-v3":
         raise ValueError("unsupported BM25 index schema; rebuild the index")
     manifest = BM25IndexManifest.model_validate(manifest_payload)
     if (

@@ -184,6 +184,53 @@ def test_retrieval_expands_metric_aliases_without_duplicate_query_tokens() -> No
     assert oov_trace.empty_reason == "no_index_tokens"
 
 
+def test_low_length_normalization_keeps_long_primary_table_above_short_fragment() -> None:
+    note_id = "tbl_" + "a" * 64
+    primary_id = "tbl_" + "b" * 64
+    documents = (
+        TableDocument(
+            table_id=note_id,
+            doc_id="note",
+            text="title: total assets\nmetrics: total assets",
+            metadata=TableMetadata(
+                table_id=note_id,
+                doc_id="note",
+                company_code="HDB",
+                periods=("2023",),
+                source_path="note.txt",
+                line_start=2000,
+                line_end=2000,
+            ),
+        ),
+        TableDocument(
+            table_id=primary_id,
+            doc_id="primary",
+            text=(
+                "title: total assets\nmetrics: total assets\nmetric aliases: total assets\n"
+                + "context: detail"
+            ),
+            metadata=TableMetadata(
+                table_id=primary_id,
+                doc_id="primary",
+                company_code="HDB",
+                periods=("2023",),
+                source_path="primary.txt",
+                line_start=50,
+                line_end=50,
+            ),
+        ),
+    )
+    service = RetrievalService(build_bm25_index(documents, dataset_fingerprint="f" * 64))
+
+    trace = service.retrieve(
+        "total assets",
+        filters=RetrievalFilters(company_codes=("HDB",)),
+        k=2,
+    )
+
+    assert [candidate.table_id for candidate in trace.results] == [primary_id, note_id]
+
+
 def test_retrieval_rejects_nonfinite_score_outside_requested_top_k(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -211,8 +258,8 @@ def test_persisted_index_manifest_hashes_exact_emitted_artifacts(tmp_path: Path)
     save_bm25_index(index, output_dir)
 
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["schema_version"] == "bm25-index-v2"
-    assert manifest["builder_version"] == "v2"
+    assert manifest["schema_version"] == "bm25-index-v3"
+    assert manifest["builder_version"] == "v3"
     assert manifest["tokenizer_version"] == "v1"
     assert manifest["query_expansion_version"] == "v1"
     assert manifest["dtype"] == "float32"
@@ -230,7 +277,7 @@ def test_persisted_index_manifest_hashes_exact_emitted_artifacts(tmp_path: Path)
         assert actual_hash == expected_hash
     loaded = load_bm25_index(output_dir, release_lock_sha256=release_lock_sha256)
     assert loaded.documents[0].metric_labels == index.documents[0].metric_labels
-    assert loaded.manifest.schema_version == "bm25-index-v2"
+    assert loaded.manifest.schema_version == "bm25-index-v3"
     assert loaded.manifest.query_expansion_version == "v1"
 
 
@@ -240,7 +287,7 @@ def test_loader_rejects_v1_manifest_before_reading_bm25_artifacts(tmp_path: Path
     save_bm25_index(index, output_dir)
     manifest_path = output_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["schema_version"] = "bm25-index-v1"
+    manifest["schema_version"] = "bm25-index-v2"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(ValueError, match="unsupported BM25 index schema; rebuild the index"):
