@@ -11,6 +11,7 @@ from financial_report_qa.core.errors import DenseArtifactError, DenseInputError
 from financial_report_qa.retrieval.contracts import RetrievalFilters
 from financial_report_qa.retrieval.dense_cache import QueryEmbeddingCache
 from financial_report_qa.retrieval.dense_contracts import (
+    DenseEncoderSpec,
     DenseRetrievalCandidate,
     DenseRetrievalTrace,
 )
@@ -36,6 +37,11 @@ class DenseRetrievalService:
         self._index = index
         self._encoder = encoder
         self._cache = cache
+
+    @property
+    def encoder_spec(self) -> DenseEncoderSpec:
+        """Expose the immutable encoder identity used by this service."""
+        return self._encoder.spec
 
     def retrieve(
         self,
