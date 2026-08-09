@@ -7,16 +7,22 @@ from typing import Literal, cast
 
 from financial_report_qa.retrieval.contracts import (
     FilterDecision,
+    MetricExpansion,
     RetrievalCandidate,
     RetrievalFilters,
     RetrievalTrace,
 )
 from financial_report_qa.retrieval.index import BM25Index, tokenize_text
+from financial_report_qa.retrieval.metric_aliases import (
+    build_metric_alias_lexicon,
+    expand_metric_query,
+)
 
 
 class RetrievalService:
     def __init__(self, index: BM25Index) -> None:
         self._index = index
+        self._metric_alias_lexicon = build_metric_alias_lexicon(index.documents)
 
     def retrieve(
         self,
@@ -29,9 +35,28 @@ class RetrievalService:
         if k < 1:
             raise ValueError("k must be positive")
         eligible, decisions = self._eligible_positions(filters)
-        query_tokens = tokenize_text(query)
+        base_tokens = tokenize_text(query)
+        expanded_tokens, metric_expansions = expand_metric_query(
+            base_tokens, self._metric_alias_lexicon
+        )
         index_tokens = tuple(
-            token for token in query_tokens if token in self._index.retriever.vocab_dict
+            token for token in expanded_tokens if token in self._index.retriever.vocab_dict
+        )
+        effective_expansions = tuple(
+            MetricExpansion(
+                alias_tokens=expansion.alias_tokens,
+                canonical_metric=expansion.canonical_metric,
+                added_tokens=tuple(
+                    token
+                    for token in expansion.added_tokens
+                    if token in self._index.retriever.vocab_dict
+                ),
+            )
+            for expansion in metric_expansions
+            if any(
+                token in self._index.retriever.vocab_dict
+                for token in expansion.added_tokens
+            )
         )
         if not eligible:
             return RetrievalTrace(
@@ -41,6 +66,7 @@ class RetrievalService:
                 eligible_count=0,
                 filter_decisions=decisions,
                 results=(),
+                metric_expansions=effective_expansions,
                 empty_reason="no_eligible_documents",
             )
         if not index_tokens:
@@ -51,6 +77,7 @@ class RetrievalService:
                 eligible_count=len(eligible),
                 filter_decisions=decisions,
                 results=(),
+                metric_expansions=effective_expansions,
                 empty_reason="no_index_tokens",
             )
         scores = self._index.retriever.get_scores(list(index_tokens))
@@ -87,6 +114,7 @@ class RetrievalService:
             eligible_count=len(eligible),
             filter_decisions=decisions,
             results=tuple(candidates),
+            metric_expansions=effective_expansions,
         )
 
     def _eligible_positions(

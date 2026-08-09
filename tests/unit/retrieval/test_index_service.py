@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from financial_report_qa.retrieval.contracts import (
+    MetricLabelObservation,
     RetrievalFilters,
     TableDocument,
     TableMetadata,
@@ -99,6 +100,87 @@ def test_out_of_vocabulary_query_returns_empty_without_zero_score_ranking() -> N
     trace = service.retrieve("khongtontaitrongindex", filters=RetrievalFilters(), k=10)
 
     assert trace.results == ()
+
+
+def test_retrieval_expands_metric_aliases_without_duplicate_query_tokens() -> None:
+    target_id = "tbl_" + "c" * 64
+    distractor_id = "tbl_" + "d" * 64
+    profit_id = "tbl_" + "e" * 64
+    documents = (
+        TableDocument(
+            table_id=target_id,
+            doc_id="target",
+            text="metrics: net revenue\nmetric aliases: doanh thu thuần",
+            metadata=TableMetadata(
+                table_id=target_id,
+                doc_id="target",
+                company_code="VGT",
+                periods=(),
+                source_path="target.txt",
+                line_start=1,
+                line_end=1,
+            ),
+            metric_labels=(
+                MetricLabelObservation(canonical="net_revenue", raw="Doanh thu thuần"),
+            ),
+        ),
+        TableDocument(
+            table_id=distractor_id,
+            doc_id="distractor",
+            text="doanh thu thuần doanh thu thuần operating profit",
+            metadata=TableMetadata(
+                table_id=distractor_id,
+                doc_id="distractor",
+                company_code="VGT",
+                periods=(),
+                source_path="distractor.txt",
+                line_start=1,
+                line_end=1,
+            ),
+            metric_labels=(MetricLabelObservation(canonical="operating_profit", raw=None),),
+        ),
+        TableDocument(
+            table_id=profit_id,
+            doc_id="profit",
+            text="metrics: profit after tax",
+            metadata=TableMetadata(
+                table_id=profit_id,
+                doc_id="profit",
+                company_code="VGT",
+                periods=(),
+                source_path="profit.txt",
+                line_start=1,
+                line_end=1,
+            ),
+            metric_labels=(
+                MetricLabelObservation(canonical="profit_after_tax", raw="profit after tax"),
+            ),
+        ),
+    )
+    service = RetrievalService(build_bm25_index(documents, dataset_fingerprint="f" * 64))
+
+    trace = service.retrieve(
+        "Doanh thu thuần",
+        filters=RetrievalFilters(company_codes=("VGT",)),
+        k=10,
+    )
+
+    assert trace.results[0].table_id == target_id, [
+        (candidate.table_id, candidate.score) for candidate in trace.results
+    ]
+    assert trace.query_tokens.count("net") == 1
+    assert trace.query_tokens.count("revenue") == 1
+    assert trace.metric_expansions[0].canonical_metric == "net_revenue"
+
+    boundary_trace = service.retrieve(
+        "profit after taxation", filters=RetrievalFilters(company_codes=("VGT",)), k=10
+    )
+    assert boundary_trace.metric_expansions == ()
+
+    oov_trace = service.retrieve(
+        "unlistedmetric", filters=RetrievalFilters(company_codes=("VGT",)), k=10
+    )
+    assert oov_trace.empty_reason == "no_index_tokens"
 
 
 def test_retrieval_rejects_nonfinite_score_outside_requested_top_k(

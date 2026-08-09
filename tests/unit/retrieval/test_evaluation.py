@@ -5,6 +5,7 @@ import pytest
 from financial_report_qa.retrieval.contracts import (
     FilterDecision,
     GoldRetrievalQuestion,
+    MetricExpansion,
     RetrievalCandidate,
     RetrievalFilters,
     RetrievalTrace,
@@ -95,6 +96,13 @@ class _RetrieverFixture:
                     matched_tokens=("doanh", "thu"),
                 ),
             ),
+            metric_expansions=(
+                MetricExpansion(
+                    alias_tokens=("doanh", "thu"),
+                    canonical_metric="net_revenue",
+                    added_tokens=("net", "revenue"),
+                ),
+            ),
         )
 
 
@@ -124,6 +132,7 @@ def test_evaluation_records_query_evidence_and_partial_hit_taxonomy() -> None:
     assert result.trace.results[0].score == pytest.approx(1.25)
     assert result.trace.results[0].matched_tokens == ("doanh", "thu")
     assert result.trace.filter_decisions[0].eligible_count_after_intersection == 2
+    assert result.trace.metric_expansions[0].canonical_metric == "net_revenue"
 
 
 def test_evaluate_retrieval_rejects_non_fixed_k() -> None:
