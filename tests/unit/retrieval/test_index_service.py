@@ -281,7 +281,7 @@ def test_persisted_index_manifest_hashes_exact_emitted_artifacts(tmp_path: Path)
     assert loaded.manifest.query_expansion_version == "v1"
 
 
-def test_loader_rejects_v1_manifest_before_reading_bm25_artifacts(tmp_path: Path) -> None:
+def test_loader_rejects_v2_manifest_before_reading_bm25_artifacts(tmp_path: Path) -> None:
     index = build_bm25_index(_documents(), dataset_fingerprint="f" * 64)
     output_dir = tmp_path / "index"
     save_bm25_index(index, output_dir)
