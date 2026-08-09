@@ -157,7 +157,7 @@ def test_retrieval_cli_fixture_lifecycle_is_replayable_and_fails_closed_when_cor
 
     index_dir = index_root / _FINGERPRINT
     manifest = json.loads((index_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["schema_version"] == "bm25-index-v2"
+    assert manifest["schema_version"] == "bm25-index-v3"
     assert manifest["query_expansion_version"] == "v1"
     first_output = tmp_path / "evaluations-a"
     second_output = tmp_path / "evaluations-b"
