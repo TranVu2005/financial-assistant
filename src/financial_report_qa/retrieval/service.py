@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import math
-from typing import Literal, cast
 
 from financial_report_qa.retrieval.contracts import (
-    FilterDecision,
     MetricExpansion,
     RetrievalCandidate,
     RetrievalFilters,
     RetrievalTrace,
 )
+from financial_report_qa.retrieval.filtering import eligible_positions
 from financial_report_qa.retrieval.index import BM25Index, tokenize_text
 from financial_report_qa.retrieval.metric_aliases import (
     build_metric_alias_lexicon,
@@ -34,7 +33,7 @@ class RetrievalService:
     ) -> RetrievalTrace:
         if k < 1:
             raise ValueError("k must be positive")
-        eligible, decisions = self._eligible_positions(filters)
+        eligible, decisions = eligible_positions(self._index.documents, filters)
         base_tokens = tokenize_text(query)
         expanded_tokens, metric_expansions = expand_metric_query(
             base_tokens, self._metric_alias_lexicon
@@ -53,10 +52,7 @@ class RetrievalService:
                 ),
             )
             for expansion in metric_expansions
-            if any(
-                token in self._index.retriever.vocab_dict
-                for token in expansion.added_tokens
-            )
+            if any(token in self._index.retriever.vocab_dict for token in expansion.added_tokens)
         )
         if not eligible:
             return RetrievalTrace(
@@ -116,39 +112,3 @@ class RetrievalService:
             results=tuple(candidates),
             metric_expansions=effective_expansions,
         )
-
-    def _eligible_positions(
-        self, filters: RetrievalFilters
-    ) -> tuple[tuple[int, ...], tuple[FilterDecision, ...]]:
-        eligible = set(range(len(self._index.documents)))
-        decisions: list[FilterDecision] = []
-        fields = (
-            ("company_codes", filters.company_codes, "company_code"),
-            ("periods", filters.periods, "periods"),
-            ("statement_types", filters.statement_types, "statement_type"),
-        )
-        for field, requested_values, metadata_field in fields:
-            if not requested_values:
-                continue
-            if field == "periods":
-                matched = {
-                    position
-                    for position, document in enumerate(self._index.documents)
-                    if set(document.metadata.periods).intersection(requested_values)
-                }
-            else:
-                matched = {
-                    position
-                    for position, document in enumerate(self._index.documents)
-                    if getattr(document.metadata, metadata_field) in requested_values
-                }
-            eligible.intersection_update(matched)
-            decisions.append(
-                FilterDecision(
-                    field=cast(Literal["company_codes", "periods", "statement_types"], field),
-                    requested_values=requested_values,
-                    matched_count_before_intersection=len(matched),
-                    eligible_count_after_intersection=len(eligible),
-                )
-            )
-        return tuple(sorted(eligible)), tuple(decisions)
