@@ -34,6 +34,11 @@ class QueryEmbeddingCache:
         self._spec = spec
         self._spec_hash = encoder_spec_sha256(spec)
 
+    @property
+    def encoder_spec_sha256(self) -> str:
+        """Return the specification hash that scopes every cache entry."""
+        return self._spec_hash
+
     def get_or_encode(self, query: str, encoder: DenseEncoder) -> CachedQueryEmbedding:
         if encoder_spec_sha256(encoder.spec) != self._spec_hash:
             raise DenseArtifactError("Query cache encoder specification does not match")
