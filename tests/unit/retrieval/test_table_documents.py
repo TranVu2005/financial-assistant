@@ -8,6 +8,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from financial_report_qa.retrieval.contracts import MetricLabelObservation
 from financial_report_qa.retrieval.documents import (
     build_table_documents,
     write_table_documents,
@@ -45,15 +46,25 @@ def _write_release_fixture(tmp_path: Path) -> None:
     pq.write_table(  # type: ignore[no-untyped-call]
         pa.table(
             {
-                "table_id": [table_id, table_id],
-                "row_idx": [0, 1],
-                "col_idx": [0, 0],
-                "row_label_canonical": ["net_revenue", "net_revenue"],
-                "row_label_raw": ["Doanh thu\u00a0thuần", "  Doanh thu thuần "],
-                "column_label_canonical": ["2023", "2024"],
-                "value_raw": ["100", "200"],
-                "period": ["2023", "2024"],
-                "unit": ["VND", "VND_million"],
+                "table_id": [table_id, table_id, table_id, table_id],
+                "row_idx": [0, 1, 2, 3],
+                "col_idx": [0, 0, 0, 0],
+                "row_label_canonical": [
+                    "net_revenue",
+                    "net_revenue",
+                    "total_assets",
+                    None,
+                ],
+                "row_label_raw": [
+                    "Doanh thu\u00a0thuần",
+                    "  Doanh thu thuần ",
+                    None,
+                    "Dòng trình bày không phải metric",
+                ],
+                "column_label_canonical": ["2023", "2024", "2024", "2024"],
+                "value_raw": ["100", "200", "300", "400"],
+                "period": ["2023", "2024", "2024", "2024"],
+                "unit": ["VND", "VND_million", "VND_million", "VND_million"],
             }
         ),
         tmp_path / "cells.parquet",
@@ -69,16 +80,21 @@ def test_build_table_documents_normalizes_display_fields_and_omits_numbers(tmp_p
 
     assert [document.table_id for document in documents] == ["tbl_" + "a" * 64]
     assert documents[0].metadata.periods == ("2023", "2024")
+    assert documents[0].metric_labels == (
+        MetricLabelObservation(canonical="net_revenue", raw="Doanh thu thuần"),
+        MetricLabelObservation(canonical="total_assets", raw=None),
+    )
     assert documents[0].text == (
         "title: Báo cáo kết quả\n"
         "statement: income statement\n"
-        "metrics: net revenue\n"
+        "metrics: net revenue | total assets\n"
         "metric aliases: Doanh thu thuần\n"
         "company: ACB\n"
         "periods: 2023 | 2024\n"
         "units: VND | VND million"
     )
     assert "100" not in documents[0].text
+    assert "Dòng trình bày không phải metric" not in documents[0].text
 
 
 def test_write_table_documents_is_deterministic_and_preserves_target_on_count_error(

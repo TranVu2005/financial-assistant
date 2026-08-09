@@ -14,7 +14,11 @@ import duckdb
 import orjson
 import pyarrow.parquet as pq
 
-from financial_report_qa.retrieval.contracts import TableDocument, TableMetadata
+from financial_report_qa.retrieval.contracts import (
+    MetricLabelObservation,
+    TableDocument,
+    TableMetadata,
+)
 
 if TYPE_CHECKING:
     from financial_report_qa.retrieval.release import ResolvedRetrievalRelease
@@ -42,6 +46,22 @@ def _tokens(values: list[object | None], *, display_tokens: bool = False) -> tup
     return tuple(sorted(normalized))
 
 
+def _metric_labels(values: list[object] | None) -> tuple[MetricLabelObservation, ...]:
+    observations: set[tuple[str, str | None]] = set()
+    for value in values or []:
+        if not isinstance(value, dict):
+            raise ValueError("metric label aggregation must produce structs")
+        canonical = _normalize(value.get("canonical"))
+        if not canonical:
+            continue
+        raw = _normalize(value.get("raw")) or None
+        observations.add((canonical, raw))
+    return tuple(
+        MetricLabelObservation(canonical=canonical, raw=raw)
+        for canonical, raw in sorted(observations, key=lambda item: (item[0], item[1] or ""))
+    )
+
+
 def _line(label: str, values: tuple[str, ...] | str) -> str | None:
     value = " | ".join(values) if isinstance(values, tuple) else values
     return f"{label}: {value}" if value else None
@@ -63,9 +83,10 @@ def build_table_documents(
                 t.table_id, t.doc_id, d.company_code, CAST(d.report_year AS VARCHAR),
                 t.statement_type, t.title_raw, {table_unit_expression},
                 d.relative_path, t.line_start, t.line_end,
-                list(DISTINCT c.row_label_canonical)
-                    FILTER (WHERE c.row_label_canonical IS NOT NULL),
-                list(DISTINCT c.row_label_raw) FILTER (WHERE c.row_label_raw IS NOT NULL),
+                list(DISTINCT struct_pack(
+                    canonical := c.row_label_canonical,
+                    raw := c.row_label_raw
+                )) FILTER (WHERE c.row_label_canonical IS NOT NULL),
                 list(DISTINCT c.period) FILTER (WHERE c.period IS NOT NULL),
                 list(DISTINCT c.unit) FILTER (WHERE c.unit IS NOT NULL)
             FROM read_parquet(?) AS t
@@ -92,12 +113,12 @@ def build_table_documents(
             relative_path,
             line_start,
             line_end,
-            canonical_labels,
-            raw_labels,
+            metric_label_values,
             cell_periods,
             cell_units,
         ) = row
         periods = _tokens([*(cell_periods or []), report_year])
+        metric_labels = _metric_labels(metric_label_values)
         metadata = TableMetadata(
             table_id=str(table_id),
             doc_id=str(doc_id),
@@ -112,8 +133,16 @@ def build_table_documents(
         text_lines = (
             _line("title", _normalize(title)),
             _line("statement", _normalize(statement_type, display_token=True)),
-            _line("metrics", _tokens(canonical_labels or [], display_tokens=True)),
-            _line("metric aliases", _tokens(raw_labels or [])),
+            _line(
+                "metrics",
+                _tokens(
+                    [label.canonical for label in metric_labels], display_tokens=True
+                ),
+            ),
+            _line(
+                "metric aliases",
+                _tokens([label.raw for label in metric_labels]),
+            ),
             _line("company", _normalize(company_code)),
             _line("periods", periods),
             _line(
@@ -127,6 +156,7 @@ def build_table_documents(
                 doc_id=str(doc_id),
                 text="\n".join(line for line in text_lines if line is not None),
                 metadata=metadata,
+                metric_labels=metric_labels,
             )
         )
     return tuple(result)
