@@ -219,3 +219,38 @@ uv run --frozen --no-sync financial-report-qa week1-gate lock-release `
 - **Manifest SHA-256:** `924d165211c63bbfc718b790f217ec356f80236e21fa0d8aa2acb497e186a5cf`
 - **Release lock:** `data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json`
 - **Replay determinism:** SHA-256 identiques sur 3 fichiers rapport (gate-result.json, gate-report.md, pareto-errors.csv)
+
+## Day 8 BM25 Retrieval Baseline
+
+Hệ thống truy xuất bảng dựa trên từ khóa (lexical) dùng mô hình BM25 kết hợp với các bộ lọc siêu dữ liệu (metadata) được định cấu hình chặt chẽ theo thiết kế Day 8.
+
+### Quy tắc khóa dữ liệu (Release-Lock Rule)
+Tất cả các câu lệnh tạo chỉ mục và đánh giá đều phải nhận và xác thực dựa trên tệp khóa dữ liệu tuần 1 bất biến:
+- Thư mục release: `data/qa/week1_pilot_37a61be7aebd/`
+- Vân tay dữ liệu (fingerprint): `37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f`
+- Tệp khóa phát hành: `data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json`
+
+### Ba lệnh truy xuất chính
+1. **Tạo chỉ mục BM25 (build-index):**
+   ```bash
+   uv run --frozen --no-sync financial-report-qa retrieval build-index \
+     --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json \
+     --output-root data/indexes/bm25
+   ```
+
+2. **Xác thực bộ câu hỏi gold (validate-gold):**
+   ```bash
+   uv run --frozen --no-sync financial-report-qa retrieval validate-gold \
+     --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json \
+     --gold-path data/qa/retrieval-gold-v1.jsonl
+   ```
+
+3. **Chạy đánh giá và xuất báo cáo (evaluate):**
+   ```bash
+   uv run --frozen --no-sync financial-report-qa retrieval evaluate \
+     --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json \
+     --index-dir data/indexes/bm25/37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f \
+     --gold-path data/qa/retrieval-gold-v1.jsonl \
+     --output-dir artifacts/evaluations
+   ```
+

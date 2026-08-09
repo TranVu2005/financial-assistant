@@ -111,7 +111,11 @@ def build_bm25_index(
         raise ValueError("BM25 documents must have unique table IDs")
     retriever = bm25s.BM25(k1=K1, b=B, delta=DELTA, method=METHOD, dtype=DTYPE)
     corpus_tokens = [tokenize_text(document.text) for document in ordered]
-    retriever.index(corpus_tokens, show_progress=False)
+    # Collect unique tokens and sort them to ensure deterministic vocabulary ID assignment
+    unique_tokens = sorted({token for doc in corpus_tokens for token in doc})
+    vocab_dict = {token: i for i, token in enumerate(unique_tokens)}
+    corpus_token_ids = [[vocab_dict[token] for token in doc] for doc in corpus_tokens]
+    retriever.index((corpus_token_ids, vocab_dict), show_progress=False)
     return BM25Index(
         documents=ordered,
         retriever=retriever,

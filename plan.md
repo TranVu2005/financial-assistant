@@ -679,10 +679,16 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 8 — BM25 baseline
 
-- [ ] Xây document cho từng bảng từ title, statement, metric aliases, company, period và unit.
-- [ ] Cài metadata filter trước BM25.
-- [ ] Log top-k cùng thành phần điểm.
+- [x] Xây document cho từng bảng từ title, statement, metric aliases, company, period và unit.
+- [x] Cài metadata filter trước BM25.
+- [x] Log top-k cùng thành phần điểm.
 - **Đầu ra:** Recall@10 và F2 trên 30 câu gold.
+  > **✅ HOÀN TẤT ngày 2026-08-09:** BM25 baseline and evaluations pass on real 30 gold questions.
+  > - **Recall@10:** 0.516667 | **F2@10:** 0.234127 | **Precision:** 0.076667 | **TP:** 23/30
+  > - **By Intent:** Lookup (Recall@10=0.8000, F2@10=0.2857) | Compare (Recall@10=0.3500, F2@10=0.1944) | Growth (Recall@10=0.4000, F2@10=0.2222)
+  > - **Failures:** 13 zero hits, 3 partial hits, 14 fully matched
+  > - **Replay check:** 100% identical SHA-256 for index and evaluation artifacts.
+
 
 #### Ngày 9 — Dense retrieval
 

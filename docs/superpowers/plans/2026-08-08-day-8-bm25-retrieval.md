@@ -697,7 +697,7 @@ git commit -m "docs(agent): add vifinqa bm25 retrieval skill"
 - Consumes the exact outputs of Tasks 1-2.
 - Produces terminal evidence only; no production files change.
 
-- [ ] **Step 1: Confirm inputs exist without restoring or editing user-deleted files**
+- [x] **Step 1: Confirm inputs exist without restoring or editing user-deleted files**
 
 ```powershell
 $lockPath = "data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json"
@@ -708,7 +708,7 @@ Test-Path -LiteralPath $goldPath
 
 Expected: both are `True`. If either is `False`, report the missing path and stop Tasks 8–10.
 
-- [ ] **Step 2: Validate the release and gold questions**
+- [x] **Step 2: Validate the release and gold questions**
 
 ```powershell
 uv run --frozen --no-sync financial-report-qa retrieval validate-gold --release-lock $lockPath --gold-path $goldPath
@@ -716,7 +716,7 @@ uv run --frozen --no-sync financial-report-qa retrieval validate-gold --release-
 
 Expected: exit 0; dataset fingerprint `37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f`, 146,011 tables, and exactly 30 valid questions.
 
-- [ ] **Step 3: Inspect coverage counts**
+- [x] **Step 3: Inspect coverage counts**
 
 Run a read-only Python command using `load_gold_questions` and print counts by intent, company, statement, and gold-table cardinality.
 
@@ -741,7 +741,7 @@ Expected:
 - Consumes the Task-6 CLI and Task-4 index implementation.
 - Produces two independently built artifact trees for hash comparison.
 
-- [ ] **Step 1: Build the canonical index**
+- [x] **Step 1: Build the canonical index**
 
 ```powershell
 $fingerprint = "37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f"
@@ -751,14 +751,14 @@ uv run --frozen --no-sync financial-report-qa retrieval build-index --release-lo
 
 Expected: exit 0, target path ends with the full fingerprint, manifest reports 146,011 table documents, and no source/release file changes.
 
-- [ ] **Step 2: Build an independent replay**
+- [x] **Step 2: Build an independent replay**
 
 ```powershell
 $replayRoot = "data/indexes/bm25-replay"
 uv run --frozen --no-sync financial-report-qa retrieval build-index --release-lock $lockPath --output-root $replayRoot
 ```
 
-- [ ] **Step 3: Compare every relative artifact hash**
+- [x] **Step 3: Compare every relative artifact hash**
 
 ```powershell
 $canonical = Join-Path $indexRoot $fingerprint
@@ -791,7 +791,7 @@ Expected: no output. Any difference is a determinism defect; add a failing test 
 - Generate: `artifacts/evaluations/replay/retrieval-day8-37a61be7aebd.json`
 - Generate: `artifacts/evaluations/replay/retrieval-day8-37a61be7aebd.md`
 
-- [ ] **Step 1: Evaluate the canonical index**
+- [x] **Step 1: Evaluate the canonical index**
 
 ```powershell
 $indexPath = Join-Path $indexRoot $fingerprint
@@ -800,7 +800,7 @@ uv run --frozen --no-sync financial-report-qa retrieval evaluate --release-lock 
 
 Expected: exit 0 and both JSON/Markdown reports describe exactly 30 questions.
 
-- [ ] **Step 2: Evaluate again into a fresh directory**
+- [x] **Step 2: Evaluate again into a fresh directory**
 
 ```powershell
 uv run --frozen --no-sync financial-report-qa retrieval evaluate --release-lock $lockPath --index-dir $indexPath --gold-path $goldPath --output-dir artifacts/evaluations/replay
@@ -811,7 +811,7 @@ Compare-Object ($canonicalHashes | Sort-Object Name) ($replayHashes | Sort-Objec
 
 Compare by file name and hash. Expected: no content-hash differences.
 
-- [ ] **Step 3: Inspect retrieval failures**
+- [x] **Step 3: Inspect retrieval failures**
 
 From JSON, report:
 
@@ -831,7 +831,7 @@ Do not tune aliases or labels during this verification task. Open a new TDD reme
 - Modify after evidence exists: `README.md`
 - Modify after evidence exists: `plan.md`
 
-- [ ] **Step 1: Run focused and full verification**
+- [x] **Step 1: Run focused and full verification**
 
 ```powershell
 uv run --frozen --no-sync pytest -q tests/unit/retrieval tests/integration/retrieval/test_day8_cli.py
@@ -843,7 +843,7 @@ git diff --check
 
 Expected: every command exits 0 with no warnings attributed to changed code.
 
-- [ ] **Step 2: Record exact operator commands and observed metrics**
+- [x] **Step 2: Record exact operator commands and observed metrics**
 
 In `README.md`, document the three retrieval commands and immutable release-lock rule. In `plan.md`, mark Day-8 bullets complete only when:
 
@@ -855,7 +855,7 @@ In `README.md`, document the three retrieval commands and immutable release-lock
 
 Record measured values; do not write `passed` merely because code tests pass.
 
-- [ ] **Step 3: Review scope and commit**
+- [x] **Step 3: Review scope and commit**
 
 ```powershell
 git status --short
