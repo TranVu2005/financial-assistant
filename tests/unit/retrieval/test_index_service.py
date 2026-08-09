@@ -5,7 +5,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from financial_report_qa.retrieval.contracts import RetrievalFilters, TableDocument, TableMetadata
+from financial_report_qa.retrieval.contracts import (
+    RetrievalFilters,
+    TableDocument,
+    TableMetadata,
+)
 from financial_report_qa.retrieval.index import (
     build_bm25_index,
     load_bm25_index,
@@ -124,9 +128,10 @@ def test_persisted_index_manifest_hashes_exact_emitted_artifacts(tmp_path: Path)
     save_bm25_index(index, output_dir)
 
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["schema_version"] == "bm25-index-v1"
-    assert manifest["builder_version"] == "v1"
+    assert manifest["schema_version"] == "bm25-index-v2"
+    assert manifest["builder_version"] == "v2"
     assert manifest["tokenizer_version"] == "v1"
+    assert manifest["query_expansion_version"] == "v1"
     assert manifest["dtype"] == "float32"
     assert manifest["release_lock_sha256"] == release_lock_sha256
     documents_bytes = (output_dir / "documents.jsonl").read_bytes()

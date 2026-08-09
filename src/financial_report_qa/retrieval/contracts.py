@@ -128,11 +128,37 @@ class TableMetadata(_FrozenModel):
         return _canonical_tuple(values, label="periods")
 
 
+class MetricLabelObservation(_FrozenModel):
+    """One canonical metric identity and its optional observed corpus label."""
+
+    canonical: NonEmptyString
+    raw: NonEmptyString | None = None
+
+
+class MetricExpansion(_FrozenModel):
+    """Canonical query tokens added after matching a corpus-observed alias."""
+
+    alias_tokens: tuple[str, ...]
+    canonical_metric: NonEmptyString
+    added_tokens: tuple[str, ...]
+
+
 class TableDocument(_FrozenModel):
     table_id: TableId
     doc_id: str
     text: NonEmptyString
     metadata: TableMetadata
+    metric_labels: tuple[MetricLabelObservation, ...] = ()
+
+    @field_validator("metric_labels")
+    @classmethod
+    def validate_metric_labels(
+        cls, values: tuple[MetricLabelObservation, ...]
+    ) -> tuple[MetricLabelObservation, ...]:
+        ordering = tuple((item.canonical, item.raw or "") for item in values)
+        if ordering != tuple(sorted(set(ordering))):
+            raise ValueError("metric_labels must be sorted and unique")
+        return values
 
 
 class RetrievalCandidate(_FrozenModel):
@@ -165,13 +191,15 @@ class RetrievalTrace(_FrozenModel):
     eligible_count: int = Field(ge=0)
     filter_decisions: tuple[FilterDecision, ...]
     results: tuple[RetrievalCandidate, ...]
+    metric_expansions: tuple[MetricExpansion, ...] = ()
     empty_reason: EmptyReason | None = None
 
 
 class BM25IndexManifest(_FrozenModel):
-    schema_version: Literal["bm25-index-v1"] = "bm25-index-v1"
-    builder_version: Literal["v1"] = "v1"
+    schema_version: Literal["bm25-index-v2"] = "bm25-index-v2"
+    builder_version: Literal["v2"] = "v2"
     tokenizer_version: Literal["v1"] = "v1"
+    query_expansion_version: Literal["v1"] = "v1"
     dtype: Literal["float32"] = "float32"
     dataset_fingerprint: Fingerprint
     release_lock_sha256: Fingerprint | None = None
