@@ -254,3 +254,13 @@ Tất cả các câu lệnh tạo chỉ mục và đánh giá đều phải nh�
      --output-dir artifacts/evaluations
    ```
 
+### Evidence BM25 v2 (2026-08-09)
+
+Clean committed source (`4ee2fa6`) imports retrieval without the normalization runtime and passes
+45 focused retrieval tests, Ruff, and mypy. The locked release contains 146,011 tables and the
+reviewed gold contains 30 questions (gold SHA-256
+`13888830E7DDE393BF3ED0E4561C02340912A6F36AB2B32503EF2FB2CFAC63F5`). Two independent v2
+indexes and JSON/Markdown reports are byte-identical. Observed clean-source macro Recall@10 is
+`0.8333333` and F2@10 is `0.4034392` (five ranking misses remain), below the provisional floors;
+gold and query-specific rules were not changed. Full working-tree pytest is `556 passed, 1 skipped`;
+full Ruff (84 errors) and mypy (33 errors) retain pre-existing non-retrieval failures.

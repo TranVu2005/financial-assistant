@@ -866,6 +866,36 @@ git commit -m "docs: record day 8 bm25 retrieval baseline"
 
 Do not stage indexes, replay directories, unrelated dirty changes, source data, or unreviewed gold data.
 
+## BM25 v2 remediation evidence (2026-08-09)
+
+Tasks 1–5 were implemented on `codex/modular-foundation` through commits `42a0b5d`, `fe73684`,
+`a7233f8`, `5bd985f`, and `4ee2fa6`. A clean archive of `4ee2fa6` imported
+`RetrievalService`, passed 45 focused tests, Ruff, and mypy, and contained no retrieval import
+from `financial_report_qa.normalization`.
+
+The lock-bound gold (`data/qa/retrieval-gold-v1.jsonl`, SHA-256
+`13888830E7DDE393BF3ED0E4561C02340912A6F36AB2B32503EF2FB2CFAC63F5`) validated 30 questions:
+10 lookup, 10 compare, 10 growth; 10 companies; 18 multi-table questions. Two independently
+built v2 indexes at `data/indexes/bm25-remediation-v2-a/` and `...-v2-b/` contained 146,011
+documents and had zero relative artifact hash differences. Manifest SHA-256 was
+`B6007B13301E62E259C86BF23FE8ACC1014EB51E44D7E7E9B86A724DDB2E8484`; document SHA-256 was
+`b1206d17e7a870da727fd4ec70bb06bc707ede14de6641814ce1dfba418b7dd6`.
+
+Reports under `artifacts/evaluations/remediation-v2-a/` and `...-v2-b/` were byte-identical
+(JSON `70280CC6A277128F1F9C7CC05A5C6C96AEEDA3C62D4FF40C1BE150285F6E2AE9`, Markdown
+`349F9927D9D5654F07E75B91A8ED58F0911EBCC07303D266B9B6F95136E28374`). Clean-source metrics:
+Precision@10 `0.1366667`, Recall@10 `0.8333333`, F2@10 `0.4034392`, TP `41`; by intent
+lookup `0.9000/0.3214`, compare `0.8000/0.4444`, growth `0.8000/0.4444` (Recall/F2).
+Failure counts were five `zero_gold_hits`, zero partial hits, zero `no_eligible_documents`,
+and zero `no_index_tokens`. The five misses are HDB/NVL ranking-fragmentation cases; gold,
+filters, and query-ID-specific rules were not changed. The provisional floors
+Recall `0.8833333` and F2 `0.4179894` were not met.
+
+Full working-tree gates were recorded truthfully: `pytest -q` passed 556 with 1 skipped;
+`ruff check .` reported 84 pre-existing errors outside retrieval; `mypy` reported 33
+pre-existing errors in normalization/evaluation; `git diff --check` passed. The fixed F2
+formula remains unchanged, with a current-gold theoretical ceiling of `0.476190476190476`.
+
 ## Final Evidence Contract
 
 The Day-8 handoff must contain:

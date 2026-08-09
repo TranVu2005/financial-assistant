@@ -688,6 +688,14 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
   > - **By Intent:** Lookup (Recall@10=0.8000, F2@10=0.2857) | Compare (Recall@10=0.3500, F2@10=0.1944) | Growth (Recall@10=0.4000, F2@10=0.2222)
   > - **Failures:** 13 zero hits, 3 partial hits, 14 fully matched
   > - **Replay check:** 100% identical SHA-256 for index and evaluation artifacts.
+  >
+  > **BM25 v2 remediation evidence (2026-08-09):** clean committed source imports retrieval
+  > without `normalization`, and two 146,011-document v2 builds/reports are byte-identical.
+  > Gold remains 30 reviewed questions with SHA-256
+  > `13888830E7DDE393BF3ED0E4561C02340912A6F36AB2B32503EF2FB2CFAC63F5`. Clean-source
+  > Recall@10 is `0.8333333`, F2@10 is `0.4034392`, Precision@10 is `0.1366667`, TP `41`;
+  > five HDB/NVL ranking-fragmentation misses remain, so provisional floors Recall `0.8833333`
+  > and F2 `0.4179894` are not met. No gold or query-specific rule was changed.
 
 
 #### Ngày 9 — Dense retrieval

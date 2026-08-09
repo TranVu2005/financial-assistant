@@ -122,6 +122,27 @@ error.
 Use `bm25s` with a fixed Vietnamese-compatible tokenization policy: Unicode NFKC, casefold,
 whitespace/punctuation token boundaries, no stemming, and no language stop-word removal.
 
+## BM25 v2 corpus-bound metric expansion
+
+The BM25 v2 document contract persists structured metric observations alongside the serialized
+text:
+
+```text
+MetricLabelObservation(canonical: str, raw: str | None)
+```
+
+Observations are retained whenever the canonical identity exists, including `raw=None`. Raw
+labels without a canonical identity are excluded. The persisted manifest uses
+`schema_version="bm25-index-v2"`, `builder_version="v2"`, and
+`query_expansion_version="v1"`; v1 indexes require a rebuild and are rejected by the loader.
+
+The query lexicon is derived only from raw/canonical pairs observed in the locked corpus. An
+alias mapping to more than one canonical metric is excluded. Expansion matches complete token
+sequences, chooses the longest non-overlapping match, and merges canonical tokens with stable
+deduplication. `RetrievalTrace.metric_expansions` records the alias, canonical metric, and only
+the added tokens that are present in the index vocabulary. Retrieval has no runtime dependency
+on `financial_report_qa.normalization`.
+
 ## Query and ranking flow
 
 ```text
@@ -178,6 +199,36 @@ artifact integrity failures.
 
 Do not report real-corpus metrics when the 30 reviewed questions are absent. Synthetic fixtures
 may verify code behavior but cannot satisfy the Day 8 output.
+
+## 2026-08-09 remediation evidence
+
+The clean committed snapshot at `4ee2fa6` imported `RetrievalService` and passed 45 focused
+retrieval tests, Ruff, and mypy. Two independent real-data BM25 v2 builds used lock
+`data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json`, fingerprint
+`37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f`, and 146,011 documents.
+Their seven artifact files had zero hash differences; the manifest hash was
+`B6007B13301E62E259C86BF23FE8ACC1014EB51E44D7E7E9B86A724DDB2E8484` and the document hash was
+`b1206d17e7a870da727fd4ec70bb06bc707ede14de6641814ce1dfba418b7dd6`.
+
+The reviewed gold file `data/qa/retrieval-gold-v1.jsonl` validated 30 questions (10 lookup,
+10 compare, 10 growth; 10 companies; 18 multi-table) and retained SHA-256
+`13888830E7DDE393BF3ED0E4561C02340912A6F36AB2B32503EF2FB2CFAC63F5`. Reports from
+`artifacts/evaluations/remediation-v2-a/` and `remediation-v2-b/` were byte-identical:
+JSON SHA-256 `70280CC6A277128F1F9C7CC05A5C6C96AEEDA3C62D4FF40C1BE150285F6E2AE9` and Markdown
+SHA-256 `349F9927D9D5654F07E75B91A8ED58F0911EBCC07303D266B9B6F95136E28374`.
+
+Observed clean-source macro metrics were Precision@10 `0.1366667`, Recall@10 `0.8333333`,
+F2@10 `0.4034392`, and 41 true positives. By intent: lookup Recall/F2 `0.9000/0.3214`,
+compare `0.8000/0.4444`, growth `0.8000/0.4444`. There were five `zero_gold_hits`, zero
+partial hits, and no `no_eligible_documents` or `no_index_tokens` failures. The misses are
+HDB/NVL ranking-fragmentation cases with matching metadata and metric expansions; no gold or
+query-ID rule was changed. Therefore the remediation evidence is reproducible but does not meet
+the provisional Recall/F2 floors `0.8833333/0.4179894`.
+
+The fixed metric contract remains `precision=TP/10`, `recall=TP/|gold|`, and
+`F2=5PR/(4P+R)`. For the current gold cardinalities the theoretical macro-F2 ceiling is
+`0.476190476190476`; changing that formula or the Day-14 target requires a separate versioned
+design decision.
 
 ## Delivery split
 
