@@ -38,6 +38,7 @@ def _documents() -> tuple[TableDocument, ...]:
                 line_start=1,
                 line_end=3,
             ),
+            metric_labels=(MetricLabelObservation(canonical="net_revenue", raw=None),),
         ),
         TableDocument(
             table_id=table_b,
@@ -227,6 +228,38 @@ def test_persisted_index_manifest_hashes_exact_emitted_artifacts(tmp_path: Path)
     for relative_path, expected_hash in manifest["artifact_sha256"].items():
         actual_hash = hashlib.sha256((output_dir / relative_path).read_bytes()).hexdigest()
         assert actual_hash == expected_hash
+    loaded = load_bm25_index(output_dir, release_lock_sha256=release_lock_sha256)
+    assert loaded.documents[0].metric_labels == index.documents[0].metric_labels
+    assert loaded.manifest.schema_version == "bm25-index-v2"
+    assert loaded.manifest.query_expansion_version == "v1"
+
+
+def test_loader_rejects_v1_manifest_before_reading_bm25_artifacts(tmp_path: Path) -> None:
+    index = build_bm25_index(_documents(), dataset_fingerprint="f" * 64)
+    output_dir = tmp_path / "index"
+    save_bm25_index(index, output_dir)
+    manifest_path = output_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = "bm25-index-v1"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unsupported BM25 index schema; rebuild the index"):
+        load_bm25_index(output_dir)
+
+
+@pytest.mark.parametrize("manifest_payload", ([], None, "not-an-object"))
+def test_loader_rejects_non_object_manifest_before_reading_artifacts(
+    tmp_path: Path, manifest_payload: object
+) -> None:
+    index = build_bm25_index(_documents(), dataset_fingerprint="f" * 64)
+    output_dir = tmp_path / "index"
+    save_bm25_index(index, output_dir)
+    (output_dir / "manifest.json").write_text(
+        json.dumps(manifest_payload), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="BM25 index manifest must be a JSON object"):
+        load_bm25_index(output_dir)
 
 
 def test_loader_rejects_artifact_corruption_before_bm25_load(tmp_path: Path) -> None:

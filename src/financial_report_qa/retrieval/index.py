@@ -159,9 +159,12 @@ def load_bm25_index(
     index_dir: Path, *, release_lock_sha256: str | None = None
 ) -> BM25Index:
     """Verify every persisted artifact before loading executable BM25 state."""
-    manifest = BM25IndexManifest.model_validate_json(
-        (index_dir / "manifest.json").read_text(encoding="utf-8")
-    )
+    manifest_payload = json.loads((index_dir / "manifest.json").read_text(encoding="utf-8"))
+    if not isinstance(manifest_payload, dict):
+        raise ValueError("BM25 index manifest must be a JSON object")
+    if manifest_payload.get("schema_version") != "bm25-index-v2":
+        raise ValueError("unsupported BM25 index schema; rebuild the index")
+    manifest = BM25IndexManifest.model_validate(manifest_payload)
     if (
         release_lock_sha256 is not None
         and manifest.release_lock_sha256 != release_lock_sha256
