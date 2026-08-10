@@ -9,8 +9,9 @@ import time
 from collections.abc import Sequence
 from json import JSONDecodeError
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
+import faiss
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from financial_report_qa.core.errors import (
@@ -68,6 +69,8 @@ class _DenseBuildObservation(BaseModel):
     dataset_fingerprint: str
     build_seconds: float = Field(ge=0)
     index_byte_size: int = Field(ge=0)
+    faiss_device: Literal["cpu", "cuda"]
+    faiss_gpu_count: int = Field(ge=0)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -93,6 +96,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     dense_index.add_argument("--output-root", type=Path, required=True)
     dense_index.add_argument("--observation-path", type=Path, required=True)
+    dense_index.add_argument("--faiss-device", choices=("cpu", "cuda"), default="cpu")
     dense_index.add_argument("--local-files-only", action="store_true")
     dense_evaluation = commands.add_parser("evaluate-dense")
     dense_evaluation.add_argument("--release-lock", type=Path, required=True)
@@ -141,7 +145,12 @@ def _load_build_observation(
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise DenseArtifactError("Dense build observation must be a JSON object")
-    observation = _DenseBuildObservation.model_validate(payload)
+    try:
+        observation = _DenseBuildObservation.model_validate(payload)
+    except ValidationError as exc:
+        raise DenseArtifactError(
+            "Dense build observation is missing required FAISS device metadata; rebuild the index"
+        ) from exc
     if (
         observation.encoder_name != encoder_name
         or observation.encoder_spec_sha256 != encoder_hash
@@ -196,22 +205,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "build-dense-index":
             encoder_name = cast(EncoderName, args.encoder)
+            faiss_device = cast(Literal["cpu", "cuda"], args.faiss_device)
             encoder = _load_dense_encoder(encoder_name, local_files_only=args.local_files_only)
             corpus = _checked_dense_corpus(
                 args.corpus_dir,
                 release_fingerprint=release.dataset_fingerprint,
                 lock_sha256=release.lock_sha256,
             )
+            get_num_gpus = getattr(faiss, "get_num_gpus", None)
+            faiss_gpu_count = get_num_gpus() if callable(get_num_gpus) else 0
+
+            def report_progress(encoded: int, total: int, elapsed: float) -> None:
+                rate = encoded / elapsed if elapsed > 0 else 0.0
+                print(
+                    f"dense-build: {encoded}/{total} vectors, {elapsed:.1f}s, "
+                    f"{rate:.1f} vectors/s",
+                    flush=True,
+                )
+
             started = time.perf_counter()
-            built = build_dense_index(corpus, encoder)
+            built = build_dense_index(
+                corpus,
+                encoder,
+                faiss_device=faiss_device,
+                progress=report_progress,
+            )
             target = args.output_root / f"{encoder_name}-{encoder_spec_sha256(encoder.spec)[:12]}"
             save_dense_index(built, target)
+            print("dense-build: complete", flush=True)
             observation = _DenseBuildObservation(
                 encoder_name=encoder_name,
                 encoder_spec_sha256=encoder_spec_sha256(encoder.spec),
                 dataset_fingerprint=release.dataset_fingerprint,
                 build_seconds=time.perf_counter() - started,
                 index_byte_size=(target / "index.faiss").stat().st_size,
+                faiss_device=faiss_device,
+                faiss_gpu_count=faiss_gpu_count,
             )
             write_text_atomic(
                 args.observation_path,

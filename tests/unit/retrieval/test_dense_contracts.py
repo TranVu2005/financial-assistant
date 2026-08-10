@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from financial_report_qa.retrieval.contracts import TableMetadata
+from financial_report_qa.retrieval.cli import _parser
 from financial_report_qa.retrieval.dense_artifacts import canonical_json_bytes, sha256_bytes
 from financial_report_qa.retrieval.dense_contracts import (
     DenseEncoderSpec,
@@ -63,3 +64,26 @@ def test_canonical_json_hash_is_key_order_independent() -> None:
     assert sha256_bytes(canonical_json_bytes({"b": 2, "a": 1})) == sha256_bytes(
         canonical_json_bytes({"a": 1, "b": 2})
     )
+
+
+def test_build_dense_index_parser_accepts_cuda_faiss_device() -> None:
+    """CUDA selection must be available through the dense-index CLI boundary."""
+    args = _parser().parse_args(
+        [
+            "build-dense-index",
+            "--release-lock",
+            "fixture-lock",
+            "--corpus-dir",
+            "corpus",
+            "--encoder",
+            "bge-m3",
+            "--output-root",
+            "indexes",
+            "--observation-path",
+            "observation.json",
+            "--faiss-device",
+            "cuda",
+        ]
+    )
+
+    assert args.faiss_device == "cuda"

@@ -216,11 +216,16 @@ def test_day9_dense_cli_fixture_lifecycle_is_network_free_and_replayable(
                     str(index_root),
                     "--observation-path",
                     str(observation),
+                    "--faiss-device",
+                    "cpu",
                     "--local-files-only",
                 ]
             )
             == 0
         )
+        observed = json.loads(observation.read_text(encoding="utf-8"))
+        assert observed["faiss_device"] == "cpu"
+        assert observed["faiss_gpu_count"] == 0
         index_dir = next(index_root.glob(f"{encoder}-*"))
         report_path = tmp_path / f"{label}-report.json"
         assert (
@@ -300,4 +305,7 @@ def test_day9_dense_cli_fixture_lifecycle_is_network_free_and_replayable(
         )
         == 2
     )
-    assert "retrieval error:" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert "retrieval error:" in captured.err
+    assert "dense-build: 3/3" in captured.out
+    assert "dense-build: complete" in captured.out
