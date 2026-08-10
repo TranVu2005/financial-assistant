@@ -31,9 +31,9 @@ Nếu chưa có distro WSL2, chạy `wsl.exe --install -d Ubuntu`, khởi độn
 cầu, rồi mở Ubuntu. Trong Ubuntu/WSL2, tạo môi trường Python 3.11 và cài gói Linux chính thức:
 
 ```bash
-conda create -n financial-faiss-gpu python=3.11 -y
-conda activate financial-faiss-gpu
-conda install -y -c pytorch -c nvidia -c conda-forge faiss-gpu=1.15.0
+~/.local/bin/micromamba create -y -r ~/.local/share/micromamba \
+  -n financial-faiss-gpu -c pytorch -c nvidia -c conda-forge \
+  python=3.11 faiss-gpu=1.10.0 pip
 ```
 
 `pyproject.toml` hiện khai báo `faiss-cpu` cho môi trường Windows. Không chạy `uv sync` hoặc
@@ -41,13 +41,20 @@ conda install -y -c pytorch -c nvidia -c conda-forge faiss-gpu=1.15.0
 `faiss-gpu` bằng `faiss-cpu`. Cài các dependency còn lại và project không dependency như sau:
 
 ```bash
-cd /mnt/d/GitHub/financial-assistant/.worktrees/day9-dense
-python -m pip install --upgrade pip uv
-uv export --frozen --no-dev --no-emit-project --no-hashes \
-  | grep -v '^faiss-cpu==' > /tmp/financial-assistant-gpu-requirements.txt
-python -m pip install -r /tmp/financial-assistant-gpu-requirements.txt
-python -m pip install --no-deps -e .
+cd /mnt/d/GitHub/financial-assistant
+GPU_ENV=~/.local/share/micromamba/envs/financial-faiss-gpu/bin
+"$GPU_ENV/python" -m pip install 'uv==0.11.28'
+"$GPU_ENV/uv" export --frozen --no-dev --no-emit-project --no-hashes \
+  | grep -vE '^(faiss-cpu|numpy|torch|nvidia-|triton|cuda-)' \
+  > ~/.cache/financial-assistant/gpu-requirements.txt
+"$GPU_ENV/python" -m pip install --no-deps --index-url https://download.pytorch.org/whl/cpu \
+  'torch==2.13.0+cpu'
+"$GPU_ENV/python" -m pip install --no-deps -r ~/.cache/financial-assistant/gpu-requirements.txt
+"$GPU_ENV/python" -m pip install --no-deps -e .
 ```
+
+Giữ NumPy `1.26.4` do Conda cài cùng `faiss-gpu`: binary FAISS 1.10.0 không tương thích với
+NumPy 2.x. Torch chạy CPU trong Day 9; CUDA chỉ dành cho FAISS index build.
 
 ## Preflight GPU
 
@@ -55,9 +62,9 @@ Chạy trong WSL2 sau khi kích hoạt environment. Lệnh phải in Python, phi
 `faiss.get_num_gpus()`, và driver CUDA; dừng tại đây nếu số GPU không dương.
 
 ```bash
-cd /mnt/d/GitHub/financial-assistant/.worktrees/day9-dense
-conda activate financial-faiss-gpu
-python -c "import sys, faiss; print('Python:', sys.version); print('FAISS:', faiss.__version__); print('FAISS GPUs:', faiss.get_num_gpus())"
+cd /mnt/d/GitHub/financial-assistant
+GPU_ENV=~/.local/share/micromamba/envs/financial-faiss-gpu/bin
+"$GPU_ENV/python" -c "import sys, faiss, numpy; print('Python:', sys.version); print('FAISS:', faiss.__version__); print('NumPy:', numpy.__version__); print('FAISS GPUs:', faiss.get_num_gpus()); assert faiss.get_num_gpus() > 0"
 nvidia-smi
 ```
 
@@ -99,9 +106,8 @@ $fingerprint = '37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f
 $lockPath = 'data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json'
 $log = 'artifacts/evaluations/day9/bge-m3-faiss-gpu-build.log'
 New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
-& wsl.exe bash -lc "cd /mnt/d/GitHub/financial-assistant/.worktrees/day9-dense && \
-  source ~/miniconda3/etc/profile.d/conda.sh && conda activate financial-faiss-gpu && \
-  PYTHONPATH=src python -u -m financial_report_qa.cli retrieval build-dense-index \
+& wsl.exe bash -lc "cd /mnt/d/GitHub/financial-assistant && \
+  ~/.local/share/micromamba/envs/financial-faiss-gpu/bin/financial-report-qa retrieval build-dense-index \
   --release-lock $lockPath \
   --corpus-dir data/indexes/dense-day9-a/$fingerprint/corpus \
   --encoder bge-m3 \
