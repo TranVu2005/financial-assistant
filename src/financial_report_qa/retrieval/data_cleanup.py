@@ -17,9 +17,15 @@ _CANDIDATE_PATHS = (
     Path("data/processed/release_v2_7fc5d5d57bf6"),
     Path("data/processed/v2_remediated"),
 )
-_TEXT_ARTIFACT_ROOTS = ("artifacts", "docs", ".superpowers")
-_TEXT_SUFFIXES = {".json", ".jsonl", ".log", ".md", ".txt", ".yaml", ".yml"}
 _CANDIDATE_DATA_PATHS = tuple(path.relative_to("data") for path in _CANDIDATE_PATHS)
+_SKIPPED_ARTIFACT_DIRECTORIES = {
+    ".cache",
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "__pycache__",
+}
 
 
 @dataclass(frozen=True)
@@ -50,31 +56,36 @@ def _inside(path: Path, parent: Path) -> bool:
 
 
 def _artifact_references(repo_root: Path, candidate: Path) -> list[Path]:
-    """Return readable Day 9 text artifacts mentioning a candidate directory name."""
+    """Return any readable repository text artifact mentioning a candidate name."""
     references: list[Path] = []
-    artifact_roots = (
-        repo_root,
-        *(repo_root / relative_root for relative_root in _TEXT_ARTIFACT_ROOTS),
-    )
-    for artifact_root in artifact_roots:
-        if not artifact_root.exists():
-            continue
-        try:
-            paths = (
-                artifact_root.iterdir()
-                if artifact_root == repo_root
-                else artifact_root.rglob("*")
-            )
-            for path in paths:
-                if not path.is_file() or path.suffix.lower() not in _TEXT_SUFFIXES:
+    raw_root = repo_root / "data/raw"
+    quarantine_root = repo_root / "data/quarantine"
+    for directory, directories, filenames in os.walk(repo_root, topdown=True):
+        current = Path(directory)
+        directories[:] = [
+            name
+            for name in directories
+            if name not in _SKIPPED_ARTIFACT_DIRECTORIES
+            and not (current / name).is_symlink()
+            and not _inside((current / name).resolve(strict=False), candidate)
+            and not _inside((current / name).resolve(strict=False), raw_root)
+            and not _inside((current / name).resolve(strict=False), quarantine_root)
+        ]
+        for filename in filenames:
+            path = current / filename
+            if path.is_symlink() or _inside(path.resolve(strict=False), candidate):
+                continue
+            try:
+                with path.open("rb") as artifact:
+                    sample = artifact.read(4096)
+                if b"\0" in sample:
                     continue
-                try:
-                    if candidate.name in path.read_text(encoding="utf-8"):
-                        references.append(path)
-                except (OSError, UnicodeDecodeError) as exc:
-                    raise OSError(f"cannot read reference artifact {path}: {exc}") from exc
-        except OSError:
-            raise
+                sample.decode("utf-8")
+                content = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if candidate.name in content:
+                references.append(path)
     return references
 
 
@@ -118,11 +129,6 @@ def plan_day9_cleanup(repo_root: Path) -> CleanupPlan:
     for relative_path in _CANDIDATE_PATHS:
         candidate = resolved_root / relative_path
         try:
-            if not candidate.exists():
-                entries.append(
-                    CleanupEntry(candidate, "candidate absent", "missing", 0, "path does not exist")
-                )
-                continue
             if candidate.is_symlink():
                 entries.append(
                     CleanupEntry(
@@ -132,6 +138,11 @@ def plan_day9_cleanup(repo_root: Path) -> CleanupPlan:
                         0,
                         "candidate must be an immutable repository-relative path",
                     )
+                )
+                continue
+            if not candidate.exists():
+                entries.append(
+                    CleanupEntry(candidate, "candidate absent", "missing", 0, "path does not exist")
                 )
                 continue
             resolved_candidate = candidate.resolve(strict=True)

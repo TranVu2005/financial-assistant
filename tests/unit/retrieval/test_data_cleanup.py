@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from financial_report_qa.retrieval.cli import main as retrieval_main
 from financial_report_qa.retrieval.data_cleanup import (
     CleanupEntry,
     plan_day9_cleanup,
@@ -57,6 +58,20 @@ def test_plan_blocks_candidate_referenced_by_day9_report(tmp_path: Path) -> None
     assert report.relative_to(tmp_path).as_posix() in entry.detail
 
 
+def test_plan_blocks_candidate_referenced_by_nested_source_artifact(tmp_path: Path) -> None:
+    """Skipping nested text artifacts could approve a release still named by source evidence."""
+    _write(tmp_path / "data/processed/release_v2_37a61be7aeba/manifest.json", "{}")
+    reference = _write(
+        tmp_path / "src/locked_day9_plan.txt",
+        "release_v2_37a61be7aeba remains required by the locked replay.",
+    )
+
+    entry = _entry_by_name(tmp_path, "release_v2_37a61be7aeba")
+
+    assert entry.status == "blocked"
+    assert reference.relative_to(tmp_path).as_posix() in entry.detail
+
+
 def test_plan_rejects_symlink_candidate_to_protected_raw_data(tmp_path: Path) -> None:
     """Following a candidate symlink could quarantine raw source provenance."""
     raw = _write(tmp_path / "data/raw/source.txt")
@@ -74,6 +89,32 @@ def test_plan_rejects_symlink_candidate_to_protected_raw_data(tmp_path: Path) ->
     assert entry.status == "blocked"
     assert moved == []
     assert raw.exists()
+
+
+def test_broken_symlink_candidate_is_blocked_and_apply_returns_two(tmp_path: Path) -> None:
+    """Checking existence before symlink identity would mislabel a broken link as missing."""
+    candidate = tmp_path / "data/interim/week1_gate_replay"
+    candidate.parent.mkdir(parents=True)
+    try:
+        candidate.symlink_to(tmp_path / "missing-target", target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlinks unavailable in this environment: {exc}")
+
+    entry = _entry_by_name(tmp_path, "week1_gate_replay")
+    exit_code = retrieval_main(
+        [
+            "cleanup-day9-data",
+            "--repo-root",
+            str(tmp_path),
+            "--quarantine-root",
+            str(tmp_path / "data/quarantine/day9-cleanup"),
+            "--apply",
+        ]
+    )
+
+    assert entry.status == "blocked"
+    assert exit_code == 2
+    assert candidate.is_symlink()
 
 
 def test_plan_blocks_unreadable_candidate_without_quarantining_it(tmp_path: Path) -> None:
