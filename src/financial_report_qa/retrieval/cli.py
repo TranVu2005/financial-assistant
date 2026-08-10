@@ -21,6 +21,7 @@ from financial_report_qa.core.errors import (
     RetrievalArtifactError,
     RetrievalInputError,
 )
+from financial_report_qa.retrieval.data_cleanup import plan_day9_cleanup, quarantine_day9_cleanup
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
 from financial_report_qa.retrieval.dense_cache import QueryEmbeddingCache
 from financial_report_qa.retrieval.dense_contracts import EncoderName
@@ -115,6 +116,10 @@ def _parser() -> argparse.ArgumentParser:
     compare.add_argument("--bge-report", type=Path, required=True)
     compare.add_argument("--e5-report", type=Path, required=True)
     compare.add_argument("--output-dir", type=Path, required=True)
+    cleanup = commands.add_parser("cleanup-day9-data")
+    cleanup.add_argument("--repo-root", type=Path, required=True)
+    cleanup.add_argument("--quarantine-root", type=Path, required=True)
+    cleanup.add_argument("--apply", action="store_true")
     return parser
 
 
@@ -171,6 +176,26 @@ def _write_dense_run(run: DenseEvaluationRun, path: Path) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
+        if args.command == "cleanup-day9-data":
+            plan = plan_day9_cleanup(args.repo_root)
+            for entry in plan.entries:
+                print(
+                    json.dumps(
+                        {
+                            "path": str(entry.path),
+                            "reason": entry.reason,
+                            "status": entry.status,
+                            "byte_count": entry.byte_count,
+                            "detail": entry.detail,
+                        },
+                        sort_keys=True,
+                    )
+                )
+            if not args.apply:
+                return 0
+            for destination in quarantine_day9_cleanup(plan, args.quarantine_root):
+                print(json.dumps({"action": "moved", "destination": str(destination)}))
+            return 2 if any(entry.status == "blocked" for entry in plan.entries) else 0
         root = Path.cwd()
         release = resolve_retrieval_release(args.release_lock, repo_root=root)
         if args.command == "build-index":
@@ -336,6 +361,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         JSONDecodeError,
         RuntimeError,
         OSError,
+        ValueError,
     ) as exc:
         print(f"retrieval error: {exc}", file=sys.stderr)
         return 2

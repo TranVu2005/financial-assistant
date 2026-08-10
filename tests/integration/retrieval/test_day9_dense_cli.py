@@ -309,3 +309,54 @@ def test_day9_dense_cli_fixture_lifecycle_is_network_free_and_replayable(
     assert "retrieval error:" in captured.err
     assert "dense-build: 3/3" in captured.out
     assert "dense-build: complete" in captured.out
+
+
+def test_cleanup_day9_data_cli_is_dry_by_default_and_quarantines_on_apply(
+    tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    """Removing --apply gating would mutate the candidate during a dry run."""
+    candidate = tmp_path / "data/interim/week1_gate_attempts"
+    candidate.mkdir(parents=True)
+    (candidate / "attempt.json").write_text("fixture", encoding="utf-8")
+    blocked = tmp_path / "data/interim/week1_gate_replay"
+    blocked.mkdir(parents=True)
+    (blocked / "manifest.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "plan.md").write_text("week1_gate_replay remains locked", encoding="utf-8")
+    quarantine_root = tmp_path / "data/quarantine/day9-cleanup"
+
+    assert (
+        main(
+            [
+                "retrieval",
+                "cleanup-day9-data",
+                "--repo-root",
+                str(tmp_path),
+                "--quarantine-root",
+                str(quarantine_root),
+            ]
+        )
+        == 0
+    )
+    dry_run = capsys.readouterr().out
+    assert '"status": "approved"' in dry_run
+    assert candidate.exists()
+
+    assert (
+        main(
+            [
+                "retrieval",
+                "cleanup-day9-data",
+                "--repo-root",
+                str(tmp_path),
+                "--quarantine-root",
+                str(quarantine_root),
+                "--apply",
+            ]
+        )
+        == 2
+    )
+    applied = capsys.readouterr().out
+    assert '"action": "moved"' in applied
+    assert not candidate.exists()
+    assert blocked.exists()
+    assert any(path.name == "week1_gate_attempts" for path in quarantine_root.rglob("*"))
