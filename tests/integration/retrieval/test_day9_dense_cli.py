@@ -279,6 +279,28 @@ def test_day9_dense_cli_fixture_lifecycle_is_network_free_and_replayable(
     assert loaded == ["bge-m3", "bge-m3", "multilingual-e5-small", "multilingual-e5-small"]
 
     bge_index = next(index_root.glob("bge-m3-*"))
+    assert (
+        main(
+            [
+                "retrieval",
+                "build-dense-index",
+                "--release-lock",
+                "fixture-lock",
+                "--corpus-dir",
+                str(corpus_dir),
+                "--encoder",
+                "bge-m3",
+                "--output-root",
+                str(index_root),
+                "--observation-path",
+                str(tmp_path / "bge-observation.json"),
+                "--faiss-device",
+                "cuda",
+                "--local-files-only",
+            ]
+        )
+        == 2
+    )
     (bge_index / "index.faiss").write_bytes((bge_index / "index.faiss").read_bytes() + b"x")
     assert (
         main(
@@ -307,6 +329,7 @@ def test_day9_dense_cli_fixture_lifecycle_is_network_free_and_replayable(
     )
     captured = capsys.readouterr()
     assert "retrieval error:" in captured.err
+    assert "Refusing CUDA build into existing dense index target" in captured.err
     assert "dense-build: 3/3" in captured.out
     assert "dense-build: complete" in captured.out
 

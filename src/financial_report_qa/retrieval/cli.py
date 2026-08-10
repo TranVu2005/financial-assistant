@@ -248,6 +248,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     flush=True,
                 )
 
+            target = args.output_root / f"{encoder_name}-{encoder_spec_sha256(encoder.spec)[:12]}"
+            if faiss_device == "cuda" and target.exists():
+                raise DenseArtifactError(
+                    "Refusing CUDA build into existing dense index target; "
+                    "remove the target before rebuilding"
+                )
             started = time.perf_counter()
             built = build_dense_index(
                 corpus,
@@ -255,7 +261,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 faiss_device=faiss_device,
                 progress=report_progress,
             )
-            target = args.output_root / f"{encoder_name}-{encoder_spec_sha256(encoder.spec)[:12]}"
             save_dense_index(built, target)
             print("dense-build: complete", flush=True)
             observation = _DenseBuildObservation(
