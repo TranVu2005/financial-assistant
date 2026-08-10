@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from financial_report_qa.retrieval.contracts import TableMetadata
 from financial_report_qa.retrieval.cli import _parser
+from financial_report_qa.retrieval.contracts import TableMetadata
 from financial_report_qa.retrieval.dense_artifacts import canonical_json_bytes, sha256_bytes
 from financial_report_qa.retrieval.dense_contracts import (
     DenseEncoderSpec,
