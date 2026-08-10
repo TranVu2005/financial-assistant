@@ -264,3 +264,9 @@ indexes and JSON/Markdown reports are byte-identical. Observed clean-source macr
 `0.8333333` and F2@10 is `0.4034392` (five ranking misses remain), below the provisional floors;
 gold and query-specific rules were not changed. Full working-tree pytest is `556 passed, 1 skipped`;
 full Ruff (84 errors) and mypy (33 errors) retain pre-existing non-retrieval failures.
+
+## Day 9 Dense Retrieval
+
+Runbook cho BGE-M3/FAISS GPU, cleanup fail-closed và theo dõi log: [docs/runbooks/day9-faiss-gpu.md](docs/runbooks/day9-faiss-gpu.md).
+Native Windows vẫn CPU-only với `faiss-cpu`; FAISS GPU yêu cầu WSL2/Linux hoặc tự build FAISS từ
+source với CUDA.
