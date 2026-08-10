@@ -4,7 +4,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import faiss
 import numpy as np
+from pytest import MonkeyPatch
 
 from financial_report_qa.retrieval.contracts import TableDocument, TableMetadata
 from financial_report_qa.retrieval.dense_contracts import DenseEncoderSpec
@@ -72,3 +74,48 @@ def test_dense_index_batches_and_persists_vectors(tmp_path: Path) -> None:
     assert encoder.document_batches == [2, 1]
     assert loaded.faiss_index.ntotal == 3
     assert loaded.faiss_index.d == 2
+
+
+def test_cuda_build_uses_gpu_then_returns_cpu_index(monkeypatch: MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def make_resources() -> object:
+        calls.append("resources")
+        return object()
+
+    def move_to_gpu(resources: object, device: int, index: faiss.IndexFlatIP) -> faiss.IndexFlatIP:
+        calls.append(f"to_gpu:{device}")
+        return index
+
+    def move_to_cpu(index: faiss.IndexFlatIP) -> faiss.IndexFlatIP:
+        calls.append("to_cpu")
+        return index
+
+    monkeypatch.setattr(
+        faiss, "StandardGpuResources", make_resources, raising=False
+    )
+    monkeypatch.setattr(
+        faiss,
+        "index_cpu_to_gpu",
+        move_to_gpu,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        faiss,
+        "index_gpu_to_cpu",
+        move_to_cpu,
+        raising=False,
+    )
+    monkeypatch.setattr(faiss, "get_num_gpus", lambda: 1, raising=False)
+    encoder = FakeEncoder(
+        approved_encoder_spec("multilingual-e5-small").model_copy(
+            update={"dimension": 2, "batch_size": 2}
+        )
+    )
+
+    built = build_dense_index(_corpus(), encoder, faiss_device="cuda")
+
+    assert calls == ["resources", "to_gpu:0", "to_cpu"]
+    assert encoder.document_batches == [2, 1]
+    assert isinstance(built.faiss_index, faiss.IndexFlatIP)
+    assert built.faiss_index.ntotal == 3

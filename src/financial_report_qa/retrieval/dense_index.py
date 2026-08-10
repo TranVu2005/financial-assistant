@@ -6,8 +6,11 @@ import json
 import platform
 import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic
+from typing import Literal, cast
 
 import faiss
 import numpy as np
@@ -18,6 +21,8 @@ from financial_report_qa.retrieval.dense_artifacts import file_sha256, write_tex
 from financial_report_qa.retrieval.dense_contracts import DenseIndexManifest
 from financial_report_qa.retrieval.dense_corpus import DenseCorpus
 from financial_report_qa.retrieval.dense_encoder import DenseEncoder, encoder_spec_sha256
+
+ProgressCallback = Callable[[int, int, float], None]
 
 
 @dataclass(frozen=True)
@@ -37,8 +42,39 @@ def _vectors(values: np.ndarray, rows: int, dimension: int) -> np.ndarray:
     return np.ascontiguousarray(values)
 
 
-def build_dense_index(corpus: DenseCorpus, encoder: DenseEncoder) -> DenseIndex:
-    index = faiss.IndexFlatIP(encoder.spec.dimension)
+def build_dense_index(
+    corpus: DenseCorpus,
+    encoder: DenseEncoder,
+    *,
+    faiss_device: Literal["cpu", "cuda"] = "cpu",
+    progress: ProgressCallback | None = None,
+) -> DenseIndex:
+    cpu_index = faiss.IndexFlatIP(encoder.spec.dimension)
+    index: faiss.Index = cpu_index
+    if faiss_device == "cpu":
+        pass
+    elif faiss_device == "cuda":
+        required_apis = ("StandardGpuResources", "index_cpu_to_gpu", "index_gpu_to_cpu")
+        missing_apis = [name for name in required_apis if not callable(getattr(faiss, name, None))]
+        get_num_gpus = getattr(faiss, "get_num_gpus", None)
+        if not callable(get_num_gpus):
+            missing_apis.append("get_num_gpus")
+        if missing_apis:
+            raise DenseArtifactError(
+                f"FAISS CUDA support unavailable: missing APIs: {', '.join(missing_apis)}"
+            )
+        assert callable(get_num_gpus)
+        if get_num_gpus() <= 0:
+            raise DenseArtifactError(
+                "FAISS CUDA support unavailable: faiss.get_num_gpus() returned 0"
+            )
+        resources = faiss.StandardGpuResources()
+        index = faiss.index_cpu_to_gpu(resources, 0, cpu_index)
+    else:
+        raise DenseArtifactError(f"Unsupported FAISS device: {faiss_device}")
+
+    encoded = 0
+    started_at = monotonic()
     for start in range(0, len(corpus.documents), encoder.spec.batch_size):
         documents = corpus.documents[start : start + encoder.spec.batch_size]
         index.add(
@@ -48,9 +84,14 @@ def build_dense_index(corpus: DenseCorpus, encoder: DenseEncoder) -> DenseIndex:
                 encoder.spec.dimension,
             )
         )
+        encoded += len(documents)
+        if progress is not None:
+            progress(encoded, len(corpus.documents), monotonic() - started_at)
+    if faiss_device == "cuda":
+        index = cast(faiss.IndexFlatIP, faiss.index_gpu_to_cpu(index))
     return DenseIndex(
         corpus,
-        index,
+        cast(faiss.IndexFlatIP, index),
         DenseIndexManifest(
             dataset_fingerprint=corpus.manifest.dataset_fingerprint,
             release_lock_sha256=corpus.manifest.release_lock_sha256,
