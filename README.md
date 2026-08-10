@@ -270,3 +270,77 @@ full Ruff (84 errors) and mypy (33 errors) retain pre-existing non-retrieval fai
 Runbook cho BGE-M3/FAISS GPU, cleanup fail-closed và theo dõi log: [docs/runbooks/day9-faiss-gpu.md](docs/runbooks/day9-faiss-gpu.md).
 Native Windows vẫn CPU-only với `faiss-cpu`; FAISS GPU yêu cầu WSL2/Linux hoặc tự build FAISS từ
 source với CUDA.
+
+### GPU-accelerated encoding (2026-08-10)
+
+`SentenceTransformerDenseEncoder` mặc định `device="cpu"` để giữ reproducibility theo Global
+Constraints. CPU benchmark thật trên mẫu 400 tài liệu đo được `multilingual-e5-small` 36.5
+docs/s (ETA ~1.1h/lần build) và `bge-m3` chỉ 4.9 docs/s (ETA ~8.2h/lần build) — với 2 lần build
+mỗi encoder theo yêu cầu Task 7, tổng ~18.7h CPU thuần. Để giữ trong ngân sách 5–10h/ngày, đã mở
+rộng có kiểm soát: `DenseEncoderSpec.device` nhận thêm `"cuda"`, CLI `build-dense-index` và
+`evaluate-dense` có cờ `--encoder-device {cpu,cuda}` (mặc định vẫn `cpu`, không đổi hành vi cũ),
+và khi `device="cuda"` thì `SentenceTransformerDenseEncoder` bật
+`torch.backends.cudnn.deterministic=True`, `cudnn.benchmark=False`,
+`torch.use_deterministic_algorithms(True)` cùng biến môi trường
+`CUBLAS_WORKSPACE_CONFIG=:4096:8` để giữ A/B replay bit-identical trên cùng GPU.
+
+Môi trường build: conda env `financial-dense-gpu` (tách biệt hoàn toàn khỏi `financial-faiss-gpu`
+đã verified ở trên) với `torch==2.6.0+cu124` — cần `torch>=2.6` vì `transformers` mới chặn
+`torch.load` cho checkpoint không phải safetensors (CVE-2025-32434) và snapshot BGE-M3 pinned chỉ
+có `pytorch_model.bin`. FAISS trong env này là `faiss-cpu==1.15.0` (không cần FAISS GPU vì
+`index.add()` không phải điểm nghẽn; điểm nghẽn là encode).
+
+**Determinism thực nghiệm** (mẫu 200 tài liệu, 2 tiến trình Python độc lập):
+
+| Encoder | docs/s (GPU) | SHA-256 vectors (2 lần chạy) |
+|---|---:|---|
+| multilingual-e5-small | 169 | `fe06042879872573bb2b68349961495ee755860b9bf4345cd1c516df0da6f4fd` (khớp) |
+| bge-m3 | 51–63 | `7492b7e908f6eed2f65e9b579c136b53193056d2cd24b80c82f9e83459d205e7` (khớp) |
+
+**Build thật trên corpus đầy đủ (146,011 tài liệu, A và B độc lập):**
+
+```bash
+uv run --frozen --no-sync financial-report-qa retrieval build-dense-corpus --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json --output-root data/indexes/dense-day9-a
+uv run --frozen --no-sync financial-report-qa retrieval build-dense-corpus --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json --output-root data/indexes/dense-day9-b
+financial-report-qa retrieval build-dense-index --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json --corpus-dir data/indexes/dense-day9-a/<fp>/corpus --encoder bge-m3 --output-root data/indexes/dense-day9-a/<fp>/encoders --observation-path artifacts/evaluations/day9/bge-build.json --faiss-device cpu --encoder-device cuda --local-files-only
+```
+
+(lặp lại cho corpus B và cho `multilingual-e5-small`, cùng cờ `--encoder-device cuda`)
+
+| Encoder | Revision | Dim | Build A/B time | Index size | index.faiss SHA-256 (A=B) |
+|---|---|---:|---:|---:|---|
+| bge-m3 | `5617a9f61b028005a4858fdac845db406aefb181` | 1024 | 2557s / 2600s (~43 phút) | 598,061,101 bytes | `089a5aed2e70890c5c73c7a3dcc2de0e366fe297197481e520f05380e7ad4f26` |
+| multilingual-e5-small | `614241f622f53c4eeff9890bdc4f31cfecc418b3` | 384 | 331s / 343s (~5.6 phút) | 224,272,941 bytes | `3da3c40cbd11c11b1b6786f794afaf995f7cbfe49e0b10e52ade33038e20b346` |
+
+`manifest.json` A/B cũng byte-identical: bge-m3
+`c82ccaaab3bc36ffd1a9a17af52510812e56be7c964ab60c9d2ea3a5e5f1ab8f`, multilingual-e5-small
+`010184c2cb8d431cb5c365bbafefad0b4ee3d862dc7aa384645798d6942e5c96`.
+
+**Evaluate cold/warm (30 câu gold, 2 lần mỗi encoder):** mọi report có đúng 30 cold miss + 30 warm
+hit, metric cold==warm tuyệt đối, không score vô hạn/NaN,
+`deterministic_projection(A) == deterministic_projection(B)` cho cả hai encoder.
+
+| Encoder | Cold p50/p95 | Warm p50/p95 | Precision@10 | Recall@10 | F2@10 |
+|---|---:|---:|---:|---:|---:|
+| bm25-v3 (reference) | — | — | 0.146667 | 0.883333 | 0.431217 |
+| bge-m3 | 0.114/0.212s | 0.071/0.091s | 0.033333 | 0.250000 | 0.105820 |
+| multilingual-e5-small | 0.126/0.150s | 0.073/0.098s | 0.036667 | 0.316667 | 0.123016 |
+
+**Cả hai dense encoder đều thua rõ rệt BM25 v3 trên tập gold 30 câu hiện tại** (F2@10 dense chỉ
+bằng ~24–29% của BM25). Trong 3 câu BM25 v3 "zero gold hits", `multilingual-e5-small` phục hồi
+đúng 1 câu (`retq_7ea882a1f84e4570db63f91b3174bd7a21ec251f763a8d7d68b5b0d9fb2aca0c`) thành full
+hit; `bge-m3` không phục hồi câu nào. Không sửa gold/câu hỏi/filter để có kết quả này.
+
+Lệnh so sánh và xác minh:
+
+```bash
+uv run --frozen --no-sync financial-report-qa retrieval evaluate-dense --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json --corpus-dir data/indexes/dense-day9-a/<fp>/corpus --index-dir data/indexes/dense-day9-a/<fp>/encoders/bge-m3-795294d329d0 --encoder bge-m3 --encoder-device cuda --gold-path data/qa/retrieval-gold-v1.jsonl --cache-dir data/indexes/dense-query-cache/day9-a-bge --observation-path artifacts/evaluations/day9/bge-build.json --output-path artifacts/evaluations/day9/bge-report.json
+uv run --frozen --no-sync financial-report-qa retrieval compare-day9 --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json --bm25-report artifacts/evaluations/day9/bm25-v3/retrieval-day8-37a61be7aebd.json --bge-report artifacts/evaluations/day9/bge-report.json --e5-report artifacts/evaluations/day9/e5-report.json --output-dir artifacts/evaluations/day9
+```
+
+**Verification:** `pytest -q tests/unit/retrieval tests/integration/retrieval` → `84 passed, 3
+skipped`; full working-tree `pytest -q` → `596 passed, 4 skipped`; full `ruff check .` → 102
+errors, 0 trong file Day 9 (`dense_contracts.py`, `dense_encoder.py`, `cli.py`, test files sửa
+đổi đều sạch riêng lẻ); full `mypy` → 33 errors, 0 trong file Day 9; `git diff --check` sạch. Số
+lỗi ruff/mypy toàn repo là nợ kỹ thuật có sẵn ở `notebooks/`, `evaluation/week1_*`,
+`normalization/service.py` — không liên quan đến retrieval/Day 9.

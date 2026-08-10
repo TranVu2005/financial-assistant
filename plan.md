@@ -713,10 +713,30 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 9 — Dense retrieval
 
-- [ ] Sinh embedding theo lô, lưu model/version và fingerprint corpus.
-- [ ] Index FAISS CPU; ánh xạ index row về `table_id` bất biến.
-- [ ] Cache embedding câu hỏi.
+- [x] Sinh embedding theo lô, lưu model/version và fingerprint corpus.
+- [x] Index FAISS CPU; ánh xạ index row về `table_id` bất biến.
+- [x] Cache embedding câu hỏi.
 - **Đầu ra:** so BM25 và dense độc lập theo từng intent.
+
+> **✅ HOÀN TẤT ngày 2026-08-10:** Build thật 2 lần độc lập (A/B) cho cả hai encoder trên
+> corpus khóa 146.011 tài liệu, evaluate cold/warm 30 câu gold, so sánh với BM25 v3.
+> - Encoder mặc định `device="cpu"` được giữ nguyên; thêm cờ tùy chọn `--encoder-device cuda`
+>   (mặc định vẫn `cpu`) sau khi benchmark CPU thật cho thấy 4 lần build sẽ mất ~18,7 giờ.
+>   Xác nhận thực nghiệm GPU encode bit-identical qua 2 tiến trình độc lập trước khi build full.
+> - `index.faiss` và `manifest.json` A=B byte-identical cho cả hai encoder (bge-m3
+>   `089a5aed2e70890c…`, multilingual-e5-small `3da3c40cbd11c11b…`); build 2557s/2600s (bge-m3)
+>   và 331s/343s (e5-small).
+> - Evaluate: 30 cold + 30 warm mỗi report, cold==warm tuyệt đối, `deterministic_projection`
+>   A=B cho cả hai encoder.
+> - **Cả hai dense encoder đều thua rõ rệt BM25 v3** trên 30 câu gold: F2@10 bm25-v3=0.431217
+>   so với bge-m3=0.105820 và multilingual-e5-small=0.123016 (Precision/Recall@10 tương ứng
+>   thấp hơn nhiều). Dense không được dùng làm hệ truy xuất chính ở trạng thái hiện tại.
+> - Trong 3 câu BM25 v3 zero-hit, multilingual-e5-small phục hồi 1 câu, bge-m3 phục hồi 0 câu;
+>   không sửa gold/câu hỏi/filter.
+> - `pytest -q tests/unit/retrieval tests/integration/retrieval`: 84 passed, 3 skipped.
+>   Full `pytest -q`: 596 passed, 4 skipped. Full `ruff check .`: 102 lỗi có sẵn (0 trong file
+>   Day 9 sửa đổi). Full `mypy`: 33 lỗi có sẵn (0 trong file Day 9). `git diff --check` sạch.
+> - Chi tiết đầy đủ: [README.md § Day 9 Dense Retrieval](README.md#day-9-dense-retrieval).
 
 #### Ngày 10 — Fusion và entity parser
 
