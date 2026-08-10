@@ -366,7 +366,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         JSONDecodeError,
         RuntimeError,
         OSError,
-        ValueError,
     ) as exc:
         print(f"retrieval error: {exc}", file=sys.stderr)
         return 2
