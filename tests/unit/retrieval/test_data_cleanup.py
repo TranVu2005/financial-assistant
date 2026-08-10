@@ -73,6 +73,33 @@ def test_plan_blocks_candidate_referenced_by_nested_source_artifact(tmp_path: Pa
     assert reference.relative_to(tmp_path).as_posix() in entry.detail
 
 
+@pytest.mark.parametrize(
+    ("self_declaration", "candidate_name"),
+    [
+        (
+            "src/financial_report_qa/retrieval/data_cleanup.py",
+            "release_v2_37a61be7aeba",
+        ),
+        ("tests/unit/retrieval/test_data_cleanup.py", "release_v2_7868718f2547"),
+    ],
+)
+def test_plan_ignores_cleanup_policy_self_declarations(
+    tmp_path: Path,
+    self_declaration: str,
+    candidate_name: str,
+) -> None:
+    """Scanning cleanup policy source/tests as user references blocks every real candidate."""
+    _write(tmp_path / f"data/processed/{candidate_name}/manifest.json", "{}")
+    _write(
+        tmp_path / self_declaration,
+        f"_CANDIDATE_PATHS = (Path('data/processed/{candidate_name}'),)",
+    )
+
+    entry = _entry_by_name(tmp_path, candidate_name)
+
+    assert entry.status == "approved"
+
+
 def test_plan_blocks_when_nested_reference_artifact_is_not_utf8(tmp_path: Path) -> None:
     """Ignoring a decode error could approve a candidate named by unreadable evidence."""
     _write(tmp_path / "data/processed/release_v2_7868718f2547/manifest.json", "{}")

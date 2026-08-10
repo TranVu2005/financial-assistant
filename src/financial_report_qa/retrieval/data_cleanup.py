@@ -26,6 +26,10 @@ _SKIPPED_ARTIFACT_DIRECTORIES = {
     ".venv",
     "__pycache__",
 }
+_CLEANUP_SELF_REFERENCE_ARTIFACTS = {
+    Path("src/financial_report_qa/retrieval/data_cleanup.py"),
+    Path("tests/unit/retrieval/test_data_cleanup.py"),
+}
 
 
 @dataclass(frozen=True)
@@ -73,7 +77,12 @@ def _artifact_references(repo_root: Path, candidate: Path) -> list[Path]:
         ]
         for filename in filenames:
             path = current / filename
-            if path.is_symlink() or _inside(path.resolve(strict=False), candidate):
+            relative_path = path.relative_to(repo_root)
+            if (
+                relative_path in _CLEANUP_SELF_REFERENCE_ARTIFACTS
+                or path.is_symlink()
+                or _inside(path.resolve(strict=False), candidate)
+            ):
                 continue
             try:
                 with path.open("rb") as artifact:
