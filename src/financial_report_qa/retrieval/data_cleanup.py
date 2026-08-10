@@ -23,12 +23,16 @@ _SKIPPED_ARTIFACT_DIRECTORIES = {
     ".git",
     ".mypy_cache",
     ".ruff_cache",
-    ".superpowers",
     ".venv",
     "__pycache__",
 }
+_CLEANUP_POLICY_ARTIFACT_DIRECTORIES = {
+    Path(".superpowers"),
+    Path("docs/superpowers"),
+}
 _CLEANUP_SELF_REFERENCE_ARTIFACTS = {
     Path("src/financial_report_qa/retrieval/data_cleanup.py"),
+    Path("tests/integration/retrieval/test_day9_dense_cli.py"),
     Path("tests/unit/retrieval/test_data_cleanup.py"),
 }
 
@@ -71,6 +75,7 @@ def _artifact_references(repo_root: Path, candidate: Path) -> list[Path]:
             name
             for name in directories
             if name not in _SKIPPED_ARTIFACT_DIRECTORIES
+            and (current / name).relative_to(repo_root) not in _CLEANUP_POLICY_ARTIFACT_DIRECTORIES
             and not (current / name).is_symlink()
             and not _inside((current / name).resolve(strict=False), candidate)
             and not _inside((current / name).resolve(strict=False), raw_root)

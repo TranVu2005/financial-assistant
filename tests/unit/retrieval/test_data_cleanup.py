@@ -85,6 +85,14 @@ def test_plan_blocks_candidate_referenced_by_nested_source_artifact(tmp_path: Pa
             ".superpowers/sdd/2026-08-10-day9-faiss-gpu-cleanup/task-3-report.md",
             "release_v2_7fc5d5d57bf6",
         ),
+        (
+            "docs/superpowers/plans/2026-08-10-day9-faiss-gpu-cleanup.md",
+            "v2_remediated",
+        ),
+        (
+            "tests/integration/retrieval/test_day9_dense_cli.py",
+            "release_v2_37a61be7aeba",
+        ),
     ],
 )
 def test_plan_ignores_cleanup_policy_self_declarations(
