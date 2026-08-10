@@ -12,8 +12,10 @@ $fingerprint = '37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f
 $lockPath = 'data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json'
 ```
 
-Mọi build phải dùng đúng `$lockPath` và `$fingerprint`. Không sửa lock, gold, hay dữ liệu
-canonical trong khi chạy runbook.
+Invariant này áp dụng cho các lệnh retrieval cleanup, build và verification: chúng phải bind
+đúng `$lockPath` và `$fingerprint`. Các lệnh cài WSL/Conda và GPU preflight không đọc dữ liệu
+retrieval nên không dùng path khóa. Không sửa lock, gold, hay dữ liệu canonical trong khi chạy
+runbook.
 
 ## Kiểm tra WSL2 và tạo môi trường Conda
 
@@ -116,26 +118,42 @@ Get-Content -Path artifacts/evaluations/day9/bge-m3-faiss-gpu-build.log -Wait
 
 ## Xác minh artifacts
 
-Sau build, kiểm tra release-lock, corpus fingerprint, observation CUDA, và hai artifact index.
+Sau build, kiểm tra release-lock, corpus/index manifest, observation CUDA, và hai artifact index.
 
 ```powershell
 $fingerprint = '37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f'
 $lockPath = 'data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json'
+$corpusManifestPath = "data/indexes/dense-day9-a/$fingerprint/corpus/manifest.json"
 $indexRoot = "data/indexes/dense-day9-a/$fingerprint/encoders"
+if (-not (Test-Path $corpusManifestPath)) { throw 'locked dense corpus manifest is missing' }
 $releaseLock = Get-Content -Raw $lockPath | ConvertFrom-Json
+$releaseLockSha256 = (Get-FileHash -Algorithm SHA256 $lockPath).Hash.ToLowerInvariant()
+$corpusManifest = Get-Content -Raw $corpusManifestPath | ConvertFrom-Json
 $observation = Get-Content -Raw artifacts/evaluations/day9/bge-m3-faiss-gpu-build.json | ConvertFrom-Json
 if ($releaseLock.dataset_fingerprint -ne $fingerprint) { throw 'release lock fingerprint mismatch' }
 if ($observation.dataset_fingerprint -ne $fingerprint -or $observation.faiss_device -ne 'cuda') {
   throw 'GPU build observation mismatch'
 }
-if (-not (Test-Path "data/indexes/dense-day9-a/$fingerprint/corpus/manifest.json")) {
-  throw 'locked dense corpus manifest is missing'
+if ($corpusManifest.dataset_fingerprint -ne $fingerprint -or
+    $corpusManifest.release_lock_sha256 -ne $releaseLockSha256) {
+  throw 'corpus manifest lock or fingerprint mismatch'
 }
 $indexDirectories = Get-ChildItem $indexRoot -Directory
 if ($indexDirectories.Count -lt 1) { throw 'no persisted BGE-M3 index directory' }
 $indexDirectories | ForEach-Object {
-  if (-not (Test-Path "$($_.FullName)/index.faiss") -or -not (Test-Path "$($_.FullName)/manifest.json")) {
+  $indexPath = "$($_.FullName)/index.faiss"
+  $manifestPath = "$($_.FullName)/manifest.json"
+  if (-not (Test-Path $indexPath) -or -not (Test-Path $manifestPath)) {
     throw "incomplete index artifact: $($_.FullName)"
+  }
+  $indexManifest = Get-Content -Raw $manifestPath | ConvertFrom-Json
+  $indexSha256 = (Get-FileHash -Algorithm SHA256 $indexPath).Hash.ToLowerInvariant()
+  if ($indexManifest.dataset_fingerprint -ne $fingerprint -or
+      $indexManifest.release_lock_sha256 -ne $releaseLockSha256 -or
+      $indexManifest.index_type -ne 'IndexFlatIP' -or
+      $indexManifest.document_count -ne $corpusManifest.document_count -or
+      $indexManifest.artifact_sha256.'index.faiss' -ne $indexSha256) {
+    throw "index manifest validation failed: $($_.FullName)"
   }
 }
 Write-Output 'Day 9 CUDA observation and index artifacts verified.'
