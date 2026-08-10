@@ -145,7 +145,7 @@ def test_cuda_build_uses_gpu_then_returns_cpu_index(monkeypatch: MonkeyPatch) ->
 
 
 @pytest.mark.parametrize(
-    "missing_api", ("StandardGpuResources", "index_cpu_to_gpu", "index_gpu_to_cpu")
+    "missing_api", ("StandardGpuResources", "index_cpu_to_gpu", "index_gpu_to_cpu", "get_num_gpus")
 )
 def test_cuda_build_fails_closed_when_gpu_api_is_missing(
     monkeypatch: MonkeyPatch, missing_api: str
