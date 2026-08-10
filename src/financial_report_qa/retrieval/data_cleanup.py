@@ -23,6 +23,7 @@ _SKIPPED_ARTIFACT_DIRECTORIES = {
     ".git",
     ".mypy_cache",
     ".ruff_cache",
+    ".superpowers",
     ".venv",
     "__pycache__",
 }
