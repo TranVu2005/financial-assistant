@@ -52,12 +52,21 @@ class DenseEncoder(Protocol):
 class SentenceTransformerDenseEncoder:
     def __init__(self, spec: DenseEncoderSpec, *, local_files_only: bool = False) -> None:
         try:
+            import torch
             from sentence_transformers import SentenceTransformer
+
+            if spec.device == "cuda":
+                # Same-process, same-GPU determinism so A/B replay builds hash identically;
+                # cuBLAS workspace must also be pinned via CUBLAS_WORKSPACE_CONFIG before
+                # this process starts, which torch cannot set retroactively.
+                torch.backends.cudnn.deterministic = True
+                torch.backends.cudnn.benchmark = False
+                torch.use_deterministic_algorithms(True)
 
             self._model = SentenceTransformer(
                 spec.model_id,
                 revision=spec.revision,
-                device="cpu",
+                device=spec.device,
                 trust_remote_code=False,
                 local_files_only=local_files_only,
             )

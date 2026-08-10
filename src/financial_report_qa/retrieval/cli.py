@@ -98,6 +98,7 @@ def _parser() -> argparse.ArgumentParser:
     dense_index.add_argument("--output-root", type=Path, required=True)
     dense_index.add_argument("--observation-path", type=Path, required=True)
     dense_index.add_argument("--faiss-device", choices=("cpu", "cuda"), default="cpu")
+    dense_index.add_argument("--encoder-device", choices=("cpu", "cuda"), default="cpu")
     dense_index.add_argument("--local-files-only", action="store_true")
     dense_evaluation = commands.add_parser("evaluate-dense")
     dense_evaluation.add_argument("--release-lock", type=Path, required=True)
@@ -106,6 +107,7 @@ def _parser() -> argparse.ArgumentParser:
     dense_evaluation.add_argument(
         "--encoder", choices=("bge-m3", "multilingual-e5-small"), required=True
     )
+    dense_evaluation.add_argument("--encoder-device", choices=("cpu", "cuda"), default="cpu")
     dense_evaluation.add_argument("--gold-path", type=Path, required=True)
     dense_evaluation.add_argument("--cache-dir", type=Path, required=True)
     dense_evaluation.add_argument("--observation-path", type=Path, required=True)
@@ -124,11 +126,12 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _load_dense_encoder(
-    name: EncoderName, *, local_files_only: bool
+    name: EncoderName, *, local_files_only: bool, device: Literal["cpu", "cuda"] = "cpu"
 ) -> SentenceTransformerDenseEncoder:
-    return SentenceTransformerDenseEncoder(
-        approved_encoder_spec(name), local_files_only=local_files_only
-    )
+    spec = approved_encoder_spec(name)
+    if device != "cpu":
+        spec = spec.model_copy(update={"device": device})
+    return SentenceTransformerDenseEncoder(spec, local_files_only=local_files_only)
 
 
 def _checked_dense_corpus(
@@ -231,7 +234,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "build-dense-index":
             encoder_name = cast(EncoderName, args.encoder)
             faiss_device = cast(Literal["cpu", "cuda"], args.faiss_device)
-            encoder = _load_dense_encoder(encoder_name, local_files_only=args.local_files_only)
+            encoder_device = cast(Literal["cpu", "cuda"], args.encoder_device)
+            encoder = _load_dense_encoder(
+                encoder_name, local_files_only=args.local_files_only, device=encoder_device
+            )
             corpus = _checked_dense_corpus(
                 args.corpus_dir,
                 release_fingerprint=release.dataset_fingerprint,
@@ -291,7 +297,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "evaluate-dense":
             gold = load_gold_questions(args.gold_path, release)
             encoder_name = cast(EncoderName, args.encoder)
-            encoder = _load_dense_encoder(encoder_name, local_files_only=True)
+            encoder_device = cast(Literal["cpu", "cuda"], args.encoder_device)
+            encoder = _load_dense_encoder(
+                encoder_name, local_files_only=True, device=encoder_device
+            )
             encoder_hash = encoder_spec_sha256(encoder.spec)
             corpus = _checked_dense_corpus(
                 args.corpus_dir,

@@ -35,7 +35,7 @@ class DenseEncoderSpec(_FrozenModel):
     pooling: Literal["sentence_transformers"] = "sentence_transformers"
     normalize_embeddings: Literal[True] = True
     dtype: Literal["float32"] = "float32"
-    device: Literal["cpu"] = "cpu"
+    device: Literal["cpu", "cuda"] = "cpu"
     batch_size: int = Field(gt=0)
 
 

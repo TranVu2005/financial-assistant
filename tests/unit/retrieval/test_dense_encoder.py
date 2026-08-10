@@ -26,3 +26,7 @@ def test_approved_encoder_specs_are_fully_pinned() -> None:
     assert encoder_spec_sha256(e5) != encoder_spec_sha256(
         e5.model_copy(update={"query_prefix": ""})
     )
+    assert bge.device == "cpu"
+    assert encoder_spec_sha256(bge) != encoder_spec_sha256(
+        bge.model_copy(update={"device": "cuda"})
+    )

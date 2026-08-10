@@ -163,9 +163,13 @@ def _patch_fake_encoder_loader(monkeypatch: MonkeyPatch) -> list[str]:
 
     loaded: list[str] = []
 
-    def load(name: EncoderName, *, local_files_only: bool) -> _FakeEncoder:
+    def load(
+        name: EncoderName, *, local_files_only: bool, device: str = "cpu"
+    ) -> _FakeEncoder:
         loaded.append(name)
-        return _FakeEncoder(approved_encoder_spec(name).model_copy(update={"dimension": 2}))
+        return _FakeEncoder(
+            approved_encoder_spec(name).model_copy(update={"dimension": 2, "device": device})
+        )
 
     monkeypatch.setattr(retrieval_cli, "_load_dense_encoder", load, raising=False)
     return loaded
