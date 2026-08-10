@@ -78,12 +78,15 @@ def _artifact_references(repo_root: Path, candidate: Path) -> list[Path]:
             try:
                 with path.open("rb") as artifact:
                     sample = artifact.read(4096)
-                if b"\0" in sample:
-                    continue
+            except (OSError, UnicodeDecodeError):
+                raise OSError(f"cannot read reference artifact {path}") from None
+            if b"\0" in sample:
+                continue
+            try:
                 sample.decode("utf-8")
                 content = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
-                continue
+                raise OSError(f"cannot read reference artifact {path}") from None
             if candidate.name in content:
                 references.append(path)
     return references

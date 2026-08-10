@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import stat
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,43 @@ def test_plan_blocks_candidate_referenced_by_nested_source_artifact(tmp_path: Pa
 
     assert entry.status == "blocked"
     assert reference.relative_to(tmp_path).as_posix() in entry.detail
+
+
+def test_plan_blocks_when_nested_reference_artifact_is_not_utf8(tmp_path: Path) -> None:
+    """Ignoring a decode error could approve a candidate named by unreadable evidence."""
+    _write(tmp_path / "data/processed/release_v2_7868718f2547/manifest.json", "{}")
+    artifact = tmp_path / "scripts/locked_reference.md"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"release_v2_7868718f2547" + (b"x" * 4096) + b"\xff")
+
+    entry = _entry_by_name(tmp_path, "release_v2_7868718f2547")
+
+    assert entry.status == "blocked"
+    assert "cannot read reference artifact" in entry.detail
+
+
+def test_plan_blocks_when_reference_artifact_permissions_prevent_reading(tmp_path: Path) -> None:
+    """Ignoring ACL read failures could approve a candidate still named by locked evidence."""
+    _write(tmp_path / "data/processed/v2_remediated/manifest.json", "{}")
+    artifact = _write(
+        tmp_path / "scripts/locked_reference.md",
+        "v2_remediated remains required by the locked replay.",
+    )
+    artifact.chmod(0)
+    try:
+        try:
+            artifact.read_text(encoding="utf-8")
+        except OSError:
+            pass
+        else:
+            pytest.skip("OS cannot enforce unreadable-file ACL for this test process")
+
+        entry = _entry_by_name(tmp_path, "v2_remediated")
+    finally:
+        artifact.chmod(stat.S_IRUSR | stat.S_IWUSR)
+
+    assert entry.status == "blocked"
+    assert "cannot read reference artifact" in entry.detail
 
 
 def test_plan_rejects_symlink_candidate_to_protected_raw_data(tmp_path: Path) -> None:
