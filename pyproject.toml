@@ -11,9 +11,9 @@ requires-python = ">=3.11,<3.12"
 dependencies = [
     "bm25s>=0.2.9,<1",
     "duckdb>=1.1,<2",
-    "faiss-cpu>=1.9,<2",
+    "faiss-cpu>=1.15.0,<2",
     "httpx>=0.28,<1",
-    "huggingface-hub>=1.2,<2",
+    "huggingface-hub>=1.27.0,<2",
     "networkx>=3.4,<4",
     "numpy>=1.26,<3",
     "orjson>=3.10,<4",
@@ -22,13 +22,13 @@ dependencies = [
     "pillow>=11,<13",
     "pyarrow>=18,<25",
     "pydantic>=2.10,<3",
-    "pydantic-settings>=2.7,<3",
-    "pymupdf>=1.25,<2",
-    "pypdf>=5,<7",
+    "pydantic-settings>=2.15.0,<3",
+    "pymupdf>=1.28.2,<2",
+    "pypdf>=6.15.0,<7",
     "pyyaml>=6,<7",
     "rapidfuzz>=3.10,<4",
-    "sentence-transformers>=3.4,<6",
-    "streamlit>=1.41,<2",
+    "sentence-transformers>=5.7.0,<6",
+    "streamlit>=1.61.1,<2",
 ]
 
 [project.scripts]
@@ -38,19 +38,19 @@ normalization-audit = "financial_report_qa.evaluation.normalization_audit_cli:ma
 [project.optional-dependencies]
 dev = [
     "hatchling==1.31.0",
-    "hypothesis>=6.120,<7",
+    "hypothesis>=6.165.2,<7",
     "jupyterlab>=4.4,<5",
     "matplotlib>=3.10,<4",
     "mypy>=1.14,<2",
-    "nbformat>=5.10,<6",
+    "nbformat>=5.11.0,<6",
     "pandas-stubs>=2.3,<4",
     "pre-commit>=4,<5",
     "pytest>=8.3,<9",
     "pytest-cov>=6,<8",
-    "ruff>=0.9,<1",
+    "ruff>=0.16.2,<1",
 ]
 ocr = [
-    "paddleocr>=3,<4",
+    "paddleocr>=3.7.0,<4",
     "paddlepaddle>=3,<4",
 ]
 
