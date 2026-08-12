@@ -1,6 +1,6 @@
 FROM ghcr.io/astral-sh/uv:0.11.28 AS uv
 
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 
 COPY --from=uv /uv /uvx /bin/
 
@@ -16,7 +16,7 @@ COPY src ./src
 RUN uv sync --frozen --extra dev --no-install-project
 RUN uv build --no-build-isolation --wheel
 
-FROM python:3.11-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 COPY --from=uv /uv /uvx /bin/
 
