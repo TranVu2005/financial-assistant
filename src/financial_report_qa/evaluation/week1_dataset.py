@@ -281,6 +281,7 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
             col_idx=int(r["col_idx"]),
             row_label_raw=r.get("row_label_raw"),
             row_label_canonical=r.get("row_label_canonical"),
+            row_group_context_raw=r.get("row_group_context_raw"),
             column_label_raw=r.get("column_label_raw"),
             column_label_canonical=r.get("column_label_canonical"),
             value_raw=str(r["value_raw"]),

@@ -39,9 +39,7 @@ def _normalize(value: object | None, *, display_token: bool = False) -> str:
 
 def _tokens(values: list[object | None], *, display_tokens: bool = False) -> tuple[str, ...]:
     normalized = {
-        token
-        for value in values
-        if (token := _normalize(value, display_token=display_tokens))
+        token for value in values if (token := _normalize(value, display_token=display_tokens))
     }
     return tuple(sorted(normalized))
 
@@ -72,8 +70,10 @@ def build_table_documents(
 ) -> tuple[TableDocument, ...]:
     """Aggregate once per table in DuckDB; raw numeric values are never selected."""
     table_columns = set(pq.read_schema(tables_path).names)  # type: ignore[no-untyped-call]
-    table_unit_expression = (
-        "t.unit_normalized" if "unit_normalized" in table_columns else "NULL"
+    table_unit_expression = "t.unit_normalized" if "unit_normalized" in table_columns else "NULL"
+    cell_columns = set(pq.read_schema(cells_path).names)  # type: ignore[no-untyped-call]
+    group_context_expression = (
+        "c.row_group_context_raw" if "row_group_context_raw" in cell_columns else "NULL"
     )
     connection = duckdb.connect(":memory:")
     try:
@@ -88,7 +88,9 @@ def build_table_documents(
                     raw := c.row_label_raw
                 )) FILTER (WHERE c.row_label_canonical IS NOT NULL),
                 list(DISTINCT c.period) FILTER (WHERE c.period IS NOT NULL),
-                list(DISTINCT c.unit) FILTER (WHERE c.unit IS NOT NULL)
+                list(DISTINCT c.unit) FILTER (WHERE c.unit IS NOT NULL),
+                list(DISTINCT {group_context_expression})
+                    FILTER (WHERE {group_context_expression} IS NOT NULL)
             FROM read_parquet(?) AS t
             JOIN read_parquet(?) AS d USING (doc_id)
             LEFT JOIN read_parquet(?) AS c USING (table_id)
@@ -116,9 +118,11 @@ def build_table_documents(
             metric_label_values,
             cell_periods,
             cell_units,
+            group_context_values,
         ) = row
         periods = _tokens([*(cell_periods or []), report_year])
         metric_labels = _metric_labels(metric_label_values)
+        group_contexts = _tokens(group_context_values or [])
         metadata = TableMetadata(
             table_id=str(table_id),
             doc_id=str(doc_id),
@@ -129,20 +133,20 @@ def build_table_documents(
             source_path=str(relative_path),
             line_start=int(line_start),
             line_end=int(line_end),
+            group_contexts=group_contexts,
         )
         text_lines = (
             _line("title", _normalize(title)),
             _line("statement", _normalize(statement_type, display_token=True)),
             _line(
                 "metrics",
-                _tokens(
-                    [label.canonical for label in metric_labels], display_tokens=True
-                ),
+                _tokens([label.canonical for label in metric_labels], display_tokens=True),
             ),
             _line(
                 "metric aliases",
                 _tokens([label.raw for label in metric_labels]),
             ),
+            _line("group context", group_contexts),
             _line("company", _normalize(company_code)),
             _line("periods", periods),
             _line(

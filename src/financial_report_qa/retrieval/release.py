@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from financial_report_qa.core.errors import RetrievalReleaseError
 from financial_report_qa.evaluation.week1_release import ReleaseLock
 
-EXPECTED_FINGERPRINT = "37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f"
+EXPECTED_FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
 REQUIRED_PARQUETS = ("documents.parquet", "tables.parquet", "cells.parquet")
 
 

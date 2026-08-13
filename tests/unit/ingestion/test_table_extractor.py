@@ -176,6 +176,93 @@ def test_header_rows_have_no_group_context(tmp_path: Path) -> None:
     assert all(cell.row_group_context_raw is None for cell in header_cells)
 
 
+def test_section_banner_context_tracks_full_nested_path(tmp_path: Path) -> None:
+    """Would fail if a data row only saw its immediate parent, not the full ancestor path.
+
+    A banner row's own context reflects whichever path was still open right
+    before it appeared (matching the pre-existing single-level semantics,
+    where a sibling banner's context is "the previous banner"), not its true
+    structural ancestors. Data rows, which is what downstream retrieval and
+    analysis actually consume, always get their real, fully nested path.
+    """
+    source = (
+        "<table>"
+        "<tr><td>Chỉ tiêu</td><td>2024</td></tr>"
+        "<tr><td>A. TÀI SẢN NGẮN HẠN</td><td></td></tr>"
+        "<tr><td>I. Tiền và các khoản tương đương tiền</td><td></td></tr>"
+        "<tr><td>1. Tiền mặt</td><td></td></tr>"
+        "<tr><td>Tại quỹ</td><td>100</td></tr>"
+        "<tr><td>II. Đầu tư tài chính</td><td></td></tr>"
+        "<tr><td>Chứng khoán</td><td>200</td></tr>"
+        "<tr><td>B. TÀI SẢN DÀI HẠN</td><td></td></tr>"
+        "<tr><td>Tài sản cố định</td><td>300</td></tr>"
+        "</table>\n"
+    )
+
+    values = {cell.value_raw: cell for cell in extract(tmp_path, source).tables[0].cells}
+
+    assert values["A. TÀI SẢN NGẮN HẠN"].row_group_context_raw is None
+    assert (
+        values["I. Tiền và các khoản tương đương tiền"].row_group_context_raw
+        == "A. TÀI SẢN NGẮN HẠN"
+    )
+    assert values["1. Tiền mặt"].row_group_context_raw == (
+        "A. TÀI SẢN NGẮN HẠN > I. Tiền và các khoản tương đương tiền"
+    )
+    # Data row: full 3-level ancestor path (letter > roman > arabic).
+    assert values["100"].row_group_context_raw == (
+        "A. TÀI SẢN NGẮN HẠN > I. Tiền và các khoản tương đương tiền > 1. Tiền mặt"
+    )
+    # The next data row, now nested only under the roman-level sibling (II.)
+    # that replaced the closed arabic item (1.) while keeping the letter
+    # ancestor (A.).
+    assert values["200"].row_group_context_raw == ("A. TÀI SẢN NGẮN HẠN > II. Đầu tư tài chính")
+    assert values["300"].row_group_context_raw == "B. TÀI SẢN DÀI HẠN"
+
+
+def test_section_banner_unrecognized_prefix_replaces_sibling_like_before(
+    tmp_path: Path,
+) -> None:
+    """Would fail if an unnumbered banner started nesting under an unrelated ancestor."""
+    source = (
+        "<table>"
+        "<tr><td>Chỉ tiêu</td><td>2024</td></tr>"
+        "<tr><td>TIỀN GỬI NGÂN HÀNG</td><td></td></tr>"
+        "<tr><td>Ngân hàng A</td><td>100</td></tr>"
+        "<tr><td>CÁC KHOẢN TƯƠNG ĐƯƠNG TIỀN</td><td></td></tr>"
+        "<tr><td>Kỳ hạn 3 tháng</td><td>200</td></tr>"
+        "</table>\n"
+    )
+
+    values = {cell.value_raw: cell for cell in extract(tmp_path, source).tables[0].cells}
+
+    assert values["TIỀN GỬI NGÂN HÀNG"].row_group_context_raw is None
+    assert values["100"].row_group_context_raw == "TIỀN GỬI NGÂN HÀNG"
+    assert values["CÁC KHOẢN TƯƠNG ĐƯƠNG TIỀN"].row_group_context_raw == "TIỀN GỬI NGÂN HÀNG"
+    assert values["200"].row_group_context_raw == "CÁC KHOẢN TƯƠNG ĐƯƠNG TIỀN"
+
+
+def test_header_row_detection_scans_beyond_three_rows(tmp_path: Path) -> None:
+    """Would fail if a genuinely 4-row nested header got truncated to 3."""
+    source = (
+        "<table>"
+        '<tr><th rowspan="4">Chỉ tiêu</th><th colspan="4">Năm 2024</th></tr>'
+        '<tr><th colspan="2">Quý 1</th><th colspan="2">Quý 2</th></tr>'
+        "<tr><th>Tháng 1</th><th>Tháng 2</th><th>Tháng 4</th><th>Tháng 5</th></tr>"
+        "<tr><th>VND</th><th>VND</th><th>VND</th><th>VND</th></tr>"
+        "<tr><td>Doanh thu</td><td>10</td><td>20</td><td>30</td><td>40</td></tr>"
+        "</table>\n"
+    )
+
+    table = extract(tmp_path, source).tables[0]
+    header_cells = [cell for cell in table.cells if cell.row_idx < 4]
+    data_cells = [cell for cell in table.cells if cell.row_idx == 4]
+
+    assert len(header_cells) > 0
+    assert all(cell.column_label_raw is None for cell in header_cells)
+    assert any(cell.column_label_raw and "VND" in cell.column_label_raw for cell in data_cells)
+
+
 @pytest.mark.parametrize(
     ("attribute", "reason"),
     [('rowspan="0"', "invalid_span_value"), ('colspan="100001"', "expansion_limit_exceeded")],

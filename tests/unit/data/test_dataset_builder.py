@@ -32,12 +32,18 @@ from financial_report_qa.ingestion.provenance import (
 from financial_report_qa.normalization._shared import RULESET_VERSION
 from financial_report_qa.schemas.documents import DocumentRecord, stable_document_id
 from financial_report_qa.schemas.normalization import NormalizedDocument
+from financial_report_qa.schemas.tables import CellRecord
 
 
 def test_cell_schema_uses_fixed_decimal_and_no_absolute_paths() -> None:
     assert CELL_SCHEMA.field("value_numeric").type == pa.decimal128(38, 10)
     assert CELL_SCHEMA.field("source_line_start").type == pa.int32()
     assert "absolute_path" not in CELL_SCHEMA.names
+
+
+def test_cell_schema_has_a_column_for_every_cell_record_field() -> None:
+    """Every CellRecord field must reach the release, or it silently vanishes at publish time."""
+    assert set(CellRecord.model_fields) == set(CELL_SCHEMA.names)
 
 
 def test_source_table_occurrence_schema_matches_task_1_contract() -> None:

@@ -121,11 +121,17 @@ class TableMetadata(_FrozenModel):
     source_path: str
     line_start: int = Field(ge=1)
     line_end: int = Field(ge=1)
+    group_contexts: tuple[str, ...] = ()
 
     @field_validator("periods")
     @classmethod
     def validate_periods(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         return _canonical_tuple(values, label="periods")
+
+    @field_validator("group_contexts")
+    @classmethod
+    def validate_group_contexts(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return _canonical_tuple(values, label="group_contexts")
 
 
 class MetricLabelObservation(_FrozenModel):

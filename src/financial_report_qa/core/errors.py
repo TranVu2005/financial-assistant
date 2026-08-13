@@ -123,3 +123,7 @@ class PlanningInputError(PlanningError):
 
 class PlanningArtifactError(PlanningError):
     """A generated planning artifact is corrupt or mismatched."""
+
+
+class TableFrameError(FinancialReportQAError):
+    """A table cannot be reconstructed as a pandas DataFrame from a release."""

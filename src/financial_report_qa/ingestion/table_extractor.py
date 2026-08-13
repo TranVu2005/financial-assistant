@@ -293,6 +293,9 @@ def _contains_signal(value: str, signals: tuple[str, ...]) -> bool:
     return any(signal in normalized for signal in signals)
 
 
+_HEADER_ROW_SCAN_LIMIT = 8
+
+
 def _header_row_count(
     candidate: TableCandidate,
     grid: dict[tuple[int, int], int],
@@ -303,7 +306,7 @@ def _header_row_count(
     if candidate.kind == "structured_text":
         return 1 if "financial_header" in candidate.evidence else 0
     count = 0
-    for row_idx in range(min(3, row_count)):
+    for row_idx in range(min(_HEADER_ROW_SCAN_LIMIT, row_count)):
         cell_tokens = [
             grid[(row_idx, col_idx)]
             for col_idx in range(column_count)
@@ -364,6 +367,67 @@ def _metric_column_index(
     return 0
 
 
+_BANNER_ROMAN_NUMERAL_TOKENS = frozenset(
+    {
+        "I",
+        "II",
+        "III",
+        "IV",
+        "V",
+        "VI",
+        "VII",
+        "VIII",
+        "IX",
+        "X",
+        "XI",
+        "XII",
+        "XIII",
+        "XIV",
+        "XV",
+        "XVI",
+        "XVII",
+        "XVIII",
+        "XIX",
+        "XX",
+    }
+)
+_BANNER_ROMAN_LEVEL_RE = re.compile(r"^([IVXLCDM]+)\.")
+_BANNER_LETTER_LEVEL_RE = re.compile(r"^[A-ZĐ]\.")
+_BANNER_DECIMAL_LEVEL_RE = re.compile(r"^\d+\.\d+")
+_BANNER_ARABIC_LEVEL_RE = re.compile(r"^\d+\.(?!\d)")
+_BANNER_PAREN_LEVEL_RE = re.compile(r"^[a-zđ]\)")
+
+
+def _banner_level(text: str, *, stack: list[tuple[int, str]]) -> int:
+    """Rank a section-banner label by its numbering-prefix nesting depth.
+
+    Vietnamese statements commonly nest sections as letter (A.) > roman numeral
+    (I.) > arabic number (1.) > decimal (1.1) > lettered parenthetical (a)).
+    A single-character token (I, V, X) reads as both a letter and a roman
+    numeral; it is treated as roman only while a letter or roman ancestor is
+    already open on ``stack``, since that is when a roman subsection is
+    actually expected. With no such ancestor it is far more likely a plain
+    top-level letter section. Unrecognized prefixes fall back to the current
+    stack depth, reproducing the old flat, single-level behavior for those
+    banners.
+    """
+    normalized = unicodedata.normalize("NFKC", text).strip()
+    roman_match = _BANNER_ROMAN_LEVEL_RE.match(normalized)
+    if roman_match and roman_match.group(1) in _BANNER_ROMAN_NUMERAL_TOKENS:
+        if len(roman_match.group(1)) > 1:
+            return 2
+        return 2 if any(level in (1, 2) for level, _text in stack) else 1
+    if _BANNER_LETTER_LEVEL_RE.match(normalized):
+        return 1
+    if _BANNER_DECIMAL_LEVEL_RE.match(normalized):
+        return 4
+    if _BANNER_ARABIC_LEVEL_RE.match(normalized):
+        return 3
+    if _BANNER_PAREN_LEVEL_RE.match(normalized):
+        return 5
+    return stack[-1][0] if stack else 1
+
+
 def _row_group_context_map(
     grid: dict[tuple[int, int], int],
     raw_cells: list[_RawCell],
@@ -372,15 +436,20 @@ def _row_group_context_map(
     column_count: int,
     metric_col_idx: int,
 ) -> dict[int, str | None]:
-    """Forward-fill the nearest preceding section-banner label onto data rows.
+    """Attach the full ancestor section-banner path to each row.
 
     Vietnamese statement tables interleave section banners (e.g. "A. TÀI SẢN
     NGẮN HẠN") among data rows: a row whose metric column is populated but every
-    other column is empty. Only one banner level is tracked, so nested banners
-    collapse to the most recent one rather than a full hierarchy path.
+    other column is empty. A stack tracks the currently open banners, ranked by
+    numbering-prefix depth (see ``_banner_level``); each row's context is the
+    joined path of its ancestors, deepest last. A banner row's own context is
+    the ancestor path as it stood immediately before that banner was pushed,
+    so a top-level banner still gets ``None`` and a sibling banner still gets
+    the previous banner at that same level (matching the old single-level
+    behavior when every banner shares one level).
     """
     contexts: dict[int, str | None] = {}
-    current_group: str | None = None
+    stack: list[tuple[int, str]] = []
     for row_idx in range(header_rows, row_count):
         metric_token = grid.get((row_idx, metric_col_idx))
         metric_text = raw_cells[metric_token].text.strip() if metric_token is not None else ""
@@ -391,10 +460,13 @@ def _row_group_context_map(
         ]
         is_banner = bool(metric_text) and all(text == "" for text in other_texts)
         if is_banner:
-            contexts[row_idx] = current_group
-            current_group = metric_text
+            contexts[row_idx] = " > ".join(text for _level, text in stack) or None
+            level = _banner_level(metric_text, stack=stack)
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            stack.append((level, metric_text))
         else:
-            contexts[row_idx] = current_group
+            contexts[row_idx] = " > ".join(text for _level, text in stack) or None
     return contexts
 
 
