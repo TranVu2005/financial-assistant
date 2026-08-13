@@ -63,6 +63,56 @@ class RetrievalEvaluationReport(BaseModel):
     per_question: tuple[RetrievalQuestionEvaluation, ...]
 
 
+class RetrievalMetricsExtended(BaseModel):
+    """Versioned metrics with explicit cutoffs alongside the Day 8 measures."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    true_positive: int = Field(ge=0)
+    precision_at_10: float = Field(ge=0, le=1)
+    recall_at_3: float = Field(ge=0, le=1)
+    recall_at_5: float = Field(ge=0, le=1)
+    recall_at_10: float = Field(ge=0, le=1)
+    f2_at_10: float = Field(ge=0, le=1)
+    mrr: float = Field(ge=0, le=1)
+    precision_at_r: float = Field(ge=0, le=1)
+    f2_at_r: float = Field(ge=0, le=1)
+
+
+class RetrievalQuestionEvaluationV2(BaseModel):
+    """Top-10 evidence plus diagnostic ranks for one reviewed question."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    question_id: str
+    question: str
+    intent: str
+    filters: RetrievalFilters
+    predicted_table_ids: tuple[str, ...]
+    gold_table_ids: tuple[str, ...]
+    missing_gold_table_ids: tuple[str, ...]
+    gold_rank_beyond_10: dict[str, int | None]
+    metrics: RetrievalMetricsExtended
+    failure: RetrievalFailure
+    trace: RetrievalTrace
+
+
+class RetrievalEvaluationReportV2(BaseModel):
+    """Day 13 report kept separate from strict persisted Day 8--12 models."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    dataset_fingerprint: str
+    question_count: int = Field(ge=0)
+    macro: RetrievalMetricsExtended
+    by_intent: dict[str, RetrievalMetricsExtended]
+    by_gold_cardinality: dict[str, RetrievalMetricsExtended]
+    by_period_cardinality: dict[str, RetrievalMetricsExtended]
+    by_statement_filter: dict[str, RetrievalMetricsExtended]
+    by_report_era: dict[str, RetrievalMetricsExtended]
+    per_question: tuple[RetrievalQuestionEvaluationV2, ...]
+
+
 class RetrievalClient(Protocol):
     def retrieve(
         self,
@@ -94,6 +144,40 @@ def score_at_10(predicted: tuple[str, ...], gold: tuple[str, ...]) -> RetrievalM
     )
 
 
+def score_extended_at_10(
+    predicted: tuple[str, ...], gold: tuple[str, ...]
+) -> RetrievalMetricsExtended:
+    """Score Day 13 metrics; candidates after rank ten are diagnostics only."""
+    legacy = score_at_10(predicted, gold)
+    top_10 = predicted[:10]
+    gold_set = set(gold)
+
+    def recall_at(cutoff: int) -> float:
+        return len(set(top_10[:cutoff]).intersection(gold_set)) / len(gold)
+
+    first_gold_rank = next(
+        (rank for rank, table_id in enumerate(top_10, start=1) if table_id in gold_set), None
+    )
+    r = len(gold)
+    precision_at_r = len(set(top_10[:r]).intersection(gold_set)) / r
+    f2_r_denominator = 4 * precision_at_r + legacy.recall
+    return RetrievalMetricsExtended(
+        true_positive=legacy.true_positive,
+        precision_at_10=legacy.precision,
+        recall_at_3=recall_at(3),
+        recall_at_5=recall_at(5),
+        recall_at_10=legacy.recall,
+        f2_at_10=legacy.f2,
+        mrr=0.0 if first_gold_rank is None else 1 / first_gold_rank,
+        precision_at_r=precision_at_r,
+        f2_at_r=(
+            0.0
+            if f2_r_denominator == 0
+            else 5 * precision_at_r * legacy.recall / f2_r_denominator
+        ),
+    )
+
+
 def _average(metrics: Iterable[RetrievalMetrics]) -> RetrievalMetrics:
     values = tuple(metrics)
     if not values:
@@ -104,6 +188,34 @@ def _average(metrics: Iterable[RetrievalMetrics]) -> RetrievalMetrics:
         precision=sum(item.precision for item in values) / count,
         recall=sum(item.recall for item in values) / count,
         f2=sum(item.f2 for item in values) / count,
+    )
+
+
+def _average_extended(metrics: Iterable[RetrievalMetricsExtended]) -> RetrievalMetricsExtended:
+    values = tuple(metrics)
+    if not values:
+        return RetrievalMetricsExtended(
+            true_positive=0,
+            precision_at_10=0,
+            recall_at_3=0,
+            recall_at_5=0,
+            recall_at_10=0,
+            f2_at_10=0,
+            mrr=0,
+            precision_at_r=0,
+            f2_at_r=0,
+        )
+    count = len(values)
+    return RetrievalMetricsExtended(
+        true_positive=sum(item.true_positive for item in values),
+        precision_at_10=sum(item.precision_at_10 for item in values) / count,
+        recall_at_3=sum(item.recall_at_3 for item in values) / count,
+        recall_at_5=sum(item.recall_at_5 for item in values) / count,
+        recall_at_10=sum(item.recall_at_10 for item in values) / count,
+        f2_at_10=sum(item.f2_at_10 for item in values) / count,
+        mrr=sum(item.mrr for item in values) / count,
+        precision_at_r=sum(item.precision_at_r for item in values) / count,
+        f2_at_r=sum(item.f2_at_r for item in values) / count,
     )
 
 
@@ -157,6 +269,135 @@ def evaluate_retrieval(
         question_count=len(questions),
         macro=_average(result.metrics for result in results),
         by_intent={intent: _average(per_intent[intent]) for intent in sorted(per_intent)},
+        per_question=tuple(results),
+    )
+
+
+def _gold_cardinality_v2(question: GoldRetrievalQuestion) -> str:
+    count = len(question.gold_table_ids)
+    if count == 1:
+        return "one_table"
+    if count == 2:
+        return "two_tables"
+    return "three_or_more"
+
+
+def _period_cardinality_v2(question: GoldRetrievalQuestion) -> str:
+    return "one_period" if len(question.filters.periods) == 1 else "multiple_periods"
+
+
+def _statement_filter_v2(question: GoldRetrievalQuestion) -> str:
+    return "filtered" if question.filters.statement_types else "unfiltered"
+
+
+def _report_era_v2(question: GoldRetrievalQuestion) -> str | None:
+    if not question.filters.periods:
+        return None
+    latest_period = max(int(period) for period in question.filters.periods)
+    if not 2015 <= latest_period <= 2025:
+        raise ValueError("report-era breakdown requires periods from 2015 through 2025")
+    if latest_period <= 2019:
+        return "2015_2019"
+    if latest_period <= 2023:
+        return "2020_2023"
+    return "2024_2025"
+
+
+def _diagnostic_gold_ranks(
+    predicted: tuple[str, ...], missing_gold: tuple[str, ...]
+) -> dict[str, int | None]:
+    ranks = {table_id: rank for rank, table_id in enumerate(predicted, start=1)}
+    return {
+        table_id: ranks.get(table_id)
+        for table_id in missing_gold
+    }
+
+
+def evaluate_retrieval_v2(
+    retriever: RetrievalClient,
+    questions: tuple[GoldRetrievalQuestion, ...],
+    *,
+    k: int = 10,
+    diagnostic_k: int = 100,
+) -> RetrievalEvaluationReportV2:
+    """Evaluate fixed top-10 metrics and retain deeper ranks only for diagnosis."""
+    if k != 10:
+        raise ValueError("Day 13 evaluation metrics are fixed at 10")
+    if diagnostic_k < 10:
+        raise ValueError("diagnostic_k must be at least 10")
+
+    results: list[RetrievalQuestionEvaluationV2] = []
+    per_intent: dict[str, list[RetrievalMetricsExtended]] = defaultdict(list)
+    per_gold: dict[str, list[RetrievalMetricsExtended]] = defaultdict(list)
+    per_period: dict[str, list[RetrievalMetricsExtended]] = defaultdict(list)
+    per_statement: dict[str, list[RetrievalMetricsExtended]] = defaultdict(list)
+    per_era: dict[str, list[RetrievalMetricsExtended]] = defaultdict(list)
+
+    for question in sorted(questions, key=lambda item: item.question_id):
+        diagnostic_trace = retriever.retrieve(
+            question.question,
+            filters=question.filters,
+            k=diagnostic_k,
+            question_id=question.question_id,
+        )
+        diagnostic_predicted = tuple(
+            candidate.table_id for candidate in diagnostic_trace.results
+        )
+        predicted = diagnostic_predicted[:10]
+        metrics = score_extended_at_10(predicted, question.gold_table_ids)
+        missing_gold = tuple(sorted(set(question.gold_table_ids).difference(predicted)))
+        metric_trace = diagnostic_trace.model_copy(
+            update={"results": diagnostic_trace.results[:10]}
+        )
+        failure = _failure_for(
+            metric_trace,
+            RetrievalMetrics(
+                true_positive=metrics.true_positive,
+                precision=metrics.precision_at_10,
+                recall=metrics.recall_at_10,
+                f2=metrics.f2_at_10,
+            ),
+            len(question.gold_table_ids),
+        )
+        results.append(
+            RetrievalQuestionEvaluationV2(
+                question_id=question.question_id,
+                question=question.question,
+                intent=question.intent,
+                filters=question.filters,
+                predicted_table_ids=predicted,
+                gold_table_ids=question.gold_table_ids,
+                missing_gold_table_ids=missing_gold,
+                gold_rank_beyond_10=_diagnostic_gold_ranks(
+                    diagnostic_predicted, missing_gold
+                ),
+                metrics=metrics,
+                failure=failure,
+                trace=metric_trace,
+            )
+        )
+        per_intent[question.intent].append(metrics)
+        per_gold[_gold_cardinality_v2(question)].append(metrics)
+        per_period[_period_cardinality_v2(question)].append(metrics)
+        per_statement[_statement_filter_v2(question)].append(metrics)
+        report_era = _report_era_v2(question)
+        if report_era is not None:
+            per_era[report_era].append(metrics)
+
+    def averaged(
+        groups: dict[str, list[RetrievalMetricsExtended]],
+    ) -> dict[str, RetrievalMetricsExtended]:
+        return {key: _average_extended(groups[key]) for key in sorted(groups)}
+
+    return RetrievalEvaluationReportV2(
+        dataset_fingerprint=questions[0].dataset_fingerprint if questions else "",
+        question_count=len(questions),
+        macro=_average_extended(result.metrics for result in results),
+        by_intent=averaged(per_intent),
+        by_gold_cardinality=averaged(per_gold),
+        by_period_cardinality=averaged(per_period),
+        by_statement_filter=averaged(per_statement),
+        by_report_era=averaged(per_era),
         per_question=tuple(results),
     )
 
