@@ -139,6 +139,28 @@ class RetrievalFailureReport(_FrozenModel):
         return self
 
 
+def load_failure_annotations(path: Path) -> tuple[FailureRootCauseAnnotation, ...]:
+    """Load deterministic JSONL annotations maintained independently of rankings."""
+    if not path.is_file():
+        raise ValueError(f"Failure annotation file not found: {path}")
+    annotations: list[FailureRootCauseAnnotation] = []
+    previous_id: str | None = None
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        if not line.strip():
+            raise ValueError(f"Failure annotations contain blank line {line_number}")
+        try:
+            annotation = FailureRootCauseAnnotation.model_validate_json(line)
+        except ValueError as exc:
+            raise ValueError(f"Invalid failure annotation at line {line_number}") from exc
+        if previous_id is not None and annotation.question_id <= previous_id:
+            raise ValueError("Failure annotations must be sorted and unique by question_id")
+        previous_id = annotation.question_id
+        annotations.append(annotation)
+    return tuple(annotations)
+
+
 def build_failure_report(
     evaluation: RetrievalEvaluationReportV2,
     annotations: Iterable[FailureRootCauseAnnotation],

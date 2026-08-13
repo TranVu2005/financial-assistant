@@ -28,6 +28,10 @@ from financial_report_qa.retrieval.fusion_evaluation import (
     write_day10_fusion,
 )
 from financial_report_qa.retrieval.index import build_bm25_index
+from financial_report_qa.retrieval.reference import (
+    CURRENT_BM25_REFERENCE,
+    load_bm25_reference_report,
+)
 from financial_report_qa.retrieval.service import RetrievalService
 
 
@@ -66,22 +70,15 @@ class _FixedVectorEncoder:
 
 
 _FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
-_LOCKED_METRICS = RetrievalMetrics(
-    true_positive=105,
-    precision=0.1499999999999999,
-    recall=0.880952380952381,
-    f2=0.4224545295973871,
-)
+_LOCKED_METRICS = CURRENT_BM25_REFERENCE.macro
 
 
 def _bm25_reference_report() -> RetrievalEvaluationReport:
-    return RetrievalEvaluationReport(
-        dataset_fingerprint=_FINGERPRINT,
-        question_count=70,
-        macro=_LOCKED_METRICS,
-        by_intent={"lookup": _LOCKED_METRICS},
-        per_question=(),
+    path = (
+        Path(__file__).parents[3]
+        / "artifacts/evaluations/day13/bm25/retrieval-day8-422df141c935.json"
     )
+    return load_bm25_reference_report(path).report
 
 
 def _gold_question(gold_table_ids: tuple[str, ...]) -> GoldRetrievalQuestion:

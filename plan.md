@@ -818,7 +818,7 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 - [x] Tính Precision, Recall, F2, MRR, Recall@3/5/10 theo intent, cardinality và loại báo cáo.
 - [x] Xuất failure cases với question, gold, predicted, scores, reason và `root_cause` gán tay.
 - [x] Re-baseline `_validate_bm25_reference` rồi chạy lại BM25/dense/fusion/graph/expansion.
-- **Đầu ra:** `artifacts/evaluations/retrieval-*.json` và `.md`.
+- **Đầu ra:** `artifacts/evaluations/day13/**/*.json` và `.md`.
 
 > **⚠️ Chốt chặn phát hiện ngày 2026-08-14:** `score_at_10` dùng mẫu số cố định 10 cho precision,
 > nên với gold 1–2 bảng/câu, **trần lý thuyết của macro F2 là 0,476190** (lookup 0,357143;

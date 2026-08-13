@@ -88,11 +88,23 @@ def load_gold_questions(
     release: ResolvedRetrievalRelease,
     *,
     require_count: int = REQUIRED_GOLD_QUESTION_COUNT,
+    question_ids: frozenset[str] | None = None,
 ) -> tuple[GoldRetrievalQuestion, ...]:
     """Load gold only when every label matches the locked release provenance."""
-    questions = load_reviewed_gold(
-        path, expected_count=require_count, expected_fingerprint=release.dataset_fingerprint
+    all_questions = load_reviewed_gold(
+        path, expected_fingerprint=release.dataset_fingerprint
     )
+    questions = tuple(
+        question
+        for question in all_questions
+        if question_ids is None or question.question_id in question_ids
+    )
+    if len(questions) != require_count:
+        raise RetrievalGoldError(
+            f"Expected {require_count} reviewed gold questions, found {len(questions)}"
+        )
+    if question_ids is not None and {item.question_id for item in questions} != question_ids:
+        raise RetrievalGoldError("Selected gold question IDs are incomplete")
     tables = {
         str(row["table_id"]): row
         for row in pq.read_table(release.release_dir / "tables.parquet").to_pylist()  # type: ignore[no-untyped-call]

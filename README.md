@@ -554,9 +554,12 @@ provenance và quota nằm tại [`data/qa/retrieval-gold-v1.provenance.md`](dat
 
 ### Kết quả mở rộng trên 70 câu
 
-Tất cả metric dưới đây được đọc từ
-[`metrics-v2-422df141c935.json`](artifacts/evaluations/day13/metrics-v2-422df141c935.json). Metric
-chỉ dùng top 10; truy hồi chẩn đoán đến hạng 100 không tham gia tính điểm.
+Tất cả metric dưới đây được đọc từ các full report trong
+[`artifacts/evaluations/day13/v2/`](artifacts/evaluations/day13/v2/). Mỗi system report lưu đủ
+70 kết quả theo câu và bốn breakdown ngoài intent; summary macro-only cũ đã được thay thế.
+Metric chỉ dùng top 10. Chỉ artifact BM25 `bm25-diagnostic/` chạy
+truy hồi riêng đến hạng 100 để failure analysis, với điều kiện top-10 prefix phải khớp
+metric trace; dense/fusion/expansion report không tuyên bố lưu cutoff chẩn đoán.
 
 | System | TP | P@10 | R@3 | R@5 | R@10 | F2@10 | MRR | P@R | F2@R |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -578,7 +581,39 @@ xác nhận đủ 146.011 document và 0 node cô lập trên toàn bộ quan h�
 11/70 câu lỗi top-10: 7 `zero_gold_hits`, 4 `partial_gold_hits`, 0 `no_eligible_documents`, 0
 `no_index_tokens`. Root cause gán tay có evidence: 6 `missing_alias`, 4 `ranking_only`, 1
 `gold_label_error`; các nhóm `filter_too_narrow`, `filter_too_wide`, `ocr_corruption` và `unknown`
-đều bằng 0. Gold bị thiếu đều xuất hiện ở hạng chẩn đoán 11–44.
+đều bằng 0. Gold bị thiếu đều xuất hiện ở hạng chẩn đoán 11–44. Nhãn gắn tay được
+version-control độc lập tại
+[`data/qa/retrieval-failure-annotations-v1.jsonl`](data/qa/retrieval-failure-annotations-v1.jsonl);
+không nhãn nào được sinh từ ranked list.
+
+### CLI tái lập V2/failure từ clean clone
+
+Với release lock và BM25 index đã có, các lệnh sau không cần network/GPU:
+
+```bash
+uv run --frozen --no-sync financial-report-qa retrieval evaluate-v2 \
+  --release-lock data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json \
+  --index-dir data/indexes/bm25-v3/422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a \
+  --gold-path data/qa/retrieval-gold-v1.jsonl --gold-version gold70 \
+  --diagnostic-k 100 --output-dir artifacts/evaluations/day13/v2/bm25-diagnostic
+
+uv run --frozen --no-sync financial-report-qa retrieval derive-v2 \
+  --release-lock data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json \
+  --gold-path data/qa/retrieval-gold-v1.jsonl --gold-version gold70 \
+  --source-report artifacts/evaluations/day13/dense-bge-m3.json \
+  --source-kind dense --system-name dense-bge-m3 \
+  --output-dir artifacts/evaluations/day13/v2
+
+uv run --frozen --no-sync financial-report-qa retrieval export-failures \
+  --evaluation-report artifacts/evaluations/day13/v2/bm25-diagnostic/retrieval-v2-422df141c935.json \
+  --annotations data/qa/retrieval-failure-annotations-v1.jsonl \
+  --output-dir artifacts/evaluations/day13
+```
+
+Lặp `derive-v2` với `source-kind=legacy|dense|fusion|expansion` và report tương ứng để
+tái sinh sạch 6 system artifacts. Khóa reference có hai descriptor bất biến: `gold30`
+(lịch sử) và `gold70` (hiện hành), gắn với fingerprint, SHA gold, digest question ID,
+question count, macro và SHA artifact; dùng `--gold-version gold30` để replay subset cố định.
 
 Day 13 hoàn tất phạm vi **đánh giá**, nhưng chưa đạt cổng Day 14 theo ADR 0002: kết quả tốt nhất
 quan sát được là F2@R `0.494129` và Recall@10 `0.880952`, thấp hơn hai ngưỡng tương ứng `0.80` và

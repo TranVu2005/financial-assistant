@@ -29,8 +29,8 @@ from financial_report_qa.retrieval.dense_evaluation import (
 )
 from financial_report_qa.retrieval.evaluation import (
     RetrievalEvaluationReport,
-    RetrievalMetrics,
 )
+from financial_report_qa.retrieval.reference import load_bm25_reference_report
 
 _LOCKED_FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
 
@@ -156,19 +156,11 @@ def _run(name: EncoderName, *, cold_p95: float, cache_hit: bool = False) -> Dens
 
 
 def _bm25_reference() -> RetrievalEvaluationReport:
-    metrics = RetrievalMetrics(
-        true_positive=105,
-        precision=0.1499999999999999,
-        recall=0.880952380952381,
-        f2=0.4224545295973871,
+    path = (
+        Path(__file__).parents[3]
+        / "artifacts/evaluations/day13/bm25/retrieval-day8-422df141c935.json"
     )
-    return RetrievalEvaluationReport(
-        dataset_fingerprint=_LOCKED_FINGERPRINT,
-        question_count=70,
-        macro=metrics,
-        by_intent={"lookup": metrics},
-        per_question=(),
-    )
+    return load_bm25_reference_report(path).report
 
 
 def test_dense_evaluation_reuses_fixed_day8_metric_math() -> None:
@@ -214,8 +206,9 @@ def test_day9_comparison_reports_dense_minus_bm25_delta() -> None:
     assert delta.recall == pytest.approx(bge.cold_report.macro.recall - 0.880952380952381)
     intent_deltas = comparison.systems["bge-m3"].delta_by_intent
     assert intent_deltas is not None
+    reference_lookup_recall = _bm25_reference().by_intent["lookup"].recall
     assert intent_deltas["lookup"].recall == pytest.approx(
-        bge.cold_report.by_intent["lookup"].recall - 0.880952380952381
+        bge.cold_report.by_intent["lookup"].recall - reference_lookup_recall
     )
 
 

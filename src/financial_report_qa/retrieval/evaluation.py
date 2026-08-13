@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from financial_report_qa.retrieval.contracts import (
     GoldRetrievalQuestion,
@@ -112,6 +112,12 @@ class RetrievalEvaluationReportV2(BaseModel):
     by_statement_filter: dict[str, RetrievalMetricsExtended]
     by_report_era: dict[str, RetrievalMetricsExtended]
     per_question: tuple[RetrievalQuestionEvaluationV2, ...]
+
+    @model_validator(mode="after")
+    def validate_complete_question_evidence(self) -> RetrievalEvaluationReportV2:
+        if self.question_count != len(self.per_question):
+            raise ValueError("question_count must equal per_question length")
+        return self
 
 
 class RetrievalClient(Protocol):
@@ -358,6 +364,10 @@ def evaluate_retrieval_v2(
         diagnostic_predicted = tuple(
             candidate.table_id for candidate in diagnostic_trace.results
         )
+        if diagnostic_predicted[:10] != predicted:
+            raise ValueError(
+                "diagnostic ranking must preserve the metric top-10 prefix"
+            )
         failure = _failure_for(
             metric_trace,
             RetrievalMetrics(
@@ -499,4 +509,68 @@ def write_report(report: RetrievalEvaluationReport, output_dir: Path) -> tuple[P
     )
     _write_atomic(json_path, json_content + "\n")
     _write_atomic(markdown_path, _render_markdown(report))
+    return json_path, markdown_path
+
+
+def _render_markdown_v2(report: RetrievalEvaluationReportV2) -> str:
+    macro = report.macro
+    lines = [
+        "# Day 13 Retrieval Evaluation V2",
+        "",
+        f"- Dataset fingerprint: `{report.dataset_fingerprint}`",
+        f"- Questions: {report.question_count}",
+        f"- Diagnostic cutoff: {report.diagnostic_k}",
+        f"- Recall@10: {macro.recall_at_10:.6f}",
+        f"- F2@R: {macro.f2_at_r:.6f}",
+    ]
+
+    def append_breakdown(
+        title: str, values: dict[str, RetrievalMetricsExtended]
+    ) -> None:
+        lines.extend(
+            (
+                "",
+                f"## {title}",
+                "",
+                "| Group | P@10 | R@3 | R@5 | R@10 | F2@10 | MRR | P@R | F2@R | TP |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            )
+        )
+        for label, metrics in values.items():
+            lines.append(
+                f"| {label} | {metrics.precision_at_10:.6f} | "
+                f"{metrics.recall_at_3:.6f} | {metrics.recall_at_5:.6f} | "
+                f"{metrics.recall_at_10:.6f} | {metrics.f2_at_10:.6f} | "
+                f"{metrics.mrr:.6f} | {metrics.precision_at_r:.6f} | "
+                f"{metrics.f2_at_r:.6f} | {metrics.true_positive} |"
+            )
+
+    append_breakdown("By intent", report.by_intent)
+    append_breakdown("By gold cardinality", report.by_gold_cardinality)
+    append_breakdown("By period cardinality", report.by_period_cardinality)
+    append_breakdown("By statement filter", report.by_statement_filter)
+    append_breakdown("By report era", report.by_report_era)
+    lines.extend(("", "## Per-question evidence", ""))
+    for item in report.per_question:
+        ranks = json.dumps(item.gold_rank_beyond_10, ensure_ascii=False, sort_keys=True)
+        lines.append(
+            f"- `{item.question_id}`: failure={item.failure}; "
+            f"R@10={item.metrics.recall_at_10:.6f}; diagnostic_gold_ranks=`{ranks}`"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def write_report_v2(
+    report: RetrievalEvaluationReportV2, output_dir: Path
+) -> tuple[Path, Path]:
+    """Publish a complete byte-stable V2 JSON/Markdown report pair."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prefix = report.dataset_fingerprint[:12]
+    json_path = output_dir / f"retrieval-v2-{prefix}.json"
+    markdown_path = output_dir / f"retrieval-v2-{prefix}.md"
+    json_content = json.dumps(
+        report.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, indent=2
+    )
+    _write_atomic(json_path, json_content + "\n")
+    _write_atomic(markdown_path, _render_markdown_v2(report))
     return json_path, markdown_path

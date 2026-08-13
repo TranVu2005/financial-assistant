@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -25,6 +26,7 @@ from financial_report_qa.retrieval.expansion_evaluation import (
     evaluate_expansion_grid,
 )
 from financial_report_qa.retrieval.graph_service import TableGraphService
+from financial_report_qa.retrieval.reference import load_bm25_reference_report
 from financial_report_qa.retrieval.service import RetrievalService
 
 _FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
@@ -111,13 +113,11 @@ def _question(
 
 
 def _bm25_report() -> RetrievalEvaluationReport:
-    return RetrievalEvaluationReport(
-        dataset_fingerprint=_FINGERPRINT,
-        question_count=70,
-        macro=_REFERENCE,
-        by_intent={"lookup": _REFERENCE},
-        per_question=(),
+    path = (
+        Path(__file__).parents[3]
+        / "artifacts/evaluations/day13/bm25/retrieval-day8-422df141c935.json"
     )
+    return load_bm25_reference_report(path).report
 
 
 def test_grid_point_with_alpha_zero_matches_the_base_predictions(

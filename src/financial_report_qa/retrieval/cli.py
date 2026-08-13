@@ -27,6 +27,7 @@ from financial_report_qa.core.errors import (
     RetrievalArtifactError,
     RetrievalInputError,
 )
+from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion
 from financial_report_qa.retrieval.data_cleanup import plan_day9_cleanup, quarantine_day9_cleanup
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
 from financial_report_qa.retrieval.dense_cache import QueryEmbeddingCache
@@ -56,13 +57,20 @@ from financial_report_qa.retrieval.dense_index import (
 from financial_report_qa.retrieval.dense_service import DenseRetrievalService
 from financial_report_qa.retrieval.documents import build_table_documents
 from financial_report_qa.retrieval.evaluation import (
-    RetrievalEvaluationReport,
+    RetrievalEvaluationReportV2,
     evaluate_retrieval,
+    evaluate_retrieval_v2,
     write_report,
+    write_report_v2,
 )
 from financial_report_qa.retrieval.expansion_evaluation import (
     evaluate_expansion_grid,
     write_day12_expansion,
+)
+from financial_report_qa.retrieval.failure_evaluation import (
+    build_failure_report,
+    load_failure_annotations,
+    write_failure_report,
 )
 from financial_report_qa.retrieval.fusion_evaluation import evaluate_fusion_grid, write_day10_fusion
 from financial_report_qa.retrieval.gold import load_gold_questions
@@ -73,8 +81,21 @@ from financial_report_qa.retrieval.graph_evaluation import (
 )
 from financial_report_qa.retrieval.graph_service import TableGraphService
 from financial_report_qa.retrieval.index import build_bm25_index, load_bm25_index, save_bm25_index
-from financial_report_qa.retrieval.release import resolve_retrieval_release
+from financial_report_qa.retrieval.reference import (
+    ReferenceVersion,
+    load_bm25_reference_report,
+    resolve_gold_reference,
+)
+from financial_report_qa.retrieval.release import (
+    ResolvedRetrievalRelease,
+    resolve_retrieval_release,
+)
 from financial_report_qa.retrieval.service import RetrievalService
+from financial_report_qa.retrieval.system_evaluation import (
+    SystemSourceKind,
+    derive_system_report_v2,
+    write_system_report_v2,
+)
 
 
 class _DenseBuildObservation(BaseModel):
@@ -94,7 +115,13 @@ class _DenseBuildObservation(BaseModel):
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="financial-report-qa retrieval")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("build-index", "validate-gold", "evaluate", "build-dense-corpus"):
+    for name in (
+        "build-index",
+        "validate-gold",
+        "evaluate",
+        "evaluate-v2",
+        "build-dense-corpus",
+    ):
         command = commands.add_parser(name)
         command.add_argument("--release-lock", type=Path, required=True)
         if name == "build-index":
@@ -103,9 +130,28 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument("--output-root", type=Path, required=True)
         else:
             command.add_argument("--gold-path", type=Path, required=True)
-        if name == "evaluate":
+            command.add_argument("--gold-version", choices=("gold30", "gold70"))
+        if name in {"evaluate", "evaluate-v2"}:
             command.add_argument("--index-dir", type=Path, required=True)
             command.add_argument("--output-dir", type=Path, required=True)
+        if name == "evaluate-v2":
+            command.add_argument("--diagnostic-k", type=int, default=100)
+            command.add_argument("--repo-root", type=Path)
+    failure_export = commands.add_parser("export-failures")
+    failure_export.add_argument("--evaluation-report", type=Path, required=True)
+    failure_export.add_argument("--annotations", type=Path, required=True)
+    failure_export.add_argument("--output-dir", type=Path, required=True)
+    derive_v2 = commands.add_parser("derive-v2")
+    derive_v2.add_argument("--release-lock", type=Path, required=True)
+    derive_v2.add_argument("--gold-path", type=Path, required=True)
+    derive_v2.add_argument("--gold-version", choices=("gold30", "gold70"))
+    derive_v2.add_argument("--source-report", type=Path, required=True)
+    derive_v2.add_argument(
+        "--source-kind", choices=("legacy", "dense", "fusion", "expansion"), required=True
+    )
+    derive_v2.add_argument("--system-name", required=True)
+    derive_v2.add_argument("--output-dir", type=Path, required=True)
+    derive_v2.add_argument("--repo-root", type=Path)
     dense_index = commands.add_parser("build-dense-index")
     dense_index.add_argument("--release-lock", type=Path, required=True)
     dense_index.add_argument("--corpus-dir", type=Path, required=True)
@@ -126,6 +172,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     dense_evaluation.add_argument("--encoder-device", choices=("cpu", "cuda"), default="cpu")
     dense_evaluation.add_argument("--gold-path", type=Path, required=True)
+    dense_evaluation.add_argument("--gold-version", choices=("gold30", "gold70"))
     dense_evaluation.add_argument("--cache-dir", type=Path, required=True)
     dense_evaluation.add_argument("--observation-path", type=Path, required=True)
     dense_evaluation.add_argument("--output-path", type=Path, required=True)
@@ -143,6 +190,7 @@ def _parser() -> argparse.ArgumentParser:
     fusion.add_argument("--encoder", choices=("bge-m3", "multilingual-e5-small"), required=True)
     fusion.add_argument("--encoder-device", choices=("cpu", "cuda"), default="cpu")
     fusion.add_argument("--gold-path", type=Path, required=True)
+    fusion.add_argument("--gold-version", choices=("gold30", "gold70"))
     fusion.add_argument("--cache-dir", type=Path, required=True)
     fusion.add_argument("--bm25-report", type=Path, required=True)
     fusion.add_argument("--output-dir", type=Path, required=True)
@@ -158,6 +206,7 @@ def _parser() -> argparse.ArgumentParser:
     expansion_evaluate.add_argument("--index-dir", type=Path, required=True)
     expansion_evaluate.add_argument("--graph-dir", type=Path, required=True)
     expansion_evaluate.add_argument("--gold-path", type=Path, required=True)
+    expansion_evaluate.add_argument("--gold-version", choices=("gold30", "gold70"))
     expansion_evaluate.add_argument("--bm25-report", type=Path, required=True)
     expansion_evaluate.add_argument("--output-dir", type=Path, required=True)
     cleanup = commands.add_parser("cleanup-day9-data")
@@ -218,9 +267,40 @@ def _write_dense_run(run: DenseEvaluationRun, path: Path) -> None:
     )
 
 
+def _load_gold_for_cli(
+    path: Path,
+    release: ResolvedRetrievalRelease,
+    version: str | None,
+) -> tuple[GoldRetrievalQuestion, ...]:
+    """Keep legacy fixture/custom gold behavior while locking named real snapshots."""
+    if version is None:
+        return load_gold_questions(path, release)
+    resolved = resolve_gold_reference(path, version=cast(ReferenceVersion, version))
+    return load_gold_questions(
+        path,
+        release,
+        require_count=resolved.descriptor.question_count,
+        question_ids=resolved.selected_question_ids,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
+        if args.command == "export-failures":
+            try:
+                evaluation = RetrievalEvaluationReportV2.model_validate_json(
+                    args.evaluation_report.read_bytes()
+                )
+                failure_report = build_failure_report(
+                    evaluation, load_failure_annotations(args.annotations)
+                )
+            except ValueError as exc:
+                raise RetrievalInputError("Failure export inputs are invalid") from exc
+            json_path, markdown_path = write_failure_report(failure_report, args.output_dir)
+            print(json_path)
+            print(markdown_path)
+            return 0
         if args.command == "cleanup-day9-data":
             plan = plan_day9_cleanup(args.repo_root)
             for entry in plan.entries:
@@ -241,8 +321,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             for destination in quarantine_day9_cleanup(plan, args.quarantine_root):
                 print(json.dumps({"action": "moved", "destination": str(destination)}))
             return 2 if any(entry.status == "blocked" for entry in plan.entries) else 0
-        root = Path.cwd()
+        root = args.repo_root if getattr(args, "repo_root", None) is not None else Path.cwd()
         release = resolve_retrieval_release(args.release_lock, repo_root=root)
+        if args.command == "derive-v2":
+            gold = _load_gold_for_cli(args.gold_path, release, args.gold_version)
+            try:
+                system_report = derive_system_report_v2(
+                    system_name=args.system_name,
+                    source_path=args.source_report,
+                    source_kind=cast(SystemSourceKind, args.source_kind),
+                    questions=gold,
+                )
+            except ValueError as exc:
+                raise RetrievalArtifactError("V2 source report is invalid") from exc
+            json_path, markdown_path = write_system_report_v2(system_report, args.output_dir)
+            print(json_path)
+            print(markdown_path)
+            return 0
         if args.command == "build-index":
             documents = build_table_documents(
                 release.release_dir / "documents.parquet",
@@ -308,7 +403,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(markdown_path)
             return 0
         if args.command == "evaluate-expansion":
-            gold = load_gold_questions(args.gold_path, release)
+            gold = _load_gold_for_cli(args.gold_path, release, args.gold_version)
             documents = build_table_documents(
                 release.release_dir / "documents.parquet",
                 release.release_dir / "tables.parquet",
@@ -319,9 +414,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 graph = load_graph(
                     args.graph_dir, documents, release_lock_sha256=release.lock_sha256
                 )
-                bm25_report = RetrievalEvaluationReport.model_validate_json(
-                    args.bm25_report.read_text(encoding="utf-8")
-                )
+                bm25_report = load_bm25_reference_report(args.bm25_report).report
             except (ValueError, ValidationError) as exc:
                 raise ExpansionArtifactError("Expansion evaluation inputs are invalid") from exc
             if index.manifest.dataset_fingerprint != release.dataset_fingerprint:
@@ -394,11 +487,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(target)
             return 0
         if args.command == "validate-gold":
-            gold = load_gold_questions(args.gold_path, release)
+            gold = _load_gold_for_cli(args.gold_path, release, args.gold_version)
             print(f"validated {len(gold)} reviewed retrieval questions")
             return 0
         if args.command == "evaluate-dense":
-            gold = load_gold_questions(args.gold_path, release)
+            gold = _load_gold_for_cli(args.gold_path, release, args.gold_version)
             encoder_name = cast(EncoderName, args.encoder)
             encoder_device = cast(Literal["cpu", "cuda"], args.encoder_device)
             encoder = _load_dense_encoder(
@@ -439,9 +532,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(args.output_path)
             return 0
         if args.command == "compare-day9":
-            bm25_report = RetrievalEvaluationReport.model_validate_json(
-                args.bm25_report.read_text(encoding="utf-8")
-            )
+            try:
+                bm25_report = load_bm25_reference_report(args.bm25_report).report
+            except ValueError as exc:
+                raise DenseArtifactError("BM25 reference artifact is invalid") from exc
             bge_run = DenseEvaluationRun.model_validate_json(
                 args.bge_report.read_text(encoding="utf-8")
             )
@@ -457,7 +551,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(markdown_path)
             return 0
         if args.command == "evaluate-fusion":
-            gold = load_gold_questions(args.gold_path, release)
+            gold = _load_gold_for_cli(args.gold_path, release, args.gold_version)
             try:
                 bm25_index = load_bm25_index(
                     args.index_dir, release_lock_sha256=release.lock_sha256
@@ -488,10 +582,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             dense_service = DenseRetrievalService(
                 dense_index, encoder, QueryEmbeddingCache(args.cache_dir, encoder.spec)
             )
-            bm25_report = RetrievalEvaluationReport.model_validate_json(
-                args.bm25_report.read_text(encoding="utf-8")
-            )
             try:
+                bm25_report = load_bm25_reference_report(args.bm25_report).report
                 grid_report = evaluate_fusion_grid(bm25_service, dense_service, gold, bm25_report)
             except ValueError as exc:
                 raise FusionArtifactError("Fusion grid evaluation inputs are invalid") from exc
@@ -500,14 +592,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(markdown_path)
             return 0
         try:
-            gold = load_gold_questions(args.gold_path, release)
+            gold = _load_gold_for_cli(args.gold_path, release, args.gold_version)
             index = load_bm25_index(args.index_dir, release_lock_sha256=release.lock_sha256)
         except ValueError as exc:
             raise RetrievalArtifactError(f"BM25 index artifact is invalid: {exc}") from exc
         if index.manifest.dataset_fingerprint != release.dataset_fingerprint:
             raise RetrievalArtifactError("BM25 index fingerprint does not match release lock")
-        report = evaluate_retrieval(RetrievalService(index), gold)
-        json_path, markdown_path = write_report(report, args.output_dir)
+        if args.command == "evaluate-v2":
+            try:
+                report_v2 = evaluate_retrieval_v2(
+                    RetrievalService(index), gold, diagnostic_k=args.diagnostic_k
+                )
+            except ValueError as exc:
+                raise RetrievalArtifactError("V2 diagnostic ranking is invalid") from exc
+            json_path, markdown_path = write_report_v2(report_v2, args.output_dir)
+        else:
+            legacy_report = evaluate_retrieval(RetrievalService(index), gold)
+            json_path, markdown_path = write_report(legacy_report, args.output_dir)
         print(json_path)
         print(markdown_path)
         return 0

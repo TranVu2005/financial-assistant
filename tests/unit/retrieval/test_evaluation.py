@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from financial_report_qa.retrieval.contracts import (
     FilterDecision,
@@ -12,11 +13,13 @@ from financial_report_qa.retrieval.contracts import (
     TableMetadata,
 )
 from financial_report_qa.retrieval.evaluation import (
+    RetrievalEvaluationReportV2,
     evaluate_retrieval,
     evaluate_retrieval_v2,
     score_at_10,
     score_extended_at_10,
     write_report,
+    write_report_v2,
 )
 
 
@@ -322,6 +325,18 @@ def test_evaluate_retrieval_v2_scores_an_independent_k_10_retrieval() -> None:
     assert report.macro.mrr == 1
 
 
+def test_evaluate_retrieval_v2_rejects_a_non_prefix_diagnostic_ranking() -> None:
+    """A gold miss cannot acquire a diagnostic rank from a different top-10 ranking."""
+    retriever = _KSensitiveRetriever(())
+    gold = _table_id("a")
+    question = _question_with_dimensions("8", gold=(gold,), periods=("2023",))
+
+    with pytest.raises(
+        ValueError, match="diagnostic ranking must preserve the metric top-10 prefix"
+    ):
+        evaluate_retrieval_v2(retriever, (question,))
+
+
 def test_evaluate_retrieval_v2_reports_all_required_breakdown_labels() -> None:
     """Wrong cardinality/filter/era classification must change the report keys."""
     tables = tuple(_table_id(character) for character in "abcdef")
@@ -349,6 +364,37 @@ def test_evaluate_retrieval_v2_reports_all_required_breakdown_labels() -> None:
     assert report.macro.mrr == pytest.approx(7 / 12)
     assert report.macro.f2_at_r == pytest.approx(11 / 18)
     assert report.by_statement_filter["filtered"].f2_at_r == pytest.approx(5 / 6)
+
+
+def test_v2_report_rejects_question_count_without_complete_question_evidence() -> None:
+    report = evaluate_retrieval_v2(
+        _DiagnosticRetriever((_table_id("a"),)), (_question(),), diagnostic_k=10
+    )
+    payload = report.model_dump(mode="json")
+    payload["question_count"] = 2
+
+    with pytest.raises(ValidationError, match="question_count must equal per_question"):
+        RetrievalEvaluationReportV2.model_validate(payload)
+
+
+def test_write_report_v2_is_byte_stable_and_persists_breakdowns(tmp_path: Path) -> None:
+    report = evaluate_retrieval_v2(
+        _DiagnosticRetriever((_table_id("a"),)), (_question(),), diagnostic_k=10
+    )
+
+    first = write_report_v2(report, tmp_path / "first")
+    second = write_report_v2(report, tmp_path / "second")
+
+    assert [path.name for path in first] == [
+        "retrieval-v2-cccccccccccc.json",
+        "retrieval-v2-cccccccccccc.md",
+    ]
+    assert [path.read_bytes() for path in first] == [path.read_bytes() for path in second]
+    parsed = RetrievalEvaluationReportV2.model_validate_json(first[0].read_bytes())
+    assert parsed.by_gold_cardinality == report.by_gold_cardinality
+    markdown = first[1].read_text(encoding="utf-8")
+    assert "## By gold cardinality" in markdown
+    assert "## By report era" in markdown
 
 
 @pytest.mark.parametrize("diagnostic_k", [0, 9])

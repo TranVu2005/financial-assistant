@@ -17,7 +17,6 @@ from financial_report_qa.evaluation.week1_release import ReleaseLock
 from financial_report_qa.retrieval.contracts import RetrievalFilters
 from financial_report_qa.retrieval.dense_contracts import DenseEncoderSpec, EncoderName
 from financial_report_qa.retrieval.dense_encoder import approved_encoder_spec
-from financial_report_qa.retrieval.evaluation import RetrievalEvaluationReport, RetrievalMetrics
 from financial_report_qa.retrieval.gold import stable_question_id
 from financial_report_qa.retrieval.release import ResolvedRetrievalRelease
 
@@ -134,20 +133,11 @@ def _write_fixture_gold(path: Path) -> None:
 
 
 def _write_bm25_reference(path: Path) -> None:
-    metrics = RetrievalMetrics(
-        true_positive=105,
-        precision=0.1499999999999999,
-        recall=0.880952380952381,
-        f2=0.4224545295973871,
+    source = (
+        Path(__file__).parents[3]
+        / "artifacts/evaluations/day13/bm25/retrieval-day8-422df141c935.json"
     )
-    report = RetrievalEvaluationReport(
-        dataset_fingerprint=_FINGERPRINT,
-        question_count=70,
-        macro=metrics,
-        by_intent={"compare": metrics, "growth": metrics, "lookup": metrics},
-        per_question=(),
-    )
-    path.write_text(json.dumps(report.model_dump(mode="json")), encoding="utf-8")
+    path.write_bytes(source.read_bytes())
 
 
 def _patch_release_resolver(monkeypatch: MonkeyPatch, release: ResolvedRetrievalRelease) -> None:

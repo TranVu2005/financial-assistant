@@ -1,0 +1,2557 @@
+{
+  "by_gold_cardinality": {
+    "one_table": {
+      "f2_at_10": 0.22817460317460306,
+      "f2_at_r": 0.2222222222222222,
+      "mrr": 0.33065476190476184,
+      "precision_at_10": 0.06388888888888891,
+      "precision_at_r": 0.2222222222222222,
+      "recall_at_10": 0.6388888888888888,
+      "recall_at_3": 0.3333333333333333,
+      "recall_at_5": 0.5,
+      "true_positive": 23
+    },
+    "three_or_more": {
+      "f2_at_10": 0.6351981351981351,
+      "f2_at_r": 0.5576824795574795,
+      "mrr": 0.6041666666666666,
+      "precision_at_10": 0.3,
+      "precision_at_r": 0.3958333333333333,
+      "recall_at_10": 0.8888888888888888,
+      "recall_at_3": 0.3541666666666667,
+      "recall_at_5": 0.736111111111111,
+      "true_positive": 36
+    },
+    "two_tables": {
+      "f2_at_10": 0.12626262626262627,
+      "f2_at_r": 0.045454545454545456,
+      "mrr": 0.07916666666666666,
+      "precision_at_10": 0.045454545454545456,
+      "precision_at_r": 0.045454545454545456,
+      "recall_at_10": 0.22727272727272727,
+      "recall_at_3": 0.045454545454545456,
+      "recall_at_5": 0.09090909090909091,
+      "true_positive": 10
+    }
+  },
+  "by_intent": {
+    "compare": {
+      "f2_at_10": 0.2569531917358004,
+      "f2_at_r": 0.08300395256916997,
+      "mrr": 0.15802277432712217,
+      "precision_at_10": 0.1,
+      "precision_at_r": 0.07246376811594202,
+      "recall_at_10": 0.4782608695652174,
+      "recall_at_3": 0.10507246376811594,
+      "recall_at_5": 0.2826086956521739,
+      "true_positive": 23
+    },
+    "growth": {
+      "f2_at_10": 0.23985676159589195,
+      "f2_at_r": 0.19082125603864736,
+      "mrr": 0.2975155279503106,
+      "precision_at_10": 0.08695652173913046,
+      "precision_at_r": 0.16666666666666669,
+      "recall_at_10": 0.5072463768115941,
+      "recall_at_3": 0.25362318840579706,
+      "recall_at_5": 0.3731884057971014,
+      "true_positive": 20
+    },
+    "lookup": {
+      "f2_at_10": 0.2994921744921744,
+      "f2_at_r": 0.3914254148629149,
+      "mrr": 0.43407738095238096,
+      "precision_at_10": 0.10833333333333338,
+      "precision_at_r": 0.34375,
+      "recall_at_10": 0.6666666666666666,
+      "recall_at_3": 0.375,
+      "recall_at_5": 0.5729166666666666,
+      "true_positive": 26
+    }
+  },
+  "by_period_cardinality": {
+    "multiple_periods": {
+      "f2_at_10": 0.1418951418951419,
+      "f2_at_r": 0.030303030303030304,
+      "mrr": 0.11926406926406928,
+      "precision_at_10": 0.042424242424242434,
+      "precision_at_r": 0.030303030303030304,
+      "recall_at_10": 0.36363636363636365,
+      "recall_at_3": 0.12121212121212122,
+      "recall_at_5": 0.24242424242424243,
+      "true_positive": 14
+    },
+    "one_period": {
+      "f2_at_10": 0.37653787653787657,
+      "f2_at_r": 0.3970862095862096,
+      "mrr": 0.4583655083655083,
+      "precision_at_10": 0.1486486486486486,
+      "precision_at_r": 0.34459459459459457,
+      "recall_at_10": 0.7207207207207208,
+      "recall_at_3": 0.3581081081081081,
+      "recall_at_5": 0.5630630630630631,
+      "true_positive": 55
+    }
+  },
+  "by_report_era": {
+    "2015_2019": {
+      "f2_at_10": 0.48390762676476956,
+      "f2_at_r": 0.4139137978423693,
+      "mrr": 0.48769841269841274,
+      "precision_at_10": 0.20952380952380953,
+      "precision_at_r": 0.32142857142857145,
+      "recall_at_10": 0.7936507936507935,
+      "recall_at_3": 0.34523809523809523,
+      "recall_at_5": 0.6111111111111112,
+      "true_positive": 44
+    },
+    "2020_2023": {
+      "f2_at_10": 0.1713124274099883,
+      "f2_at_r": 0.12195121951219512,
+      "mrr": 0.19538327526132404,
+      "precision_at_10": 0.05121951219512196,
+      "precision_at_r": 0.12195121951219512,
+      "recall_at_10": 0.43902439024390244,
+      "recall_at_3": 0.17073170731707318,
+      "recall_at_5": 0.3170731707317073,
+      "true_positive": 21
+    },
+    "2024_2025": {
+      "f2_at_10": 0.17857142857142858,
+      "f2_at_r": 0.25,
+      "mrr": 0.33035714285714285,
+      "precision_at_10": 0.05,
+      "precision_at_r": 0.25,
+      "recall_at_10": 0.5,
+      "recall_at_3": 0.375,
+      "recall_at_5": 0.375,
+      "true_positive": 4
+    }
+  },
+  "by_statement_filter": {
+    "filtered": {
+      "f2_at_10": 0.3651533651533653,
+      "f2_at_r": 0.32649310565977235,
+      "mrr": 0.42285714285714276,
+      "precision_at_10": 0.13777777777777772,
+      "precision_at_r": 0.2833333333333333,
+      "recall_at_10": 0.7481481481481482,
+      "recall_at_3": 0.3611111111111111,
+      "recall_at_5": 0.5740740740740742,
+      "true_positive": 62
+    },
+    "unfiltered": {
+      "f2_at_10": 0.08730158730158731,
+      "f2_at_r": 0.04,
+      "mrr": 0.07466666666666666,
+      "precision_at_10": 0.027999999999999997,
+      "precision_at_r": 0.04,
+      "recall_at_10": 0.2,
+      "recall_at_3": 0.04,
+      "recall_at_5": 0.12,
+      "true_positive": 7
+    }
+  },
+  "dataset_fingerprint": "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a",
+  "macro": {
+    "f2_at_10": 0.26592058734915885,
+    "f2_at_r": 0.2241741393527108,
+    "mrr": 0.29850340136054415,
+    "precision_at_10": 0.09857142857142853,
+    "precision_at_r": 0.19642857142857142,
+    "recall_at_10": 0.5523809523809524,
+    "recall_at_3": 0.24642857142857144,
+    "recall_at_5": 0.41190476190476194,
+    "true_positive": 69
+  },
+  "per_question": [
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_22c0746dc41f87e2f3e9dcdb3de72433951f418366a767bb335ff37c84ff98c1",
+        "tbl_5a6128f7f8df589d7546dd7e7364079ec4758a5747fe349ec88f9aa70020ebfd"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_08a0e3ced419ac590ac10edbd27f18dc4451d53e662384aab267a264f3347d11",
+        "tbl_6d1487d08d33efb02ac977ae928454da48086d17fdbb322e8e4c5826a29c1925",
+        "tbl_3eaabfe7f3efd30db90397130b7ea95d3905fdee3ab10819afcd2e68ba64f4c6",
+        "tbl_eed32622f867840b633cadc1dba8eef83f47bb22eaf257bc3899c1191c8a17a8",
+        "tbl_940e141c57978172f2590d967f2cf9827049d65d7c3268e467af0dafef36175d",
+        "tbl_36e25a6c3f2723e07ee83eac7bb289a89e20f0b0b4b2f1eeaaa50f9bf1714cb6",
+        "tbl_de65a9a47a8af0be6d0be58bc0e34779dcc61eacb69e7017eb08fd2939b87631",
+        "tbl_f284f736eb01c71137865e9850597901e92411f947cfe4d263a18732ebd2537d",
+        "tbl_f27d49fc5800cf5d91433170b5f705b9c1451cf68b35a5f2237ee402224b0b65",
+        "tbl_76a113291434167b469483b9d441e5d7d670bdbd4e1eb3ae9cc651157468e247"
+      ],
+      "question_id": "retq_00888e79366b91100dacb03137b33c72c620c121dbf3e5fab1db36a23b41733e",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_e22902ca93e0e314bb09ec37a330ada39678b4f578c553c1ac27e5ea379610ca",
+        "tbl_e5c0a901bacbe5cfab2d10ae398a388af73e490b61721b1bc62bdf474d0d0525"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_9d5710948d0a53d59dace07750c587e43aa6d2813540e4907ab361872dd5b876",
+        "tbl_fc1e9fb238e04284f0322032216e6dc59e989975a787200d2d2a08724cb86ec3",
+        "tbl_850ca33887a6b6ef7eeac6c5472408e8a633a71e78145db1e561598a4c21802d",
+        "tbl_242a1b595b5e873a0512f808e1ee4d9d47da7499bc4cac2e055184e589a2a492",
+        "tbl_61e308bb0b839d216a75ee9a11aba22470709c0636acbc59ce6a5e25cdd7100d",
+        "tbl_97d6a4cf98c3e4a49fe05a6d9cf6c93e03c63bf1f00f787673eeb08d6fcf0e02",
+        "tbl_13526444bfe34060534f7283d39bc4ca18773c71e06246638743203f59d96c1f",
+        "tbl_a3cba3055aaa67dba5448a4d40018e6c25d94fa63d37e8b41e816249816b9e25",
+        "tbl_29874f68c7787ecf44953a578f2e978b10a92bc604bf02c52a38099f0640a9d4",
+        "tbl_64e67318bad075a02a9549be4207d90725a1a1574f2c29b5deefdfa913d29a0c"
+      ],
+      "question_id": "retq_027ca04462e4cc19229848df810cb6c6aa404ddd4b19659fee6cabd954fbcfd2",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_0ef37af53d44c4b68d57f7bf2605767e25d20cab6f6448d7ef9e80784972e5ab",
+        "tbl_74222750730e1e2328a41f6ef1c3efd98c569243445c7f74cd7f187541483c07",
+        "tbl_acd28a9e88fc9ff9395da95879b7ff77c6843ea9bbbc2e0a11e486c302a2389b",
+        "tbl_dcb21cd18e2ffedae94cf26e787516fb797c8ef716bbc95210e781e3b035e5b8"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.7692307692307692,
+        "f2_at_r": 0.9375,
+        "mrr": 1.0,
+        "precision_at_10": 0.4,
+        "precision_at_r": 0.75,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.5,
+        "recall_at_5": 1.0,
+        "true_positive": 4
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_0ef37af53d44c4b68d57f7bf2605767e25d20cab6f6448d7ef9e80784972e5ab",
+        "tbl_74222750730e1e2328a41f6ef1c3efd98c569243445c7f74cd7f187541483c07",
+        "tbl_8527949ec89e7412439126f1e06bbe4985ee0f12c304b0eaf7e3ff29e9698884",
+        "tbl_dcb21cd18e2ffedae94cf26e787516fb797c8ef716bbc95210e781e3b035e5b8",
+        "tbl_acd28a9e88fc9ff9395da95879b7ff77c6843ea9bbbc2e0a11e486c302a2389b"
+      ],
+      "question_id": "retq_035ab7b50aa16f2da0835e329105ef45254fff823aab0375464fe935992d7301",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_78a20886a2ca480358ea38bb0a46bbdfd854750f9d2c25ec0353d4c7d48fa7d0",
+        "tbl_abe7c042c924c885ecfa471d654d72a5daf63e9429ec64ed19ff290061fec508",
+        "tbl_b3cf5fb3467154be3a8e190746175350ff2753d9ef811ca3e8895c32d7cb3679",
+        "tbl_e25049dc10ac4b8d59a3d1bc3db8d0893e0382c01e361580e8405651ef572a51"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.7692307692307692,
+        "f2_at_r": 1.0,
+        "mrr": 1.0,
+        "precision_at_10": 0.4,
+        "precision_at_r": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.75,
+        "recall_at_5": 1.0,
+        "true_positive": 4
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_78a20886a2ca480358ea38bb0a46bbdfd854750f9d2c25ec0353d4c7d48fa7d0",
+        "tbl_b3cf5fb3467154be3a8e190746175350ff2753d9ef811ca3e8895c32d7cb3679",
+        "tbl_e25049dc10ac4b8d59a3d1bc3db8d0893e0382c01e361580e8405651ef572a51",
+        "tbl_abe7c042c924c885ecfa471d654d72a5daf63e9429ec64ed19ff290061fec508",
+        "tbl_311914d8ba482d5dac25a2292d0ffed4ea3d89b3680344ec3d05c00d2e109a9f",
+        "tbl_d4f4dd8262f580dc88a7263f923da481c4075529d91cd17d735b536d861979ca",
+        "tbl_47766b9215be28985b43310b8e9582d7d2a021eb30a2c5111d961fadfba3a601",
+        "tbl_f22c8c9bb63e049b4ad24e0bb99698efb063cb163f4d4df898b660484cfc7f05",
+        "tbl_fd18f6f79d273f0d6b54e6b42d2b0dd05c154e8a3863ec920b5b8594273cf9c1"
+      ],
+      "question_id": "retq_07495f696860ec468fa5a71f67fa84b86bcfdbcd1b55d1deaf3fbbbebf45a52b",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_6e9abf4aa6e5d9ed997cdeaccb996e31a6fef14603f1482d94689fcacfe6a3e4"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_5d6210ae11e492036f4bae36e1524a7511526230db7f7293e32b3c6c04755531",
+        "tbl_0bd42722eed465fc9ac833b876dd99361753cc5f7370815c81c74104b46c7486",
+        "tbl_af7dbeb1b61658ca58ec6f5255297a360c6b25e3956458b93215c63a51c9e5f4",
+        "tbl_70e4ba173a43cb658b89950650e937a128a8c898248ec7d3b639337ed446c03f",
+        "tbl_c7b94ad4148adc464882b7861d6d9b774bbe088a07cc9d1aa49d034aeeb7337e",
+        "tbl_231a953b00742b7249d0076916eabb4bf7b8c3ebd68387da50282e6ba737a781",
+        "tbl_aafdc9bb01ff9acdd84c41ac075791c6a87201f1af479f41ddc8c1d4814a87d7",
+        "tbl_1d3a4c2209c16a39e190d8a260867ed0497c16d8840a97ae43968514c488f655",
+        "tbl_6a907b391e622401e760ee7fdd86fab2abf87a0b0dc0449be8cf0ec1677aff99",
+        "tbl_f15acb078ad12ecdde9aa221b9d91c355a34a427e8db0bd5eae1cf790a597062"
+      ],
+      "question_id": "retq_0a32a6d94a6e7bad8479d11ebbc10495710bc76f86ee2b0bde7d77462fa29d99",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_43553d14f989fbed07d18b01f093f4c6f25d89e30917cde81ae3217bb747b42e"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_16e88505689822625693eb48655b73ffe4cbe338ffb2e8f98b1f565ef65f77fa",
+        "tbl_14a9f0bf0f63c3dd4a4dbbb9ebd8171a56a32dda99b91f63989ab05fda26e760",
+        "tbl_95b6c4f0fb5b5817be871593054757228694a80d8038271a890255318b6c30b9",
+        "tbl_5f555d03dbc0fd5375c6f4834ad689fb057eb3db74d98930f9bb58c39565ec89",
+        "tbl_deecbbbc5fb25e0418697f5f2a924972d60e8c8f94ae272ac64a4f4d5e176f85",
+        "tbl_e9493a5805d27851a3cbb342bf9bd8fac48b75f5019430c320094b9286a7d39c",
+        "tbl_d8aa2cbe0ffbdbccbbb6d2b2dded6a179c17929205e46e4cb6644e12a0b86894",
+        "tbl_b9dbb309b97fbf71e84fe3935c6229db743aaa5802a5f9042c50cdb75cd1b718",
+        "tbl_d72ba098072693d9ca3f92d075cfe9b61665e4af19e4e0ecb45a19243a86b823",
+        "tbl_48ebe768b7bebd1c060cbd55cec2d8ef9e8b446b2a17b17aa9f0e3c507b3258f"
+      ],
+      "question_id": "retq_0eaaf1a9804038a40987869bdcc2da226dbe3aba08d02943873b029d4f172848",
+      "report_era": "2024_2025",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_c13ae0c50c647da5a1b0bc166d46660b8f713fcb202e344ec3fd40e70c3adc2d",
+        "tbl_ee81cc1b015207ce62bde5c5ec6aa42f82a2b639b7a703f5f00d72626c123a97"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_ecc5050a8bb70af89d8094d53319a07f82cdeec114d8e29676199383f73b60ce",
+        "tbl_0d2f0f8e57f326bf4332acfe39b6d22391dbb3784213ce1ab2fe13ce26354d85",
+        "tbl_95d94651f31bb69b9dcee6c1d4d5fa9fb8610d6eb46e2d8858a6b53d8cdeab33",
+        "tbl_ad2d03168909d0e651706099a439e01b1bdd4ea277a86694053c6493fa3de8c2",
+        "tbl_5891d525b54ce1a44a5cd9c3859458cd5f9b84ee116cb821706c57f27237499e",
+        "tbl_c4cac84a27fd6f770523fd05046d12afe16fbd41e36297a9d6984f606a5a1dc8",
+        "tbl_015222977f2c0a2952ed0bb3fd47e2a98030901cc0507dd1b70d1528bd53b5fe",
+        "tbl_ea8ebc17355b2ad687acdb2859f94d2c35ea1ffd1930405ab920eb414ee349bb",
+        "tbl_29dac7033ef19e38175f2accf6c6ee6b00077e50deeca74507fcb099c22d722a",
+        "tbl_7a32328a7ca954f45c36c3877a915aaa14e6f8fff5b730f663d5a38b16f67395"
+      ],
+      "question_id": "retq_113ffd796a5be812ba4e774e0f114c81be109064417ec267cdeca9cc693885a0",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_0ed83075a1511290fffba92549213ea1846a0e477b20b67cc827fa4fd0df144b",
+        "tbl_6bd285d9d9864b9ef0726f8eb5ec5de245823b9ba74ab1f9c63425237e71661f",
+        "tbl_9f667f366be2ea2b5beb8ed773313ca9987fc274409f14f5c6d6199097354186"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.6818181818181818,
+        "f2_at_r": 0.7142857142857143,
+        "mrr": 0.5,
+        "precision_at_10": 0.3,
+        "precision_at_r": 0.3333333333333333,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.3333333333333333,
+        "recall_at_5": 1.0,
+        "true_positive": 3
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_fea6fa0332eb5f626ce47910b6e5f3711f42dd1f2224ef3d3690e328a934b453",
+        "tbl_9f667f366be2ea2b5beb8ed773313ca9987fc274409f14f5c6d6199097354186",
+        "tbl_00fbd970f4d52c037b1c28401db25e2354325d6db51f040ae491ae18a5bb254d",
+        "tbl_6bd285d9d9864b9ef0726f8eb5ec5de245823b9ba74ab1f9c63425237e71661f",
+        "tbl_0ed83075a1511290fffba92549213ea1846a0e477b20b67cc827fa4fd0df144b"
+      ],
+      "question_id": "retq_140b9a346d497feed47dd86d6eb1a2bb0fa9c2c4ef873306cad2b631a8e347ce",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_ef062a6d96cb28369d44348dccbf2403197702413739fc0d26447f099553ecf5"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 1.0,
+        "mrr": 1.0,
+        "precision_at_10": 0.1,
+        "precision_at_r": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_ef062a6d96cb28369d44348dccbf2403197702413739fc0d26447f099553ecf5",
+        "tbl_38f9307818b4896664a9a4e33bb029b85ffcc5e38a94737bc517bb3cc9bff227",
+        "tbl_11b7f9809d7597e269a71dd7df92c22be65b0b5d9fb77b9f6eaba71046a2772d",
+        "tbl_77252a5a4e20fa81fd6e375e102996dd61df2e16ca9720c2d9fc52e7c77c7c33",
+        "tbl_e8aca82b1c2b3a683517a6d0915ab2a55e7250e40548280c02eed9bf12ba5d50",
+        "tbl_1cf394854dec517933c796f83baad8f1d2b75ce80b830db3580f0f07a4d88331",
+        "tbl_bf1a1a2dc38dee8e4f91de8e015f2fcbc75f64a0bad73490ae18b39836684ad1",
+        "tbl_4127c150ee8bbba394d2bad1a1b1b55da8aafa1f9fc756eeb60e95ed8e0bf2e3",
+        "tbl_5d066d274e956e60faf308d1d5f4693b10186565b291e93c8b2194080ac63470",
+        "tbl_17b44e80be716073741ab54c575c54d5a3f616d6c1d9816d0e1331ea439eb08c"
+      ],
+      "question_id": "retq_15f357970d80fc9aa487f0da8d252b505d1217d23c365019000c60a366d1f620",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_3dc006385961d98936509995ebb413e1a1afed2a8d23c825576a915d6ab3db90",
+        "tbl_f4d515f5cc354918f75b9d29ef7de64127c7fda8fe32e57ec8bed74b4cb766c2"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_59f6125612a069dd3fd282429b09a086fc8ebd8b2b5fcb97b7823f31562d5cb4",
+        "tbl_a3ea1a8df17a88bf5461a98e3a22d486b91670496b03edf8cfa7afd1aaae86ed",
+        "tbl_b6df727dc60b80da7b21e9d0d054840527f603d13373807e9eba193ef21ef0b1",
+        "tbl_3efe2e4d0402db247d181ce21c665c45eda2ca03cd07d571143cd8d3f6fa86ce",
+        "tbl_a677ff51e22275ad57ce9514bb8a6209eb1aa44cb5d1a94825dfefb876c4018b",
+        "tbl_5b2fa67f5ff04a30c6d4a69058fa63cced26fdf699929b045796aa2130a843eb",
+        "tbl_632f1f029c6a8fa14841c6b98cd3f36733843d268520cf0a9d6bd0ab94f853cc",
+        "tbl_ef3fa061b4f6767522267f43d4f867a80d3d24e0adb416378a658e2a00b3743b",
+        "tbl_fe059ef39021bd49d11e42ec52c95ee7f48c56edb728e9185b1315e524c30eeb",
+        "tbl_4ab73d68ec36d6d974560be6e478c23c22437c92fe536d40878a68a1bfee206f"
+      ],
+      "question_id": "retq_184e75fa031778165edf54a7777b54c7cf874c7b1df60857be094b591c2564f1",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_4ba24948c737a41ca5cb00e64649777ed1849f3f5d055541f5530ec83d7cb6b5",
+        "tbl_80a13beb3df521a1e6b1d61c3a3f3b235528471a7e9c6d066f05fb076bc1e902"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.5555555555555556,
+        "f2_at_r": 0.0,
+        "mrr": 0.16666666666666666,
+        "precision_at_10": 0.2,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 2
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_65208f0c97b44a5c608c21501e9a812bea6729ce03508ca289bd7076f8c15aca",
+        "tbl_57fedb3fd38155dd53d7a6d6badf58a22b8b47a31d45d03665128d7da6480575",
+        "tbl_8e6d80ed2a3b027a7b4c60d61a1e86f98d76461f35e7cf875be9f62a27fcc2e5",
+        "tbl_0b502faf679af4154a8aea80e267299e5ef6f27d7f5c98ed0226d0657f7bda2c",
+        "tbl_6899e56c7bbe2c2083ff617270702d2a60a970b3ad6ae2edf14cafdf13cc1bd3",
+        "tbl_80a13beb3df521a1e6b1d61c3a3f3b235528471a7e9c6d066f05fb076bc1e902",
+        "tbl_4ba24948c737a41ca5cb00e64649777ed1849f3f5d055541f5530ec83d7cb6b5"
+      ],
+      "question_id": "retq_18d416f9aaed3300ef83d93fd5743112c68fc2f6a11d518cc4f029be24e3766a",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_700916b83a9c279e7d7aa92356ef6451c3788f9868142161ff9cfac1ac8b0ca7",
+        "tbl_973227f5e2dd1abdc06bfad4b15f0c4875c9deb51df912479158a3181a166a96"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_8d21a88d300d8b0951642ea6401c6909d8f1648a677c586b29bc9eb6e18bcf0c",
+        "tbl_a977f686cbadec43c2953082844b2fedc0ba3096192ff723072ce71759443fea",
+        "tbl_f80abaf79eb5dd45991a7fb70bcde4d35b37cd28262eb4e0fbaa39e1a078cc0f",
+        "tbl_0cd5e13781b8d1719f905b17132623e07d697a2057c9879e99988a390a9515a0",
+        "tbl_c771ee48e0b5e83d47027f4da2c8df6ba9e5ff7de274fea8f24b76a2340d7ff1",
+        "tbl_04c6d1baf70512db8a80d554cc1b9b9ba896e23037a13704a32985d5485661f7",
+        "tbl_6c80b206bcc2bce0a8b73565dd361136ae314ed75047c553f54f1e694b437929",
+        "tbl_d53d294784c0068e05c1dd569c37b64bc72fabadd0e0c0192b6272192a1c9dfd",
+        "tbl_bd4bf3c89a845fb77396b88a677c3d30671eb714350f3c051884715350114f1f",
+        "tbl_2c31dceea8b094777eb86b6896fd33f00971f0543f357d622218f2876c902641"
+      ],
+      "question_id": "retq_1b05912ef66e0d457aaa4f6f1f6e9750bf1d63ca0680278ef53ccf5714858c40",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_34e5b1a821a2f90639b9100bceaa49456b87027d264a98797ea7ba2f6e80804e",
+        "tbl_4aa98ca75b1ca5741b6af712d29db5f4654d1424755a322097e3ba6f8560cb33",
+        "tbl_7329e83652425f23a28ac45107aac79e36d2facd605a9522e9f19f1af7ecef4a"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.6818181818181818,
+        "f2_at_r": 0.0,
+        "mrr": 0.25,
+        "precision_at_10": 0.3,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.6666666666666666,
+        "true_positive": 3
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_57a5438a0cf600de29b978a1ae3d7314169bfa9cbf3cf6663199219a0596c247",
+        "tbl_649b66d0ab86df87d903d5fa7b82dd5191f9ab02e8fd757790073f341c7ca742",
+        "tbl_3532c3707c1ff854e19994ddc2665ab30918c5f04377c9273ce9ee55f70160aa",
+        "tbl_4aa98ca75b1ca5741b6af712d29db5f4654d1424755a322097e3ba6f8560cb33",
+        "tbl_34e5b1a821a2f90639b9100bceaa49456b87027d264a98797ea7ba2f6e80804e",
+        "tbl_e5caee0ac7cf780a2c9e4996755d728733365dd839f37c9f6a3151bf11a8153c",
+        "tbl_7329e83652425f23a28ac45107aac79e36d2facd605a9522e9f19f1af7ecef4a",
+        "tbl_318954f4955b3e8aa87f41b3ca424b293eeffbfabc6304b6ab4320977208fe72",
+        "tbl_ea5f4f7aa6b8fde4a4796131f7d2d55a8c7ec2336cc15d5da0510291045c2cf7"
+      ],
+      "question_id": "retq_21d0fcc00dee1bd24d014fda92df6768482761e46ff4d1b809e4a8a61a8f2e58",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_3739f942a9c1843ffe9cd7a4d9edc68218501714148f91c5c89672f0e0e86189",
+        "tbl_6e4b99fbc765e5d4cfd6939f8b6344d1a95ddc2f33f07381dec1d179298a4331"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_3deb0dd025bded446da14d5898776ba94a63d53b8a40cc08275a520ea5598744",
+        "tbl_ee5f16b9d7951a806c09ffc9b51705e2d55ca4e631073754b2d8afc7fa8cf350",
+        "tbl_a8c361c92630b17cbafea16bb311060e52c0745f24783b45c6222d4228135b1e",
+        "tbl_da4756ba62c9d369864d80270e6826af30dd302b28543709064d5a75f3954192",
+        "tbl_055ac824fcd5a7ed87d7ce1acbe23fa8fbd7ea71936bc7469fafc17ae2a89564",
+        "tbl_38ef7213e6380791e719d2738eb9584442c1dc5c1c6a5eeb659f433b71b07c7a",
+        "tbl_e0bcfca93e2626e55291565db4b41e5329eacbfb3d1b6cfefb47ed83483a9633",
+        "tbl_a840e13d99ca523097682bd805b902d18d6abf912991a5b8d6c1b4d1b352e65a",
+        "tbl_adbebfc62b1628b9b349e53db14e0bb1281e2ae9875ec902d784829ff93693e3",
+        "tbl_528b285354f9aad1c373c351591406fe7c3651abe15641335a219793643b679f"
+      ],
+      "question_id": "retq_276accff7b518a3d1b034d720a140950c4be2c4703534b5f7e130f3e3e2d29ab",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_4a17fd07f7ab555fb0955923727d6ea5a8d9af8193ef7acb0da6ae64d111825c"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.2,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_c8fbc2b981125417a7614bc16fd45d16cd33df7864fdda0b0749df5eeac1cc2b",
+        "tbl_1b932b3f9aa03337c4a013e1b6cd1aedcb3addb9a2a2185d94426c61ecb837d2",
+        "tbl_d85d2cd6b8b408ebc4311a55d97462a0ae569f4667315a70b0691211ab9d7b65",
+        "tbl_6e40ddbd9d235ec7b0ccf666b59acdeecd605fad72717a27fc1746dda86b2d97",
+        "tbl_4a17fd07f7ab555fb0955923727d6ea5a8d9af8193ef7acb0da6ae64d111825c",
+        "tbl_33d0dfa4a33648b1fa025e0b278cea15fba3ff0eb3c4250697823bf2974baf0a",
+        "tbl_3ca30bcf1edb478fed860b2143175c5bba391be1d60883ada734b7e7ca0be801",
+        "tbl_93b499c564189d710f734c666518d9c568aa67a204df2daee9d01d517edb21e4",
+        "tbl_cd05fd1dc2c89ccbf13f1a5f1971705b356e1eaadc7c53e8f406720f6163144f",
+        "tbl_1a0b94fe28765333c0d88d4da5ef88795be814c6cf6f5120819b934d1b5b9758"
+      ],
+      "question_id": "retq_2bf1a7ff817063f8a7583a5809b021257faa2bf25252135d085d38ffeb21a84f",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_49c8c3e98158abdcaf2c89743d032f67bca709ab1b0e5af3ed5d747f3afd16c8"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.5,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_66145ccc8b0f9a55df597dbd5be0a0840cacbd1895d2d2c4159e987df6ba4d9e",
+        "tbl_49c8c3e98158abdcaf2c89743d032f67bca709ab1b0e5af3ed5d747f3afd16c8",
+        "tbl_8d823f3bb7f9dcebe414cd90967f20757858e54ea08c02a7a5a2b09360ade6a3",
+        "tbl_94ebf880f91c6440d9af7c4bfd54ff0cdf0359468871986271d2259943fd70bd",
+        "tbl_28cbee1f7a012d945d486243f7713de00cbcd8e1747da2e854059c161c42210c",
+        "tbl_252aa01c3785db27b7fee17d3d6787c0e70873c6bf23b84c67e5e4da505fab20",
+        "tbl_dd4d1cf0f655a5f109ecfb691f7a4f4eb191b3bf318591236562ca30865d8778",
+        "tbl_046991e2884e8906fb81c801b3db5ed864f10525446e7ff404745f9f09667e42",
+        "tbl_7de683a9e2e5deb9f7a5881579681033cbb137b8d49993802337d697c57034c1",
+        "tbl_05fb80419b0107345b1e14304f5dfb94ec937a55255aea80e017559652aca7d3"
+      ],
+      "question_id": "retq_2c6e03ad7f1a391d3673e2d8148a083ee759a1c1149c6f379241323f8b20221d",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_1c1ea8acc4febff119c96410441dc5c5e8cfed9570c38c66ce70722e54a9dade"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_4bf22141b38236e92dde07099d015532afb49fc4ed325f8cb95adf4136fc262a",
+        "tbl_d2e33b79aa7d87dc944806cb76e26513dad62d93af4c03ab0d19e32d199d3038",
+        "tbl_2dfaa8d4824de96a56e1ce96a644f6957d6f19af7024bc8476b076b98ce33f02",
+        "tbl_2b02b158d7b11fafceb34d04977953b49250cf19e8546eadd9f632c019e6b4ce",
+        "tbl_d9cdaad7a54d5f045f078c67f646f177068388bae77cc4cac98a4fd784d4f1a8",
+        "tbl_8b99416d9794d944cdea8758154093eb2803a9e76e250b7a386b374536716ca4",
+        "tbl_410ca92069eb547a4ec925403319229b1ccfb2e930e994bc6495a892afd2721b",
+        "tbl_0bb395d7d52914af575c5f2001151fe9a13ae237f0a47776212e26167b43b199",
+        "tbl_940172b96ceb1c147a5b2ebc71ae79237dd855371ee922c359d5a7d3c06b1770",
+        "tbl_fe331da28b209fbfecce9d46bdec99ae7fc78f79087c884aa6f529b969f935f3"
+      ],
+      "question_id": "retq_3311745c98ba5efc0f6b7e78f74fbb69d061ec16f6f266fa0d82f83b1564dee0",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_42d86b616a29d962d15d0f9b876ce9ef6d6a6c1dc28ac364ec4ea7eb5cee50e0"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_f6c0b442e1473ef61abb0a8c1d4e925a8688b5cfb78c5acf101321ec6ae7655c",
+        "tbl_1db3bd0ebebd7a227d5a7a32eda4616d25d8f6b4ea7c4b34e038d1acfbc57346",
+        "tbl_a1bbcb06b5463c34aa16dc428663db40b1aa4e991b166575d5525659019f1948",
+        "tbl_392b7009b20c10591d459320d25981689985b6bdc243996af3401bed1fd25704",
+        "tbl_5eb54dc3039e2f44915b8de9559c530654716226eab78fa5c42abcd718125d91",
+        "tbl_14935317346167bfc5127cf16eb27e5de6d539b7decf5424dd92fd66b6aadd81",
+        "tbl_b02178689838bdf158353c6ef533abb1a372bb071faa35f9116563e87038b899",
+        "tbl_b7d8b4c79cece26586cf0063587f892b83b543fbe46bd14e3fbe29a77d551f57",
+        "tbl_205bbb7ff30cc84944f0599d087cf1d25b425e91be70d1933312654ac08190ea",
+        "tbl_b3c136b6813e7f4aa82a0a32026f2583bda60fd36fe3245187f2e8892aea1458"
+      ],
+      "question_id": "retq_3e6c4ae3ff4d30628320182dce41772a231e92f8cb6d740a476bccdee64f5b06",
+      "report_era": "2024_2025",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.25,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_93ee3c5d13f191cd337c7e36efd8f3ec7fe9a7ba652b92c7e2a9a938876a11f1",
+        "tbl_842801154ae9e342ff1b82ee303db63df933670b967750fa4d0309ba8a1279fc",
+        "tbl_e045629bdba35b0b8798174394ad9eceb0ead67bbc1d45e8eb068232460b2f24",
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0",
+        "tbl_b9d51a8819ecf2ee461481c27b24210eea2a24660d3d2676f4c9668045e19041",
+        "tbl_2cab8cb0c259c534424dee54bad196eb0b12d2b42d9323d05eaaef8f48659130",
+        "tbl_1628a5e0f557f8cc69a2faf4e2a71f517dd1af3babb95919046b36aa1c6ff29e",
+        "tbl_e86a6af282457008ee6c2be7015139e6eea2e266671353e88e1bd9b42570c9a4",
+        "tbl_9baac113719f819cb12da8033433e4ce55f851c2616ccdb7d79a5bf2a4dd7482",
+        "tbl_fd0b30404ddcd7616233f30431b447ad7f90c2c315d431ef546d4b825ab4b9cc"
+      ],
+      "question_id": "retq_46612a9c276fa94b4b682731803874a302616a3d4aaea063b36609e4603b7196",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_1fea09c00553183173733966a79d1ad2795094a415e277a0034fc4dd8aa6b616"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 1.0,
+        "mrr": 1.0,
+        "precision_at_10": 0.1,
+        "precision_at_r": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_1fea09c00553183173733966a79d1ad2795094a415e277a0034fc4dd8aa6b616",
+        "tbl_17eb7606a77f488613cc04da83445dab3dc01082a04ae9c781e6a06ba156deda",
+        "tbl_cd7b7022672e950a5aa9d9bc15ca146dac9b61e0fe9f03c4d26396ba4278cf24",
+        "tbl_a59e16dcd77cb38309eb5c53932deb11a7a6ee6abfb34645f74f521787a336a8",
+        "tbl_367e91052d8de68625864f35c9cb8f4ee9bd9133d6ecc600fbcb5e53ac8605bd",
+        "tbl_25624fc3bfc359417a29274d84a28c07c70934c716f8992dd8ae33cbd5a421d8",
+        "tbl_0fbe34be5f3b1a78b7892752173842d14709c9f542060e336dce302b455a3423",
+        "tbl_a9bdd78f91c44c5d8349abf86097f019d477f5f8cf6c3d2ef75d2749ce396239",
+        "tbl_1a325a24b25d05877e3e085b89a5c2b6425ec3453c900a5a72f0eacc5eac35ea",
+        "tbl_246ba304052b51bc43f27ce66aa31241839dec967a273fa2ccbfaae9c8a58566"
+      ],
+      "question_id": "retq_4ae188f21b74a920b9293a7898f06bc80be5d7c48c87e2b2cc6731194768ac42",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_0c27b7e394cdbd3f23417664dc831a22fa4ede462d8628b27bdf18588a425ce9",
+        "tbl_5f59924a66120962e7825d29f63bfd67f40f97052199e33d8a0cf9284a116caf",
+        "tbl_c2b475a1371ca3ff5aa0efcd6805436905662a14992ccd6e36aa01864e6a868c"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.6818181818181818,
+        "f2_at_r": 0.0,
+        "mrr": 0.25,
+        "precision_at_10": 0.3,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.6666666666666666,
+        "true_positive": 3
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_99a7c94147014e06ce7ead1887b672b5ef8ff727b6bd2d54de94a5cce4dd867b",
+        "tbl_0c017e30c95726cf8063bc338e6aa5d3fa2bae449c4552ac0f5034e81d1258df",
+        "tbl_1663397c0ff858eb4fc3baed20d47fa44ef290b9de61f334519aa932be90b327",
+        "tbl_0c27b7e394cdbd3f23417664dc831a22fa4ede462d8628b27bdf18588a425ce9",
+        "tbl_c2b475a1371ca3ff5aa0efcd6805436905662a14992ccd6e36aa01864e6a868c",
+        "tbl_5f59924a66120962e7825d29f63bfd67f40f97052199e33d8a0cf9284a116caf",
+        "tbl_4db47ac11d0ad2636ce5e4513bbe52b1390f6e5bca06505e355d4488fdbf4501",
+        "tbl_7f324fa48e13db105a678ddec7f0122ee5128fde4d9ae706d14d43d3869616f9",
+        "tbl_e830ced8f2b7ba65fbd036fd3af42143b1126e41edc6c505262efdd903c3eb98",
+        "tbl_f82cc0e8bfc1201dfce22aa75e4a9255371168e13e629886645128298c683be6"
+      ],
+      "question_id": "retq_4af1d194037feec883a2ad351fad2d857c5a714df82de48c323b5b03da976fd4",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_6e9abf4aa6e5d9ed997cdeaccb996e31a6fef14603f1482d94689fcacfe6a3e4",
+        "tbl_b8f32ef036f35f8f5a8bf3d7083da1ec559c9a6d5d017e99f3b7ad3fa45c8a42"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_06440636b0c9d96c806f8d2a1482c310b6202d66b57d0a8e57527f9087a5b404",
+        "tbl_1e5360940af3404360ef41616de135e734ab728b11f4932e88e41d8abe317e58",
+        "tbl_303d11deb225c43ebdaaf32ae0088fc1737e68dad5ca4ef2e585060eefd730a4",
+        "tbl_3925a35993fa5faa2f5824a1fc4ff7d807f22b75f534b2874c78cced4543adf0",
+        "tbl_3b51c871c053310bc1e16210f576e937c0934622f5684076b0110484266aead9",
+        "tbl_61426f094c8b3dd2b2589a8059d8eaf7314e06742d7e13cf41930dbbee446869",
+        "tbl_d9fd0884502a213d2a81e4c4acd471d58efdaca106c66af7cab11fa0eb389be4",
+        "tbl_080e29bee696cd5a04bdea1ef8639a189f20e053e779ca4630b93ae9c20d9f44",
+        "tbl_5c66db719470d38e9d2df23cbfaab27de1c5938219d33a20c03dad280e651f4f",
+        "tbl_66db1e869693d9e96d1baf8b378df762ff2ece2cd27206ef55f6c38e9e2672cc"
+      ],
+      "question_id": "retq_4ed36641e810a4c72f8383ff9869cfa6cbccff95bef524f08fce369a24525cf4",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_e17a99688107ac7857b1936def9cf5ab7c70a676095ef03aa3641f85d24eb207"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.14285714285714285,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_f685410404356622bfa32aaa2d727bea425e9b65d48cf9761fa2e0c449d57c44",
+        "tbl_59ebadb8387f29d0d4577386a6c958df499b8b7e6cc480860fea0c95e6cab085",
+        "tbl_1ea49dff6b221be2404edf55eba07b62bb9ed1c314fc2310ad600495797b9a1d",
+        "tbl_4d95d5bbcbc8743cedf33cd0791a598b7c143e138727b6228bfca3f4e12ffd29",
+        "tbl_6d40c2555d152c805cebc81c21a9e406d08109e1e0b3f100754b8fd709603c84",
+        "tbl_47ab0571a657d61466051691e0bad744baf4c8c9d515f80023998e9ddd2ccd4b",
+        "tbl_e17a99688107ac7857b1936def9cf5ab7c70a676095ef03aa3641f85d24eb207",
+        "tbl_8852e42a5aeef5f45767513b1cdbf87599dbe6c761bdc00934edec88c0442dfb",
+        "tbl_f984149a403b4b41606e7cfeb50060e932516ed20427ceb1a082c12edd1bbc53",
+        "tbl_889f3086e3bd016786584cd4fd7e1ec2b168b6ebc4382099ffe96192d098f771"
+      ],
+      "question_id": "retq_518fddfe44aa2ba59c07c69fba10ccc85837f034cd9bd0f31802eefd97757c7c",
+      "report_era": "2024_2025",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_6e9abf4aa6e5d9ed997cdeaccb996e31a6fef14603f1482d94689fcacfe6a3e4",
+        "tbl_b8f32ef036f35f8f5a8bf3d7083da1ec559c9a6d5d017e99f3b7ad3fa45c8a42"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_efd19c85fcb9cb5904634c0c3241c77fd435ce78998340ce7f66c03ce8d7257a",
+        "tbl_993862a8441ed20c8f7313d02e80f6ca6e2aee1230714e0c9cf458ce7d4fb00d",
+        "tbl_66d579ac94bae2e0504b4ed2a35d14f2ad094ed22cbe06ed7c8fed320743bd70",
+        "tbl_080e29bee696cd5a04bdea1ef8639a189f20e053e779ca4630b93ae9c20d9f44",
+        "tbl_61426f094c8b3dd2b2589a8059d8eaf7314e06742d7e13cf41930dbbee446869",
+        "tbl_06440636b0c9d96c806f8d2a1482c310b6202d66b57d0a8e57527f9087a5b404",
+        "tbl_1e5360940af3404360ef41616de135e734ab728b11f4932e88e41d8abe317e58",
+        "tbl_303d11deb225c43ebdaaf32ae0088fc1737e68dad5ca4ef2e585060eefd730a4",
+        "tbl_3925a35993fa5faa2f5824a1fc4ff7d807f22b75f534b2874c78cced4543adf0",
+        "tbl_3b51c871c053310bc1e16210f576e937c0934622f5684076b0110484266aead9"
+      ],
+      "question_id": "retq_5a293140dab6370835bb93b17bb0503467626e4386d5e5ca5264afd3d2cff41b",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_700916b83a9c279e7d7aa92356ef6451c3788f9868142161ff9cfac1ac8b0ca7",
+        "tbl_973227f5e2dd1abdc06bfad4b15f0c4875c9deb51df912479158a3181a166a96"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_8d21a88d300d8b0951642ea6401c6909d8f1648a677c586b29bc9eb6e18bcf0c",
+        "tbl_a977f686cbadec43c2953082844b2fedc0ba3096192ff723072ce71759443fea",
+        "tbl_f80abaf79eb5dd45991a7fb70bcde4d35b37cd28262eb4e0fbaa39e1a078cc0f",
+        "tbl_bd4bf3c89a845fb77396b88a677c3d30671eb714350f3c051884715350114f1f",
+        "tbl_6c80b206bcc2bce0a8b73565dd361136ae314ed75047c553f54f1e694b437929",
+        "tbl_d53d294784c0068e05c1dd569c37b64bc72fabadd0e0c0192b6272192a1c9dfd",
+        "tbl_5abc6cb3d086ebab95681ecc431c0dcfddb7eda74a0c367ccacd2c699d1e6ad5",
+        "tbl_0cd5e13781b8d1719f905b17132623e07d697a2057c9879e99988a390a9515a0",
+        "tbl_c771ee48e0b5e83d47027f4da2c8df6ba9e5ff7de274fea8f24b76a2340d7ff1",
+        "tbl_04c6d1baf70512db8a80d554cc1b9b9ba896e23037a13704a32985d5485661f7"
+      ],
+      "question_id": "retq_5adfcd4becee37f88a87d56f5a73cf8bd06c7a1ffea48f9f951c9997bdacafed",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_1da562d2f881f6961c036f97219e00c615a517bf5bc79a3af85ef64009f16bd8",
+        "tbl_30c45beb5ae410b12ece4be9022a0472557e5440698403d64c8ed048f840bdad",
+        "tbl_9c9d1bb0b9374cfd1a0c9ead1f989d11d23c6921009cfce54f22f984861371ad",
+        "tbl_d1a533562e37f19983730375b041745f25652491d0544a9e5bc8fe6acf8085c1"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.7692307692307692,
+        "f2_at_r": 0.8333333333333334,
+        "mrr": 1.0,
+        "precision_at_10": 0.4,
+        "precision_at_r": 0.5,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.5,
+        "recall_at_5": 0.75,
+        "true_positive": 4
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_30c45beb5ae410b12ece4be9022a0472557e5440698403d64c8ed048f840bdad",
+        "tbl_9c9d1bb0b9374cfd1a0c9ead1f989d11d23c6921009cfce54f22f984861371ad",
+        "tbl_46bf1fc9965efefef41680e93bb52542f2017ad580ee7488afd2f36a532add32",
+        "tbl_8288bad492d25c1b22691f870b3bc1ad9d9d5427e06083ddc0136a7917cfb8f8",
+        "tbl_1da562d2f881f6961c036f97219e00c615a517bf5bc79a3af85ef64009f16bd8",
+        "tbl_bab88f9d1a554509454e97c234bb653aa223e639d9b62f52ca8a2dd21ca0e73d",
+        "tbl_73469f436aae8e0c00274441f007c3c0d426b5fde146735752ead81aae89d3f4",
+        "tbl_811cc2ee06a57c4b42b1dcc9e75dbde87520f2c0cd94879af492b17b214a5f2f",
+        "tbl_d1a533562e37f19983730375b041745f25652491d0544a9e5bc8fe6acf8085c1",
+        "tbl_192d2da665a24e59f518759c648e3e6b1244102925eeddb13411e6b80616281b"
+      ],
+      "question_id": "retq_5bc82c57026f9a9c465c6de9a5423aa4dcc47c3bcb909980e2a8b34312c723e5",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_26e3659b2fcfeb6b902514126b37f1b78e1225cb068c73714f2d43bc02ad6855"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.5,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_27de9916b0b57c635f3fafe361c0c25b6231348b9789b936ad72a92c76a4b636",
+        "tbl_26e3659b2fcfeb6b902514126b37f1b78e1225cb068c73714f2d43bc02ad6855",
+        "tbl_ca7f7621474df65ae98c21170d5e5e76a362879df12558da83957bdd109cd66f",
+        "tbl_1e350035cbb945d683acb85e3329a854d0ce8a4db888a3768ff30ba5c0e2f56e",
+        "tbl_4a78fa9fbad9d09da85bb936f6adc8014c029ea794dbc347c992b9dec3813a49",
+        "tbl_2876293c695efac9ae4dcb5a8dc03804a249dc13a955016c26682a7ef9175a8e",
+        "tbl_bd1902e27b93cebbe68e673ad3c0961d8ddf3c64934ed96b7c7d55dbe4ae0a70"
+      ],
+      "question_id": "retq_5e5a7482abba820a4e8819833d85d90cbb45fcd33bd23e5214a29f9f4e861f5d",
+      "report_era": "2024_2025",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_1fea09c00553183173733966a79d1ad2795094a415e277a0034fc4dd8aa6b616",
+        "tbl_a6c2f4b94692ec0008a9f9b550f9d3c27eceea641af58b740c93ac04817e7e44"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.5555555555555556,
+        "f2_at_r": 0.0,
+        "mrr": 0.25,
+        "precision_at_10": 0.2,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.5,
+        "true_positive": 2
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_bbe0fc87ebc05a26d961c20bfec55bb25203075d8b7a354738293993e9c34363",
+        "tbl_d34bfc8667651ea04085e298bf5289f20b363dc4d8f38d379bc7bc63b8a0b412",
+        "tbl_15a5566c10161e6fc07ef39074cfc80a5a28bf465fbe9adcb3c90ec45a5604a9",
+        "tbl_1fea09c00553183173733966a79d1ad2795094a415e277a0034fc4dd8aa6b616",
+        "tbl_13d9b6f6df2c1c1938939ae9626be7ac029175126dad03f1522b0ac2f71bafae",
+        "tbl_dfb7621d487883a8f79201999a6b3a261e2e2b737631568163602b21aff4901f",
+        "tbl_375bad425a0bb36e86ac6a89b7c8428d17cbbcc8cea77ee74287e1accf71935c",
+        "tbl_98dcc66a8c2c541c706a64b5c4eb06eef33be7f9f0c929877135903e63d7c400",
+        "tbl_a6c2f4b94692ec0008a9f9b550f9d3c27eceea641af58b740c93ac04817e7e44",
+        "tbl_8f3209ada568b91cb96ee99a1d826a151039dce25b23cfbde879e3b89b7f27dc"
+      ],
+      "question_id": "retq_5e780dd26bf4c16168dc8f823b62918e50fe52d1acd0e673f1ac1a8bfc390dbd",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_047406408377a99a416e8363bae707fc49347d465958e3f8f9556ba82075547b",
+        "tbl_88e63205de2b51d7e5588d6cebea6c40310588683ade51a8cd368a74e6022331"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_17ae7dbf93321d01e621084278c548299de2133dcf83fd3d0b350ca8527e5f92",
+        "tbl_ad3354c5deb17d3870830e0cb1b6613c734108e33ee958f21ea2ccf6891ec8e6",
+        "tbl_ca462b3620b29272eff98af54e60c9d9e611c837786fff0b8f2361db94efcf52",
+        "tbl_c206272dd500a3a0400c27ce38c4cd015ce2c2032f9ec18bbc9db365f826a278",
+        "tbl_431ee597b22eb4f294acc8563fcfd6b0643b00c4fca70beda4cc7c863509cf39",
+        "tbl_e65055e253f1426f2af2182b2a3230a09d96c282dd80a8685079a71ccf1bacee",
+        "tbl_d5051bc5c83b88e65d4093638372bb858549070d6fe6b5424bbb415927cce5e0",
+        "tbl_eb9db1add7d529295a7a3cc75da5e1d7dee3cef3c705136fe66638bd099e75e7",
+        "tbl_c94e81806fdce85263b166a592657ce4c79d03e8e8af7913fcdb6ec729022caa",
+        "tbl_60eab6e756903d4eaaf2da01b8a4c1f33a6887654a2eaac01e879157c8623b94"
+      ],
+      "question_id": "retq_6a6a6024dd19f425b10ad6fb6e58f1bf8842e1886363b812d379f54a35e44655",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_0363cc5b912a7156ac7b5ce05c5d40f9b443d176f936a8602164e25f6cc98bd1",
+        "tbl_500627e346f8d3a40e31814980415615b891d37206c8606ec27313fb6104f736"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.5555555555555556,
+        "f2_at_r": 1.0,
+        "mrr": 1.0,
+        "precision_at_10": 0.2,
+        "precision_at_r": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 2
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_0363cc5b912a7156ac7b5ce05c5d40f9b443d176f936a8602164e25f6cc98bd1",
+        "tbl_500627e346f8d3a40e31814980415615b891d37206c8606ec27313fb6104f736",
+        "tbl_37b9c6fb241f58069ed3a46a619c937ee05279ba690799307e1d9da495d5a7c9",
+        "tbl_b7894eff30a09f78b9e44719aa90ddf05acc958cc4c19f3134bbbe7c934c0357",
+        "tbl_882d2788c29fe3ced2bd91c7b8d322039d58ef875dfee284fba6bae873a152d7",
+        "tbl_4427b6aa03e3c53fdd4703afea9547c48506905d28ff3c7faeeb0b29afe655ca",
+        "tbl_cadd9404dd992fd4c11b02077f26cd89c2983e04d2655a70c226e0f750f34478",
+        "tbl_c2b47b1ebffad3d654a96cdc28d4c9001fadc37486bf22db350827619ea075e6",
+        "tbl_90d555d7e1e10b285224e6f8cdf3d629e72b24207931baf60d583b07ec0689f7",
+        "tbl_c6514b66aed5fa3bb9143dd6f37cb99bd38c52d7ceba3fa2d6cb16e4f25cde77"
+      ],
+      "question_id": "retq_70fa3ba240c02f67e25d7f74451a303b71bdab96a0a660807d3f1d48621e2318",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.16666666666666666,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_93ee3c5d13f191cd337c7e36efd8f3ec7fe9a7ba652b92c7e2a9a938876a11f1",
+        "tbl_1628a5e0f557f8cc69a2faf4e2a71f517dd1af3babb95919046b36aa1c6ff29e",
+        "tbl_e86a6af282457008ee6c2be7015139e6eea2e266671353e88e1bd9b42570c9a4",
+        "tbl_b9d51a8819ecf2ee461481c27b24210eea2a24660d3d2676f4c9668045e19041",
+        "tbl_2cab8cb0c259c534424dee54bad196eb0b12d2b42d9323d05eaaef8f48659130",
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0",
+        "tbl_842801154ae9e342ff1b82ee303db63df933670b967750fa4d0309ba8a1279fc",
+        "tbl_e045629bdba35b0b8798174394ad9eceb0ead67bbc1d45e8eb068232460b2f24",
+        "tbl_3c68f3a352d9fc673543c0fd8ab233fe7fa2ea69a47cd3c18089177447330359",
+        "tbl_be681fd4722164d570ceb36a44b0a34f60889c90b63409b556a82d935ab6598c"
+      ],
+      "question_id": "retq_76c79261bdcb719e588c362ee794146de50e423a79e93c14949057684cc02dcf",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_22c0746dc41f87e2f3e9dcdb3de72433951f418366a767bb335ff37c84ff98c1",
+        "tbl_5a6128f7f8df589d7546dd7e7364079ec4758a5747fe349ec88f9aa70020ebfd"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_3eaabfe7f3efd30db90397130b7ea95d3905fdee3ab10819afcd2e68ba64f4c6",
+        "tbl_eed32622f867840b633cadc1dba8eef83f47bb22eaf257bc3899c1191c8a17a8",
+        "tbl_568fe80eb19f67b1a71520220b615180465c173ae941738c35ec2eb7fa45b2ad",
+        "tbl_a9e183396653e61b9c00a5039488f4ab1877a023ba7271825659814659595290",
+        "tbl_446c3a2e35da5397f4a30e47a79833c480effa22c02ada9c61a023e6f8f5ea24",
+        "tbl_8a2cc3207e320292fed6140cd9d9d1d38d047a632235579ebfcba88b90ab18d1",
+        "tbl_ca7520aaf05ee09c7c62bbd101a5fea0334270d5f95d9e775c2b33779b7fff25",
+        "tbl_467237667af028344c409c9d45d522a6446e894732b06870083ebd0e42cead60",
+        "tbl_de65a9a47a8af0be6d0be58bc0e34779dcc61eacb69e7017eb08fd2939b87631",
+        "tbl_db9daba556b7f680ec8142f7b3f03abc44ed98cb30bda0f91d5c9eea62490853"
+      ],
+      "question_id": "retq_799bb5213c176968fa13d78639d80e3e479c3ce0e6d1531912c7fc9dd0ffdf84",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_7142232bdfa1b465cacd949ff4e52578ab0548b4c953584675ca2874c666d0fb",
+        "tbl_a532aa0cc496fbb2e5813cea0dfef690bcdac0cc6a976cd32675e110113bd255",
+        "tbl_de69236b99be4486d86172fe7789038978b5ff0b7352e120aec6fd0e805f771f"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.6818181818181818,
+        "f2_at_r": 0.9090909090909091,
+        "mrr": 1.0,
+        "precision_at_10": 0.3,
+        "precision_at_r": 0.6666666666666666,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.6666666666666666,
+        "recall_at_5": 1.0,
+        "true_positive": 3
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_a532aa0cc496fbb2e5813cea0dfef690bcdac0cc6a976cd32675e110113bd255",
+        "tbl_87e423b11644b28868ab5e6430600e02a0e4846b3737fb08d6b9079bb49087e0",
+        "tbl_de69236b99be4486d86172fe7789038978b5ff0b7352e120aec6fd0e805f771f",
+        "tbl_7142232bdfa1b465cacd949ff4e52578ab0548b4c953584675ca2874c666d0fb"
+      ],
+      "question_id": "retq_7a23e39cc00a015db310ae9865241133d6c2bebebb760ab4a9b0341c96de6628",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_3daf2d5a6f938548c4bfd09d449ec92fa96da2f3a61b61a049c906f5006afe97",
+        "tbl_4502ee46a12ed5d542ba6c763a886eb813e033b81bc4f4776c127dbeed17be35"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_ee054dc096d4e41c37e2b0da84d0bfbab4969bba9f60d41d890657feae954276",
+        "tbl_156b7cd4ff9d7bfaca435a6336d10c1f5d7adf4410314dc1b490553291004a67",
+        "tbl_13c182c262bf97901a50e11dd7fb041cb1aeb8ba709810234274b2c5349d0254",
+        "tbl_d06b03c6fa5f07082d421f00af53952f91851d45dbb8eb9cb53e83bba4ab64ae",
+        "tbl_72e1b15803b1dc768aed34eb5416ff1c39aa7f2fb9f16db16fd416828d1be178",
+        "tbl_a9468f7e06de87be312b79a75b03a1ab77e25caaff41b3a96e6d7bcff2d7aafc",
+        "tbl_2d732bfe59444de7a55e52b0c1e2823dc2149b8a2093e1b071a6a6fabf843b70",
+        "tbl_b4e32d3d4185fe90a6b35d95248fc0bd2e7a9dfd231dd56b810b7794280bf886",
+        "tbl_ec9eed665bfad515071c7af2867062ab7e105e2c774ea17123c7de626470ba6f",
+        "tbl_1cd72c8b70d457008a67c226232c952e3e2800001e5d1e06299d630f31acae24"
+      ],
+      "question_id": "retq_7afd1c8e800a18c317c7f2b540f77433d318a5b3aa2c483fc333294615416da2",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_7dcce7007e9fd10f1645c88b97f368ff59a1fc5c0ed00c8d491260393f17c629"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.14285714285714285,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_de5f80e58645414a8dad886f078f6da9b877935e59611615369a46a0f42bb55b",
+        "tbl_7197881ae9b87b558a9d9b5dfc3fd0bfc61b18ddde4e77c380d6871084915512",
+        "tbl_8439bbdd7ca14e22731ca349cd665ae80c32cfbcb7ebc704a6b2dd7ebf1da8fb",
+        "tbl_ee7c8ec772c8ab7b7a27a211958c478bc17628112b0b0af0d57b7f78fedfc57b",
+        "tbl_6b12edf08e6646a7f775375f38db867153a1c84b2fd559387ae6beb90d2b5158",
+        "tbl_b4a4d84562d80fd144c486ea95026e28f9727693bd8e0417bdd7a8e0bf142196",
+        "tbl_7dcce7007e9fd10f1645c88b97f368ff59a1fc5c0ed00c8d491260393f17c629",
+        "tbl_64a6dbf4a38cb8d2834960e775e7992fc7613c8323aa0fcf493479261c4abaa2",
+        "tbl_c681361b49a7afc51abadd3f76071adc11c4c167f346bf8d980d62fa1f8424d2",
+        "tbl_d0328d5a2765aa2a646474c978fb2c99280bead991260925a8ce306357df94ed"
+      ],
+      "question_id": "retq_7d8b6d321910394b5f0eaeeb22a747545e1d297ae6f08f8a3f9243c11c557125",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_8753fe06e2aa42744da649f13763a363f61d332106e4aff0e74112faedd67536"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 1.0,
+        "mrr": 1.0,
+        "precision_at_10": 0.1,
+        "precision_at_r": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_8753fe06e2aa42744da649f13763a363f61d332106e4aff0e74112faedd67536",
+        "tbl_02a8737a518d1e93fa9a49317f20cace6c294fda30ee3a96cd9c25979a65138a",
+        "tbl_6891a61c0715c3be5be343454830f253e506a9961661eef4abf35c1418094e3c",
+        "tbl_eb8ff0db92c14affcc0d5ab53d1b6f4fdec23fd667227980928caf97f5fdd7ac"
+      ],
+      "question_id": "retq_843c4f4d5dbc6284787d601a04e41c8bd5e98f2374d96a5432d69ad85daedbe8",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_2b687da25f30836dc2572aaf651dd5498e541fde5369c367acdb2bd2e86a02b7"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_5297044970fc87ed9db85b986f7993a6c5240b5e819d4533ea92d0d32374f9dd",
+        "tbl_56826d6151dc9b94081f26ae1a48a2542760312b2ba9ce80e71244a933b6dbb9",
+        "tbl_2786e6e2a51f20e539cfe0593bd7048822d88c80c38bae4d9b3552ab6aa057d4",
+        "tbl_682680b26d0234dc9b125ada987295046d9ab6a0d9046ddb0d13633e86199173",
+        "tbl_3ab171fbf4f843538e0073a7a7922571ea5a79793eb05ee2076571eb1760ccec",
+        "tbl_64dfc9f5208831ee0bb46c562eee5b5993623e72208d2acb98fca5546cea4f38",
+        "tbl_2346e199daca18e8699ed372a34567f8c7bb7df27c005b51d73027039589af94",
+        "tbl_c7e29a9a4657e7db49564818b21cd1419a4593d928a12d585d29d9b985ac1042",
+        "tbl_8844461237d04a17baec78eca1c9992fb0be2e34701f488e62d8a911d0928a81",
+        "tbl_0a1711e9a5c0450c432ca3ae7396f1ac06979220eed41332fba6a54c92b268fe"
+      ],
+      "question_id": "retq_859f3db5be0b80c43b04417d2369df915845fd9cfec70503dbe753f23ea43fe6",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_2c265aeb95145be44c6ee3e3e1aa2bb616f0d8dc64c72e4f0480c5c077a97fad",
+        "tbl_3d6bc5471b5a1af7886e4c404c4c612f1c95b17edf356e706fe2ddeda5b4b20f"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.5555555555555556,
+        "f2_at_r": 0.0,
+        "mrr": 0.125,
+        "precision_at_10": 0.2,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 2
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_a4dec3c29d390aaf368acdbedb040a9cd97b0e1dc545c146bdcc7ba599c6fdc1",
+        "tbl_4998d6e6580d53da760fb0612a85f08d421ec0bf0ba6eb3128a9fc781f93211f",
+        "tbl_92575786e09c30d4af2928d0b89ccf5919030893fe91d3e123e858e6c4979745",
+        "tbl_5d21772104dad21f5eca0c72d316345781d87f43e3149c82b93183540f08521b",
+        "tbl_5a90d02a5bf9201c29ce5f1740082810de9f94846459ec4f4435dc839a749b27",
+        "tbl_439f68f95ad8fcfbcb3addd9fb64b38a4608100789bddf708b897775878e3b87",
+        "tbl_510a5f4e98ad927193abe8651a4d9e5884a6a0d9172628c73877a3626995e59f",
+        "tbl_2c265aeb95145be44c6ee3e3e1aa2bb616f0d8dc64c72e4f0480c5c077a97fad",
+        "tbl_e08dcca6c4584b18787eccc1e0b31feb4955c003f6added480c1640be59a0537",
+        "tbl_3d6bc5471b5a1af7886e4c404c4c612f1c95b17edf356e706fe2ddeda5b4b20f"
+      ],
+      "question_id": "retq_865b76cc9a17d3afd764551b50a9de5b68384b62c2366a2273804e80d1d999a1",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_88e63205de2b51d7e5588d6cebea6c40310588683ade51a8cd368a74e6022331"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_c206272dd500a3a0400c27ce38c4cd015ce2c2032f9ec18bbc9db365f826a278",
+        "tbl_17ae7dbf93321d01e621084278c548299de2133dcf83fd3d0b350ca8527e5f92",
+        "tbl_ad3354c5deb17d3870830e0cb1b6613c734108e33ee958f21ea2ccf6891ec8e6",
+        "tbl_ca462b3620b29272eff98af54e60c9d9e611c837786fff0b8f2361db94efcf52",
+        "tbl_eb9db1add7d529295a7a3cc75da5e1d7dee3cef3c705136fe66638bd099e75e7",
+        "tbl_c94e81806fdce85263b166a592657ce4c79d03e8e8af7913fcdb6ec729022caa",
+        "tbl_f10cef58c77b8113289cce2752c48ed6165d54773210f10e2e5acf2af31955fc",
+        "tbl_60eab6e756903d4eaaf2da01b8a4c1f33a6887654a2eaac01e879157c8623b94",
+        "tbl_431ee597b22eb4f294acc8563fcfd6b0643b00c4fca70beda4cc7c863509cf39",
+        "tbl_e65055e253f1426f2af2182b2a3230a09d96c282dd80a8685079a71ccf1bacee"
+      ],
+      "question_id": "retq_8e43d1b9fd61ad81fb038d853c71c1c4b582ab7c502fae41ed33edf22737bc50",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_bd98bfd7439ef6111116fe4390189950b1aff86465ebd2d2a9d467fe01acde31"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 1.0,
+        "mrr": 1.0,
+        "precision_at_10": 0.1,
+        "precision_at_r": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_bd98bfd7439ef6111116fe4390189950b1aff86465ebd2d2a9d467fe01acde31",
+        "tbl_52a74667cce7621c6ec505ad5f97dd053d6dec2d042f7cf754710ef514faa48c",
+        "tbl_bb10624e01297b3207cf628b3eec06624b5190018446a5c4068a35e9cdc304ac",
+        "tbl_02640840347e9a2b67c1414be981f2f145aab122ca351b17b91071b196be3bd5",
+        "tbl_5834fbf6cdb01460a5bac43c8ef0075f829e8dec1c573f8639658e45d106295e",
+        "tbl_f799743fc89c14554f18792b5e35895f2204b7d6cd276368f1fa77ba1726b9d9"
+      ],
+      "question_id": "retq_9024e98663eb4d6d935ed2bd5c014bdeff9ba0d94a7e62038833deb6ff1b464a",
+      "report_era": "2024_2025",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 1.0,
+        "mrr": 1.0,
+        "precision_at_10": 0.1,
+        "precision_at_r": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0",
+        "tbl_0e58f835a201e4ffe55c78e53a2a2081e5c55402c19bc72445775bdf935f59a6",
+        "tbl_227938d33ef09e23c3510886145f3f179e40d96ee763311ab5010ba89786ad15",
+        "tbl_513a257838068384c6f5c7bfae6c53dde42bbe56074aa2c029fef6130b6ea1b1",
+        "tbl_93ee3c5d13f191cd337c7e36efd8f3ec7fe9a7ba652b92c7e2a9a938876a11f1",
+        "tbl_372401f3c194d40741dc2672604546ff4bb354f00dc3c0b9b0b8a2e697ed2510",
+        "tbl_8d593b093d836191a4bf9b687736a9db0b4d15a487d0311ba839a900f63c2c65",
+        "tbl_721f49e3ff3c9dff2a073e8ed0157f7b75af3cc4f2377b54a2c477cf519f3a1c",
+        "tbl_fd3520101f8750268081c8b16e17e090b08ddb6a4f9ef6690a145dccda570a0d",
+        "tbl_d5e35c060fa720b786a09002914665b468f9dd5505d70578d9666d183c3c6568"
+      ],
+      "question_id": "retq_905e8568becf90520e588c3292c269b0a7030ba5ec4eff4f4cbcf8d21a0fba23",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_3bdfa9668eb8ef820bd6521c9bef5975cf71a20ef90c67beb1612a1ce3ab2f50"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_10d616af10c4c2b269850189c4747d4b021bdfb2eae59ffa70b4b1d36336203f",
+        "tbl_c3d6e7fef3d803199814962864e2c9382b94f17708b2cb5bdf5b3dab51d4c48e",
+        "tbl_374173815415c88ef418e571c2b0ea760ab29450c51f1babedc660e5990bfa68",
+        "tbl_35220f9ec47a1341b10b959fd3bd8e112215a9858e7bea3c388afd73bb8f477a",
+        "tbl_e194d2067d5f70ff7515171334d20eb1018e44934ca676699c5d144d94b2b9e2",
+        "tbl_a882fa7d7865e7f149f8c20b7db4ddc6b79b77a4c309521ba76ef959b9f567ad",
+        "tbl_dc1f37752da0c492d024fca36863cfaaa8bef71855b685d91162c30a3f40004c",
+        "tbl_bc5984af1d9c61cf65b41040316a8f4c32640b5888e47cdc2678406b78c4d7f8",
+        "tbl_facf088b1fb0474453de89162cf03bac65e4dfdaa46bd20b958bdac17761aca5",
+        "tbl_64bcd1cf9772cf24111053804d5874a693ffd19ff05524bd57befdf1a1598c71"
+      ],
+      "question_id": "retq_940e4706d5eea84a3bc3a90d109ddc7298d497fb90cbf4899fb043edb2268064",
+      "report_era": "2024_2025",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_3739f942a9c1843ffe9cd7a4d9edc68218501714148f91c5c89672f0e0e86189",
+        "tbl_6e4b99fbc765e5d4cfd6939f8b6344d1a95ddc2f33f07381dec1d179298a4331"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_3deb0dd025bded446da14d5898776ba94a63d53b8a40cc08275a520ea5598744",
+        "tbl_38ef7213e6380791e719d2738eb9584442c1dc5c1c6a5eeb659f433b71b07c7a",
+        "tbl_a8c361c92630b17cbafea16bb311060e52c0745f24783b45c6222d4228135b1e",
+        "tbl_da6a4d3859a5904adfeacb8d714d04686a51f4cf98da4915aa6948d095508b88",
+        "tbl_da4756ba62c9d369864d80270e6826af30dd302b28543709064d5a75f3954192",
+        "tbl_055ac824fcd5a7ed87d7ce1acbe23fa8fbd7ea71936bc7469fafc17ae2a89564",
+        "tbl_fc1547a7a0f339b0ba07181b267e5adb395e21bf03988c442c27226410d57188",
+        "tbl_18f356e39e1b1dd79062d00b6adc593c4373d316b6033a665a7ea7c467f7f80b",
+        "tbl_ee5f16b9d7951a806c09ffc9b51705e2d55ca4e631073754b2d8afc7fa8cf350",
+        "tbl_5e5899ac4eb5090613960afa677967b0694314efd04273a567d72c1171527ab6"
+      ],
+      "question_id": "retq_9490ea8fbfcc0834be9ca1d779411b8cf60ceeaf4816cbd05abc9c4ceeb48118",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_14356d221adccea2fca9acbeee9d317b6f47f366293dac5df7af6e949304a3a7",
+        "tbl_7178f397f374720112e3934ca2ab11c3be497c59c51d32701d91706486988430",
+        "tbl_b2157506dc11a7cd6a1f3a6e30090d1f696a96da3c3325119b4489a2adb7f0d1"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.6818181818181818,
+        "f2_at_r": 0.9090909090909091,
+        "mrr": 0.5,
+        "precision_at_10": 0.3,
+        "precision_at_r": 0.6666666666666666,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.6666666666666666,
+        "recall_at_5": 1.0,
+        "true_positive": 3
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_4be1f97d8c84732baa4e4cc5389388c8a34e99f2c9d8878baa26456174fd7845",
+        "tbl_7178f397f374720112e3934ca2ab11c3be497c59c51d32701d91706486988430",
+        "tbl_b2157506dc11a7cd6a1f3a6e30090d1f696a96da3c3325119b4489a2adb7f0d1",
+        "tbl_14356d221adccea2fca9acbeee9d317b6f47f366293dac5df7af6e949304a3a7",
+        "tbl_7198df7fd4ac30fdecb28ebcec2869244aa7d4c73ee03acb89740454a6359050",
+        "tbl_7980ae9d6c898d7ad9170a1343eb77635bb1c3c05ecbfd707bb0a306f29c871f",
+        "tbl_4809a2aae1ef555902270dfc380be3c7d0983a97b2e17fd9404678ff611bbf16",
+        "tbl_ebe3110128e74f8ef2090142c35550f850e818845c9c87838d9ecf1eed39abf9",
+        "tbl_9613997742fcdc51ab32eb62b2226bdb51a45cb8eb38e13c3587327bdb44b174",
+        "tbl_bd35b041ca46d507022de0366265aa1f47c57f6338717c2aabfec2cccf573bb0"
+      ],
+      "question_id": "retq_9a05b36a4b132789fe7ddd37f32f3ea8f6d14b2f51bef2ca73991c166adfa1d5",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_973227f5e2dd1abdc06bfad4b15f0c4875c9deb51df912479158a3181a166a96"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_8d21a88d300d8b0951642ea6401c6909d8f1648a677c586b29bc9eb6e18bcf0c",
+        "tbl_a977f686cbadec43c2953082844b2fedc0ba3096192ff723072ce71759443fea",
+        "tbl_2c31dceea8b094777eb86b6896fd33f00971f0543f357d622218f2876c902641",
+        "tbl_5abc6cb3d086ebab95681ecc431c0dcfddb7eda74a0c367ccacd2c699d1e6ad5",
+        "tbl_d53d294784c0068e05c1dd569c37b64bc72fabadd0e0c0192b6272192a1c9dfd",
+        "tbl_6c80b206bcc2bce0a8b73565dd361136ae314ed75047c553f54f1e694b437929",
+        "tbl_aa4de0fa0bce10b175fda571fb241d8bcf39591aac221f5fb42eb04706635aba",
+        "tbl_bd4bf3c89a845fb77396b88a677c3d30671eb714350f3c051884715350114f1f",
+        "tbl_8897a576ee1df5bc239b45b2c295ee56831d142046c668b9d9dadf711a62d5cb",
+        "tbl_074831ab4bb29d0895be419a2ef598f529afc970b8f2cbb1402ad539f3f0a0cd"
+      ],
+      "question_id": "retq_9abb0ade76092d5443f249b43fb913340f16cfc5318c8631869c939e065534bf",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_260423c1280906e134a91ad617e9ebae2252116efa62122ef422900be97cdeda"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 1.0,
+        "mrr": 1.0,
+        "precision_at_10": 0.1,
+        "precision_at_r": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_260423c1280906e134a91ad617e9ebae2252116efa62122ef422900be97cdeda",
+        "tbl_9d635ae56f4836121b5e1279caec5030cfd18ae7bfff1c52cf0a57495ec9ade1",
+        "tbl_121c3bd22232138d17feb8496a5a71d0b3d6fa9a10e2fed01b9b0c3a9d5510e3",
+        "tbl_4d6ddfe5cc4f67a48cb8ef739ec7c1c8a0e1983de400a1b42050643728d74b31",
+        "tbl_92eeaf15aa374a9e083fe27e25c4d5c90921bd863b5f1a0abe19572e0478ae7d",
+        "tbl_189f5eab8df9ed4c62deab6e34a3e32f07d2d511d0f5305ffe3c8e5fd05d52a3",
+        "tbl_ea75f699cf5ea11d843667ee7c876459d9594933547d252ebc592bf8650eb1fb",
+        "tbl_9a5b7e8b120a7559e0c7f5954733e83efaa35de1d22bc08e514fda0311e60595",
+        "tbl_40429a71267a0d0a82e9d38aea05818882fb35d985810745a21a6565e927fcc6",
+        "tbl_3afbf1d78502deb48c28f56ef5d165224b62b28482f59b16918d787e0299b887"
+      ],
+      "question_id": "retq_9cf253d87eebc6cff165ab32f1d759d9779d11bd67331bb56806fcf6af78a8c4",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_65e83bd84d9fd7f8c0a6f279a4551429aa68c51cfe163ed6830dc83429d086e6"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.2,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_0e8657449414d71fc328145b728eb0b1ea298034d3194747f0fb0a6629024dbd",
+        "tbl_f6171c50d2c8410cc6ee1d46ff059b289105cdad468dd4851078030121b68eca",
+        "tbl_e2417fa9f302d236cd1be81ebc27d5465860ae40be7cd33d87d5a401ef5081cf",
+        "tbl_71cb97766e11b4629c94a2971ffa73f770ba7523b3ef386a1a61b8b845859a41",
+        "tbl_65e83bd84d9fd7f8c0a6f279a4551429aa68c51cfe163ed6830dc83429d086e6",
+        "tbl_0ca33b5bfbbf6767171bc221bd837bdb8958562c619a511385a20b653ba69212",
+        "tbl_57987264eebcbb382c68401ce0b4241c4b3b71fd5f0ad1ce39a01c7e6d96a7f5"
+      ],
+      "question_id": "retq_9ecbb4727d458b5de69ed6ff3355d237b4482e86765f3b9d339c37f86c66c3d7",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_3739f942a9c1843ffe9cd7a4d9edc68218501714148f91c5c89672f0e0e86189"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_528b285354f9aad1c373c351591406fe7c3651abe15641335a219793643b679f",
+        "tbl_3deb0dd025bded446da14d5898776ba94a63d53b8a40cc08275a520ea5598744",
+        "tbl_da6a4d3859a5904adfeacb8d714d04686a51f4cf98da4915aa6948d095508b88",
+        "tbl_563660a79f23c998cae04f5ba32553bae87422e6022f5773e07e8f5c145644a0",
+        "tbl_49494ab1d9ec8164d68178cf8d54b479d9e198675d6d0df0826e1e2043daa9e8",
+        "tbl_38ef7213e6380791e719d2738eb9584442c1dc5c1c6a5eeb659f433b71b07c7a",
+        "tbl_5e5899ac4eb5090613960afa677967b0694314efd04273a567d72c1171527ab6",
+        "tbl_686f341f70b8a52ee0e5e1d0d2aea95b26d711e83c6811124d836340969d4e4a",
+        "tbl_a8c361c92630b17cbafea16bb311060e52c0745f24783b45c6222d4228135b1e",
+        "tbl_bec0dcbe6eb1e43ce11266c67284d939d3a182132b780437c46698a4e3dedd51"
+      ],
+      "question_id": "retq_a2d5888138ba3e4af86938cf0854c85da519cf1d4c63f8e610fc722853f816a2",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_251d7b87ed1883a8927077400d0b4f28a1a4005d5a2cfd47dfe678c408e107e2",
+        "tbl_3dcd9133865a91dc880fdcd0c4eab641a5513105c45c855e5895e847bc24acc0",
+        "tbl_67ec2e2aec79a913445d537849ac11cd5bcc3497b2a19c0680f7d69179739af7"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.6818181818181818,
+        "f2_at_r": 0.0,
+        "mrr": 0.25,
+        "precision_at_10": 0.3,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.3333333333333333,
+        "true_positive": 3
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_0260eb0565a3720de1bef4d21219c361795259f5c54d05e06f8598318ef6dd6d",
+        "tbl_304bdb02a768953b9fecc84ee52f6e8b4e66f315b6d1c656011ecc3127266cd9",
+        "tbl_5499346b3d25fb0acdcdbf2a26bcd9d5a6b274ab7bcf4641d444d86b198b8964",
+        "tbl_251d7b87ed1883a8927077400d0b4f28a1a4005d5a2cfd47dfe678c408e107e2",
+        "tbl_e2e425dda95176443c4f7d9d74ee7ad16901714d5fce764b900b44f3c73394d8",
+        "tbl_392f5a4a29996f4c54bbb57081e4fa55dc06e6af5bc08d736b522a2185ee4389",
+        "tbl_3dcd9133865a91dc880fdcd0c4eab641a5513105c45c855e5895e847bc24acc0",
+        "tbl_67ec2e2aec79a913445d537849ac11cd5bcc3497b2a19c0680f7d69179739af7"
+      ],
+      "question_id": "retq_a51c4303ed6e770889e289f07ef1704ee7ccd896f35768a69a203118062b9e16",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_10e2627cc80c0ae300f38fd7b1b1e0f1f23ffe640606641301deb67833390bc5",
+        "tbl_733c8054e667194a05bf25d97ab891a21350bb72f3aa93a1c9a9192d6296897c",
+        "tbl_73551cbf4b5c9f3634dadc06bd0d562d1991eca9e6580bb7a1fa325674df6b2f"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.4545454545454545,
+        "f2_at_r": 0.5555555555555555,
+        "mrr": 1.0,
+        "precision_at_10": 0.2,
+        "precision_at_r": 0.3333333333333333,
+        "recall_at_10": 0.6666666666666666,
+        "recall_at_3": 0.3333333333333333,
+        "recall_at_5": 0.6666666666666666,
+        "true_positive": 2
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_10e2627cc80c0ae300f38fd7b1b1e0f1f23ffe640606641301deb67833390bc5",
+        "tbl_950f5caa42e93487fccf8e1dfc4533f22880cf0515ae5f57474573aacfa9796f",
+        "tbl_a1d39a5e3bf01fd2769aab4554569eb42a8b2ce0d550632f55976c298c9fa0e4",
+        "tbl_73551cbf4b5c9f3634dadc06bd0d562d1991eca9e6580bb7a1fa325674df6b2f",
+        "tbl_dcc520f36510dbfafcdaf1aea521eaf8d613448a128e33a8665374048b5897ba",
+        "tbl_fafb917a29659c28734ce74196ff01e53243f75d5b0e4bcfb555ccd049d460dc",
+        "tbl_59862a9462c13207b1b2b186681812f7e2b7306753d3e8d6b349d73f0635e62e",
+        "tbl_d30ef6dd68c4e7826898b8369060b75d8b9751cd558c9e9d3721a410cf41ccfe",
+        "tbl_fc61781b3405bf5693981ea2dcaccfbcc4cd2d9cd36686b5cdad00c54311efbb",
+        "tbl_580c303b72b12c90934739321cb8038baf8c774268eb2c84f53ccd4b38d7b525"
+      ],
+      "question_id": "retq_a5af50731f92719510085938eae0f29f7cb39b3b0457e15e99748f5f61a22a86",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_4a47c080f3d554db3a4571de05947364e88cc56c9d3c4072f8ec2ba0360ac805"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.125,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_bcc298850727ce47ffb486a816084a898b0248c262d6a5e30879a60d88ed4abd",
+        "tbl_db9f28f018705e45aaf7c2f0612afde43f2d8fd1f5662778e8862e14dbc5ece0",
+        "tbl_9c0ecd8483c744dbde1a8c63b889cab1d316a8f93cc89ef1e712e5166a1e2aee",
+        "tbl_e72e098266759ee6cb9aee74fc2a06dc0c8d62d78b4dd3cf6f3b5ecb7fd9f2f1",
+        "tbl_743abc0a23d717542de2b1c1768382bce8d9fb316252b2e2dd5079d72df83b44",
+        "tbl_1b86ffe5d9531b3725f7a6b178811c39161ef247190fac181131af8ba1cb7aa3",
+        "tbl_6cd9280fb1ccf696546c3105309cfb03d36b793aaf34c19ae2ee7182bbf03b5a",
+        "tbl_4a47c080f3d554db3a4571de05947364e88cc56c9d3c4072f8ec2ba0360ac805",
+        "tbl_28dc067cc8f9b9a1425bd992e8e70673c66253b8c878d00bac7154cbc555c6ac",
+        "tbl_300e02a3be9aa06b1837ac909ec75afd0a182d5d6e7d6871aa119800d1ff262c"
+      ],
+      "question_id": "retq_a92e064c27aea88ce6b2d4d81bae32e94fc23ac351036e8fd88058ed484d3d62",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_48dc6bdecfc04c5fece016f1a2e710e71b7576fb8ed92e482ec71ce61a6345fb",
+        "tbl_9eb0512b316a80754491a8cfb2acac52b79c8cd1c89e7c366f272a27f846a470",
+        "tbl_ff659cea1878c04aa499e1360803b41e95dcf12aea9bee5859dbbb483a115bbf"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_a8ccbc5453d943c5dd1457047284251bd1464b84d5038fffa712e9cf7cc1a385",
+        "tbl_4cbaf89da1b07de2ea55b96315e56f3335ee2bc01b1c65a3111d34d9dd4a5a8f",
+        "tbl_60c9a00ca389d599ce985fe01ed9efb6098966ea8577c6f3041fcd38dcc42c4e",
+        "tbl_7f8e44bc632a30b6fc4b91fd28fbf6f72379b73241c41bd1623aa97b155d814c",
+        "tbl_cb20c7df2a2d64f651863d767e6c8c5cb6d70f1482f5dde5bebb6459af7c9d31",
+        "tbl_dd3c522e5cf8ffabede2debe86d3298b939147e5d29111022d1f6a7c15541fce",
+        "tbl_1cc4620fdd365e8d31cc7d5f6e8f8e6ca4429053f73c2ce0d56858d9bd73d92e",
+        "tbl_33dbbb8195d92fcaa176db24fa018ba583e685e5b455d50d8e3c74016f528efb",
+        "tbl_3fd94a4efa2f9d2388b4d86f2ac386f6f759dee49abdb5697cb6213f7dd13e8f",
+        "tbl_9cc865a461260d9df40cd9c1ad3be3e62b730ccb361aae74851813076cb0c9cf"
+      ],
+      "question_id": "retq_af86db7ee5e169a65e2211bd3a20af63c4ecd906bf97d4572b15d0b6ea01859b",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_047406408377a99a416e8363bae707fc49347d465958e3f8f9556ba82075547b",
+        "tbl_88e63205de2b51d7e5588d6cebea6c40310588683ade51a8cd368a74e6022331"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_17ae7dbf93321d01e621084278c548299de2133dcf83fd3d0b350ca8527e5f92",
+        "tbl_ad3354c5deb17d3870830e0cb1b6613c734108e33ee958f21ea2ccf6891ec8e6",
+        "tbl_ca462b3620b29272eff98af54e60c9d9e611c837786fff0b8f2361db94efcf52",
+        "tbl_c206272dd500a3a0400c27ce38c4cd015ce2c2032f9ec18bbc9db365f826a278",
+        "tbl_eb9db1add7d529295a7a3cc75da5e1d7dee3cef3c705136fe66638bd099e75e7",
+        "tbl_c94e81806fdce85263b166a592657ce4c79d03e8e8af7913fcdb6ec729022caa",
+        "tbl_431ee597b22eb4f294acc8563fcfd6b0643b00c4fca70beda4cc7c863509cf39",
+        "tbl_63568a6d8b8a7f8f1fcb63b15348acead0031776f9db16d00c6f3b9d44a007a1",
+        "tbl_587c85cbe0a45d80c80bc6f2f844289cd8763bc9cfc048672801011b1b407b3d",
+        "tbl_b0e1be64fabd0704f4ba129ee388bb6dc66bb27c54ef7d7fe041e14082da7fa2"
+      ],
+      "question_id": "retq_b241522bcdab166c95e5e24ad9fb63a9eede7baf7c8432392db31274c063c389",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_c13ae0c50c647da5a1b0bc166d46660b8f713fcb202e344ec3fd40e70c3adc2d"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.5,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_0ca6d656f0d9aadb4d80eeceea331b643e04f79a15d44b53eed75d9e6b74f951",
+        "tbl_c13ae0c50c647da5a1b0bc166d46660b8f713fcb202e344ec3fd40e70c3adc2d",
+        "tbl_f507857adfd4701cf8a2540444690aeedce585941a851ccf96107c64eaa23ec9",
+        "tbl_4b2277a7e4fac95efaa2942fe786a994a2e6b5c8a7863da980e6800fbdebd24f",
+        "tbl_8f541080801042dbe34759258863ad6f295001a0fcb28d2f39d30bd0589d5d15",
+        "tbl_fed883a2950883c1fe641123e9eea746557b8c20e6ba04de09a86eeaab4bb4f6",
+        "tbl_b795c1b17487a1a67e4d1e3dd26e88e0b5f025f5964628ae1b224727e30e5959",
+        "tbl_0fd3888092d9f1fcadef0dfa06dafa32cac3c3f61a6ea43f09492711784d27ec",
+        "tbl_462f7faa37fdd1416fdba611296de7a9b727af3d9c1952db41657ce9c41ce47a"
+      ],
+      "question_id": "retq_b48a824c13365c7b2537ece813ecc3f1e940d2765444b9b920a75418eb0e4a61",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_e22902ca93e0e314bb09ec37a330ada39678b4f578c553c1ac27e5ea379610ca"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 1.0,
+        "mrr": 1.0,
+        "precision_at_10": 0.1,
+        "precision_at_r": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_e22902ca93e0e314bb09ec37a330ada39678b4f578c553c1ac27e5ea379610ca",
+        "tbl_d799350bf2be9ec17ad16f8e5f2c4ec533835504fd990e856c9b42885b0ad1fe",
+        "tbl_93cbdbbc1e0cea8d74a783a4be18d7511befae1617f35d384a67465c781815aa"
+      ],
+      "question_id": "retq_b74d8b5b9e878a98bf9431932d39659660d3ba35571478baa6e678ce932c4a45",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "three_or_more",
+      "gold_table_ids": [
+        "tbl_13f0470d32f60ce94d27dfb4b77c31d43aa79cd3d8611637a95a53692c70f4aa",
+        "tbl_43ba8c1f31b79107cbdf159db4f7759cc8df7bf3e7c5583dfa2dd22226566cb7",
+        "tbl_69019bfb20d65abbdb7fa27ec16ccc50e1e4029121baf200e326696bcdbede8b",
+        "tbl_add6276f804803e43654a26340b64c08c31cb2a83b931af1819d8d94d41aebf1"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.7692307692307692,
+        "f2_at_r": 0.8333333333333334,
+        "mrr": 0.5,
+        "precision_at_10": 0.4,
+        "precision_at_r": 0.5,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.5,
+        "recall_at_5": 0.75,
+        "true_positive": 4
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_44693fe2169ec4a6ec878a16b49020ea67db1e0ca5d74550f28f38800aced3c6",
+        "tbl_13f0470d32f60ce94d27dfb4b77c31d43aa79cd3d8611637a95a53692c70f4aa",
+        "tbl_43ba8c1f31b79107cbdf159db4f7759cc8df7bf3e7c5583dfa2dd22226566cb7",
+        "tbl_f8e410c9bfd29a0257013e918e6ebbad87e92e1cf1b47726a21acd4d18f2120d",
+        "tbl_69019bfb20d65abbdb7fa27ec16ccc50e1e4029121baf200e326696bcdbede8b",
+        "tbl_add6276f804803e43654a26340b64c08c31cb2a83b931af1819d8d94d41aebf1",
+        "tbl_8d8d49f4b6105c225a3f1cacc34c467d1c6b5e1396fb2433340c6c37e10afa73",
+        "tbl_d2552a60408c5ff017c8edd044a062084f2b1177da56166d7606886d72934405",
+        "tbl_4b546829e663d7b5170db614933e0ffa62697694f6dc72c71e911c80676a5623",
+        "tbl_12a31093994bf2daec54a30bdba2701871cb3ae1d8c68440b5b4df19c7d0ffcd"
+      ],
+      "question_id": "retq_b8f5f17c7fa19ee92df6e919eb20b531855fc9c9fc46294da23b13d9025070de",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_3daf2d5a6f938548c4bfd09d449ec92fa96da2f3a61b61a049c906f5006afe97"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_ecbd12e0663ea8cefa940b7477eb832392857939be608760a3c01bd1689ea016",
+        "tbl_19c571a540d75c6e3ebd13643f4d332bc94ca71724f5b8cecfecc26468aa9833",
+        "tbl_b7adaf4f07e2cf927fd9e5ae3672837f127e1f014fef87906514628bdadc1083",
+        "tbl_879db42b8104a0869c992f08114e9269ce3d69786611446f534ef69e37c9727e",
+        "tbl_b6fd6801f31741fee99eb645adb939cabb88807f277c667b951c684d664b7ced",
+        "tbl_6b94c1087fdd26383355ac23c6132545f402d8c1376090caa7a3965be8d2649f",
+        "tbl_da1d47a8a53bfd926aff4a1e6b269387bb3032d369efd8ea27fb5a46eed1214f",
+        "tbl_401087a11ca7f72fa9b808e9ce7a94933db3891933875fc1932611eb7938d9a9",
+        "tbl_de031e48c006ab9ab8a2ef63631c8431a15c0e4f911bcfc50b70eae9d7bed69e",
+        "tbl_8e14f884401a116c3fdb6f7089e40ea7c9dc909e7b4a99b33dd8b2c380fe282a"
+      ],
+      "question_id": "retq_bf660ff667f8d577c20962ceb66c154468642b12c827e7a52024b3fa2a5277bf",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_e22902ca93e0e314bb09ec37a330ada39678b4f578c553c1ac27e5ea379610ca",
+        "tbl_e5c0a901bacbe5cfab2d10ae398a388af73e490b61721b1bc62bdf474d0d0525"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_9d5710948d0a53d59dace07750c587e43aa6d2813540e4907ab361872dd5b876",
+        "tbl_850ca33887a6b6ef7eeac6c5472408e8a633a71e78145db1e561598a4c21802d",
+        "tbl_fc1e9fb238e04284f0322032216e6dc59e989975a787200d2d2a08724cb86ec3",
+        "tbl_13526444bfe34060534f7283d39bc4ca18773c71e06246638743203f59d96c1f",
+        "tbl_242a1b595b5e873a0512f808e1ee4d9d47da7499bc4cac2e055184e589a2a492",
+        "tbl_61e308bb0b839d216a75ee9a11aba22470709c0636acbc59ce6a5e25cdd7100d",
+        "tbl_a3cba3055aaa67dba5448a4d40018e6c25d94fa63d37e8b41e816249816b9e25",
+        "tbl_29874f68c7787ecf44953a578f2e978b10a92bc604bf02c52a38099f0640a9d4",
+        "tbl_64e67318bad075a02a9549be4207d90725a1a1574f2c29b5deefdfa913d29a0c",
+        "tbl_ae5db7bb8dcbf27c1c653b885d3288c348ba1c20622f790cb9649b7c261668b1"
+      ],
+      "question_id": "retq_c04ab744e55a62eb20943d9d43f55c5fd18f88ecbd530a61cc4a0c818af4ff17",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_1fea09c00553183173733966a79d1ad2795094a415e277a0034fc4dd8aa6b616",
+        "tbl_a6c2f4b94692ec0008a9f9b550f9d3c27eceea641af58b740c93ac04817e7e44"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.5555555555555556,
+        "f2_at_r": 0.0,
+        "mrr": 0.2,
+        "precision_at_10": 0.2,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.5,
+        "true_positive": 2
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_bbe0fc87ebc05a26d961c20bfec55bb25203075d8b7a354738293993e9c34363",
+        "tbl_15a5566c10161e6fc07ef39074cfc80a5a28bf465fbe9adcb3c90ec45a5604a9",
+        "tbl_375bad425a0bb36e86ac6a89b7c8428d17cbbcc8cea77ee74287e1accf71935c",
+        "tbl_d34bfc8667651ea04085e298bf5289f20b363dc4d8f38d379bc7bc63b8a0b412",
+        "tbl_1fea09c00553183173733966a79d1ad2795094a415e277a0034fc4dd8aa6b616",
+        "tbl_a6c2f4b94692ec0008a9f9b550f9d3c27eceea641af58b740c93ac04817e7e44",
+        "tbl_2f2e2aaa906538959a0029b01b620db1bf64afd29b48a55a8d5e2780ddbbc7dc",
+        "tbl_13d9b6f6df2c1c1938939ae9626be7ac029175126dad03f1522b0ac2f71bafae",
+        "tbl_6c93519dee1a2faffab68673cc4a9a989010c43f4b6e3daf7444ecc3c786bfd2",
+        "tbl_aec07cbed433cc4d1463076d75939f8a4074b618ab99338b41f9595321b8cbfe"
+      ],
+      "question_id": "retq_c069554491e65164bb302c37f0d9c83d0283546dbc61e26448e2cc5512cb06e2",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_222afcb819b2133c481f142d28f749571c9cf19647b15ae586a45387ffd20dc9"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_5868dd724152a223e3e08ea7739f295bf027bf757b1d0a521ba2e8d7e690a7ec",
+        "tbl_ab9636162330bc624647dc995daa4bbffb0addd28e09f6f21e69dcdeb0ce065e",
+        "tbl_5a3e43ce4afcfe9465f5a0b168cf607502fb16174016bfc6c47759d788cca4a0",
+        "tbl_dd189aa1e46776919aed2248799d5c9de6e35514eabdc3a05925f50a39ecdafc",
+        "tbl_07b08e957b3a5313d84c4f1fa30874a579178fbf78ea50933869e2111b941d3a",
+        "tbl_77efd10cc63a9377c7a685c4baf0f3a263b5957a57b32b5b58075c006abed915",
+        "tbl_0a6f8be915002f1c6215df23755f6ffe4a2fa4585e8589f9b2d1fc1c1af49895",
+        "tbl_f87a5e487731688798373b5a8a86f9a4d29f5c785b802fd42a43c01b57ad96bf",
+        "tbl_7939fa489e4857e053390dfb96e99fb7b70391b4e9850c5634e22cc457606482",
+        "tbl_c9eac2323e8b59e5cbe2da5c7926c2aa4074efce81834bf5c1c0b230793447d8"
+      ],
+      "question_id": "retq_c3b64537544ba45a111dd7a0aced43190d1073ed76f5927986e770e74c0c08b5",
+      "report_era": "2024_2025",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_5a6128f7f8df589d7546dd7e7364079ec4758a5747fe349ec88f9aa70020ebfd"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_de65a9a47a8af0be6d0be58bc0e34779dcc61eacb69e7017eb08fd2939b87631",
+        "tbl_446c3a2e35da5397f4a30e47a79833c480effa22c02ada9c61a023e6f8f5ea24",
+        "tbl_8a2cc3207e320292fed6140cd9d9d1d38d047a632235579ebfcba88b90ab18d1",
+        "tbl_42536ec8e457b3296f0cbaa24d65f7cd4d99c622d97c4b052ef8ecb108d287a9",
+        "tbl_58a8bcd747b87fc32fb5374cface59c7e4781ac6b0ce969abf33cf7bbca8f2b3",
+        "tbl_dc37dc2c2ba0922abe45c8b77e8a8f7500f2e2656b0a6cc3e823d74c67376630",
+        "tbl_b370d3722ef8d479440d4e7305426fbe1518f7c8800de93a7a81cfb5b0bf1efa",
+        "tbl_572f492a1c2f093dea002183056825019db09fab9d1c99c933eb59545834b8eb",
+        "tbl_ca7520aaf05ee09c7c62bbd101a5fea0334270d5f95d9e775c2b33779b7fff25",
+        "tbl_76a113291434167b469483b9d441e5d7d670bdbd4e1eb3ae9cc651157468e247"
+      ],
+      "question_id": "retq_d01701ab4c5e7d93a4af6f43f55ef17be41d4e2297131a4a388636edfdc8e8f2",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_34accf8c1649dd2b35947c2f47139bad6701085372201a140ecf33cc503e17da"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.25,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_018af6d64be6d6ae7c556447c8de8078a47931247aa2f460c6aaff65898fb27b",
+        "tbl_7cce08f58bc3a564c4054bcdc32874e8663c70bea34732ac67656ab81d6d36bb",
+        "tbl_f2cbf23adcd45272a87252368bc765fa9ba195205901457e7ec6c98713e7673a",
+        "tbl_34accf8c1649dd2b35947c2f47139bad6701085372201a140ecf33cc503e17da",
+        "tbl_473e40800a0a1dc2007f98bbd168606ccff12c55d0417be97283447b4dce2017",
+        "tbl_a5de91eb29ab68649affcac432f917abb85c5cfd7d0cdc1139dc50d912af1695",
+        "tbl_66668d116cc9ce791220f65ee6997b53d5bba84e5ad8b12e7ea5825f54d0e2da",
+        "tbl_5b536201e4860f63d8b5546f500a571349a7ae75a15118c1fd66fe5b347059a8",
+        "tbl_affa8fa8d30fd9a45d769485640bc324e478ccc228c329cbf5e76b0ab476b52a",
+        "tbl_dc0053cb214349f5b3edc76daf2922d2eb5e8367ce4cfc4e4bfda6f28622f947"
+      ],
+      "question_id": "retq_d18b935bc13fd5a2ddaae8ac584243d78c0d55b66468f26d18e8d92bd5af1dcd",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_9f4f401306be9be98dedcdece66fc54dd28529c2e767377cbceb11a9fbf488b9"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 1.0,
+        "mrr": 1.0,
+        "precision_at_10": 0.1,
+        "precision_at_r": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_9f4f401306be9be98dedcdece66fc54dd28529c2e767377cbceb11a9fbf488b9",
+        "tbl_df99b6d5f2a6a577adf7d0396e5761b14d8b13c5e1a273a81477154498d99be8",
+        "tbl_461da8ecc0294e9391b1e5bd0b9b3b4fa7ee3c8e7c88a2f2c2540f282b96258e",
+        "tbl_38d0c2d66332bc4070da2a13442e1a64268f2a791358a5ef4909095b291e8428",
+        "tbl_d6a8a0ca3f0a7a9c5ea63165242f5f17312c78ee8d12ab6aa10d1bfb0218ee28",
+        "tbl_f7e68bcf49a2f955a317d09d03b032f8b9b39d9de564b699d2fa031b9630fb5b",
+        "tbl_fc0869b0a33348089f4180860aeb89e5cf80b83a25621d9234e618b548178f64",
+        "tbl_10c64da4e4d9219de068920aa1e3407d5d209e335b88fb661d56e0b65f11d482"
+      ],
+      "question_id": "retq_d232835d75041d3a6a2f1b8c143f5cb34e83df0ce9dbfd82e70510b073045214",
+      "report_era": "2024_2025",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_c13ae0c50c647da5a1b0bc166d46660b8f713fcb202e344ec3fd40e70c3adc2d",
+        "tbl_ee81cc1b015207ce62bde5c5ec6aa42f82a2b639b7a703f5f00d72626c123a97"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_ecc5050a8bb70af89d8094d53319a07f82cdeec114d8e29676199383f73b60ce",
+        "tbl_0d2f0f8e57f326bf4332acfe39b6d22391dbb3784213ce1ab2fe13ce26354d85",
+        "tbl_95d94651f31bb69b9dcee6c1d4d5fa9fb8610d6eb46e2d8858a6b53d8cdeab33",
+        "tbl_5891d525b54ce1a44a5cd9c3859458cd5f9b84ee116cb821706c57f27237499e",
+        "tbl_ad2d03168909d0e651706099a439e01b1bdd4ea277a86694053c6493fa3de8c2",
+        "tbl_29dac7033ef19e38175f2accf6c6ee6b00077e50deeca74507fcb099c22d722a",
+        "tbl_c4cac84a27fd6f770523fd05046d12afe16fbd41e36297a9d6984f606a5a1dc8",
+        "tbl_015222977f2c0a2952ed0bb3fd47e2a98030901cc0507dd1b70d1528bd53b5fe",
+        "tbl_7a32328a7ca954f45c36c3877a915aaa14e6f8fff5b730f663d5a38b16f67395",
+        "tbl_ea8ebc17355b2ad687acdb2859f94d2c35ea1ffd1930405ab920eb414ee349bb"
+      ],
+      "question_id": "retq_daf3295706f9a99546fdaafdda237fc03c541ae74522a82b46bd39ed6d863bb4",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_ccd837d4df050f68677f4f5102ddd2b6f9f155eb2260fc80394bc9fdc007863d"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_046cbd17113a8e3ce52b81fd7419e1ea5e2ebbfb6d96149d9203a5dec8328aaa",
+        "tbl_1d655ab93ca54e9845ac62bce3ded2a784d1d1827494283a6f1601756cada541",
+        "tbl_fde9e19d6fcb2ee80d5ba6dd34d02f61f7466f9f6c05eba15884b84245686d65",
+        "tbl_983b6b9fe93e869f09a01f211f89d933d3b682f1d304533f1044f866f14bb9f3",
+        "tbl_3f34b7046ecf8ecd84e9b3e94cbfb75bdca19fd5c5bc1c939ff1edab288a8fc9",
+        "tbl_a2b5a3064c16373ec3ed55c9fc7e3509b97fb07c94a98449a971e89a46cc263e",
+        "tbl_b5cb9d4fca52baf0fe5c14ea555a440d6228f8af4adf6d4bee117c08a9aa5add",
+        "tbl_88d4777d3fa44d3d1f06cd27a3409431a6b1a1f8567bc4b3cae7507c0e0a1ce7",
+        "tbl_b8982b7e846b7888d72c002f245aaeb5f512ae1027a7375015440225f048781e",
+        "tbl_c87836e8a5434a83d210cf3df1eaaea243211a29ab9a246dd0f8c8e7371f342a"
+      ],
+      "question_id": "retq_de3c339b336e378295c8a5298d140ca41aa623690c6aed3616d4b9abc3dbe919",
+      "report_era": "2015_2019",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_c76bc3b845eafe28624a765b41d9ea6efc81424e657f77fe63f6dd918c9f4cf0"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.14285714285714285,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_f51aa33063f280150facd95cb3ee65602bf5128975b37bf410c41232c028cdc4",
+        "tbl_f2f914b3245b5b231a6c545af3f0b12334924b9acb58d925ab3cd19efab4d3be",
+        "tbl_b150862fc77a0962f9d21d894a19365a9737fda5473d7f46cc6c433907a82cb6",
+        "tbl_b1d37e67c30ca0bb8326839842fec42add69ae39043ae2729439d08f8e3ec61e",
+        "tbl_d89b30b076f9f9a59ba8585ff0b4ef2c420127051dd89095d040be353b1d84a4",
+        "tbl_f2ede9706dc7631530173a1950fb2ba1b58dd835c2bdb7bb26a0cb4eb0f24f87",
+        "tbl_c76bc3b845eafe28624a765b41d9ea6efc81424e657f77fe63f6dd918c9f4cf0",
+        "tbl_1a75c587b018070c581d0708e9391e4cfccf0d9a08cffddc8d5cf58c702703d7",
+        "tbl_b2ceef9ffce732b149423fe4a29f7211235a71366050e064d91db87dde02cac6",
+        "tbl_6435529651b713bf8a3c6bf97f4e356702cbeac6d545bc8e02c6c2f2e8235637"
+      ],
+      "question_id": "retq_df6f68634d600a5378892f46c619a80464948abd11da8a233fe225e749590992",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_d65e95512e51c95be8827a0844077a899babbe21a5914b1a0aa69f714354cdd3"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.2,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_be52d4a6572cb0385ef6b9660fcd7c79628839258f0cd621709ae7ea0d45ee53",
+        "tbl_8c563f97e4456b69e3bc3121eb14d2045d54aad9fc96d20188b4c0d44dd47107",
+        "tbl_b697330d19f5f1f6c66708c908074bcc3fdbba0d05f5472a418eafbb37e15503",
+        "tbl_f25dfadecac1c22b33615b4b894959fa0f926a3cf0c158b09f470ae743d32824",
+        "tbl_d65e95512e51c95be8827a0844077a899babbe21a5914b1a0aa69f714354cdd3",
+        "tbl_3e7aaa675a2a1389aa1e56ec4e7c993e3f3fdba5bae6db8c2613e0f282ee4342",
+        "tbl_2cedb7f33c631b5159df4ea7a1c5235fbd671dc6102be453ab7eb9d5ca00ab61",
+        "tbl_e1da9c83feaf94362edfa5cb31848fa5706e2dd212f4a0d8f74e5e5e34aec1aa",
+        "tbl_45b2031a8116a40ea6adfd0e0449431ebe3bf666b059c1dde86f46c8cdba3dba",
+        "tbl_0ed9cf46ebecbdba294f38af4b0f2444409711e2547ee15c5ea75259e4522d13"
+      ],
+      "question_id": "retq_e2059ca4277998aa17e8e41c3881e93960b982416b06a73b520628e942e263d5",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "two_tables",
+      "gold_table_ids": [
+        "tbl_3daf2d5a6f938548c4bfd09d449ec92fa96da2f3a61b61a049c906f5006afe97",
+        "tbl_4502ee46a12ed5d542ba6c763a886eb813e033b81bc4f4776c127dbeed17be35"
+      ],
+      "intent": "compare",
+      "metrics": {
+        "f2_at_10": 0.0,
+        "f2_at_r": 0.0,
+        "mrr": 0.0,
+        "precision_at_10": 0.0,
+        "precision_at_r": 0.0,
+        "recall_at_10": 0.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "true_positive": 0
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_ee054dc096d4e41c37e2b0da84d0bfbab4969bba9f60d41d890657feae954276",
+        "tbl_13c182c262bf97901a50e11dd7fb041cb1aeb8ba709810234274b2c5349d0254",
+        "tbl_156b7cd4ff9d7bfaca435a6336d10c1f5d7adf4410314dc1b490553291004a67",
+        "tbl_72e1b15803b1dc768aed34eb5416ff1c39aa7f2fb9f16db16fd416828d1be178",
+        "tbl_d06b03c6fa5f07082d421f00af53952f91851d45dbb8eb9cb53e83bba4ab64ae",
+        "tbl_b4e32d3d4185fe90a6b35d95248fc0bd2e7a9dfd231dd56b810b7794280bf886",
+        "tbl_a9468f7e06de87be312b79a75b03a1ab77e25caaff41b3a96e6d7bcff2d7aafc",
+        "tbl_463bd936cae801878f9f0aa32ef707250a384ee7ed0e3f955c9443678f61c35a",
+        "tbl_32142dbc3bb76564122f94e2e83950c9d0eb7fd5cbf23fa560ba142d54bd33a3",
+        "tbl_ca8562d4a4de4c1651259bf20d9ff1d58525ca90b367fdf36fbab42f8bbfe50b"
+      ],
+      "question_id": "retq_ea3b207f9bcd90985977155a65aa00de9d9127eaa488d93394daa8e2c569ab71",
+      "report_era": "2020_2023",
+      "statement_filter": "unfiltered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_7088783024659eb52e393b75b2b6f69f72665b0b34d8ff803f13298d9c215089"
+      ],
+      "intent": "growth",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.3333333333333333,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "multiple_periods",
+      "predicted_table_ids": [
+        "tbl_160897096825b92e1109ea0f87da4d0018a18834f5f8a5d236087f44c7e13e69",
+        "tbl_6b3f05fb39f9ba9b73aeb27fb2e66bd6545d2149934273ae1dda196443ef57b8",
+        "tbl_7088783024659eb52e393b75b2b6f69f72665b0b34d8ff803f13298d9c215089",
+        "tbl_d0649a598920b54cde96d94e39a4a4f8ce1e10784687f10af691a02511cf2ea7",
+        "tbl_32fd657cb61d67d8b2ae6a5b17735e83e71a1b4f1aa3234fd2e0dda66dcf27b8",
+        "tbl_98274abe066c6e2824c8f6c607d7059b13cf617433dfd22a7b4684724d7d3f06",
+        "tbl_2af32a540e6cac56be340d7abb7d42eb617f31e960b55256fd41a787d41239d1",
+        "tbl_85a238500b92c47a0379c1f9dffd510e6818b128ecfd23f6df02f2ed389640bc",
+        "tbl_9ff265a0e9dc856d6e4e515114bbadb0b2bb3fd4c4e80a37d10aaf0b1dc69f89",
+        "tbl_d1bbddc89d0ae6998d635cfd49ff3cb8fba66ec1d6ce38bda2c2b4454ea5f0c6"
+      ],
+      "question_id": "retq_ea502802099c055da44f3cf5e1352444a2df08eed91049e1a8e463f3277ba886",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    },
+    {
+      "gold_cardinality": "one_table",
+      "gold_table_ids": [
+        "tbl_64b0af2b0f97895188a2ec0cdab36c18855e93d3d057f27094705a9dcf863d23"
+      ],
+      "intent": "lookup",
+      "metrics": {
+        "f2_at_10": 0.35714285714285715,
+        "f2_at_r": 0.0,
+        "mrr": 0.25,
+        "precision_at_10": 0.1,
+        "precision_at_r": 0.0,
+        "recall_at_10": 1.0,
+        "recall_at_3": 0.0,
+        "recall_at_5": 1.0,
+        "true_positive": 1
+      },
+      "period_cardinality": "one_period",
+      "predicted_table_ids": [
+        "tbl_1c0d5cc09bbbcdeada8c20257159d7789266223d4b34e4643e9e6dab1d76fae9",
+        "tbl_7e7641eddb7496c2140b210909c0f8fc4ee8535055b69b96e624927061622a69",
+        "tbl_5e760f5b7e2baaabf6152d51c336bea64333a4a9ed4c29cbd79fffab4c6c2c39",
+        "tbl_64b0af2b0f97895188a2ec0cdab36c18855e93d3d057f27094705a9dcf863d23",
+        "tbl_b5fd646ae4b634e2fbc6a0f3aee47ca25c84de12274bf98d0f7389d0bc858e82",
+        "tbl_31b4c40e109b7de546d54f4fc507c839d1d06f9af368fbef1e27339a4cb551ca",
+        "tbl_b6e7da3c2dd5f07e4762b04de40410b492d2926cf93a9726cff3a0a3c1c41dfc",
+        "tbl_4aa032ad779978b8876db6b3ef96c5243931183424507a936a88542ea8d02faa",
+        "tbl_700b3ea304cba23eb8491b0ac45f37d3ba83ef252590aca3e8359212d101638f",
+        "tbl_f8289c3b97e3810d9971578ca83eb829ae852e05af5cff67a6615f02e94cb7f2"
+      ],
+      "question_id": "retq_f4d7995ffd78410b783739fab33df211f00ce268cea4a5403c2b33e0ccb7832f",
+      "report_era": "2020_2023",
+      "statement_filter": "filtered"
+    }
+  ],
+  "question_count": 70,
+  "schema_version": "retrieval-system-evaluation-v2",
+  "selection": "cold-report",
+  "source_kind": "dense",
+  "source_path": "artifacts/evaluations/day13/dense-bge-m3.json",
+  "source_sha256": "1f1e1c9466bc7aea50a1b7b2cbf71a17c0e3cf555ae8229536ac05d497127937",
+  "system_name": "dense-bge-m3"
+}

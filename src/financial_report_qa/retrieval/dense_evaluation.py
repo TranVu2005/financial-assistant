@@ -29,6 +29,7 @@ from financial_report_qa.retrieval.evaluation import (
     RetrievalMetrics,
     score_at_10,
 )
+from financial_report_qa.retrieval.reference import validate_bm25_reference_report
 
 DenseFailure = Literal[
     "no_eligible_documents",
@@ -275,15 +276,7 @@ def _delta(value: RetrievalMetrics, reference: RetrievalMetrics) -> MetricDelta:
 
 
 def _validate_bm25_reference(report: RetrievalEvaluationReport) -> None:
-    expected = (0.1499999999999999, 0.880952380952381, 0.4224545295973871)
-    observed = (report.macro.precision, report.macro.recall, report.macro.f2)
-    if report.dataset_fingerprint != LOCKED_DATASET_FINGERPRINT:
-        raise ValueError("BM25 reference does not match the locked Day 8 fingerprint")
-    if report.question_count != 70 or any(
-        not math.isclose(value, target, abs_tol=5e-8, rel_tol=0.0)
-        for value, target in zip(observed, expected, strict=True)
-    ):
-        raise ValueError("BM25 reference does not match the locked Day 8 evaluation")
+    validate_bm25_reference_report(report)
 
 
 def build_day9_comparison(

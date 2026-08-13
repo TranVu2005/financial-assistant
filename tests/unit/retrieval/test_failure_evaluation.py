@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ from financial_report_qa.retrieval.failure_evaluation import (
     FailureRootCauseAnnotation,
     RetrievalFailureCase,
     build_failure_report,
+    load_failure_annotations,
     write_failure_report,
 )
 
@@ -213,3 +215,21 @@ def test_write_failure_report_is_byte_stable_and_auditable(tmp_path: Path) -> No
     assert "diagnostic rank 11" in markdown
     assert "income_statement" in markdown
     assert "doanh, thu" in markdown
+
+
+def test_tracked_failure_annotations_cover_the_committed_failure_artifact() -> None:
+    repo_root = Path(__file__).parents[3]
+    annotations = load_failure_annotations(
+        repo_root / "data/qa/retrieval-failure-annotations-v1.jsonl"
+    )
+    committed = json.loads(
+        (
+            repo_root / "artifacts/evaluations/day13/failures-422df141c935.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert [item.question_id for item in annotations] == [
+        item["question_id"] for item in committed["failures"]
+    ]
+    assert annotations[0].note.startswith("Reviewed source line 174")
+    assert "Cho vay khÃ¡ch hÃ ng" not in annotations[0].note

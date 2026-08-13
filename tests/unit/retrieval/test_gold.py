@@ -192,9 +192,23 @@ def test_gold_period_filter_accepts_cell_period_not_only_report_year(tmp_path: P
             "verified": True,
         }
     ]
+    second = dict(record)
+    second["question"] = "Loi nhuan nam 2023 la bao nhieu?"
+    second["question_id"] = stable_question_id(
+        str(second["question"]), filters, (table_id,), EXPECTED_FINGERPRINT
+    )
+    records = sorted((record, second), key=lambda item: str(item["question_id"]))
     gold_path = tmp_path / "gold.jsonl"
-    gold_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    gold_path.write_text(
+        "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
+    )
 
-    questions = load_gold_questions(gold_path, release, require_count=1)
+    questions = load_gold_questions(
+        gold_path,
+        release,
+        require_count=1,
+        question_ids=frozenset({str(record["question_id"])}),
+    )
 
+    assert questions[0].question_id == record["question_id"]
     assert questions[0].filters.periods == ("2023",)
