@@ -220,6 +220,21 @@ class _DiagnosticRetriever:
         )
 
 
+class _KSensitiveRetriever(_DiagnosticRetriever):
+    """Expose clients that incorrectly assume rankings are prefix-stable across k."""
+
+    def retrieve(
+        self, query: str, *, filters: RetrievalFilters, k: int, question_id: str
+    ) -> RetrievalTrace:
+        if k == 10:
+            self.table_ids = (_table_id("b"),)
+        else:
+            self.table_ids = (_table_id("a"),)
+        return super().retrieve(
+            query, filters=filters, k=k, question_id=question_id
+        )
+
+
 def _question_with_dimensions(
     character: str,
     *,
@@ -265,7 +280,7 @@ def test_evaluate_retrieval_v2_keeps_diagnostics_out_of_metrics() -> None:
     report = evaluate_retrieval_v2(retriever, (question,), diagnostic_k=11)
 
     result = report.per_question[0]
-    assert retriever.requested_k == [11]
+    assert retriever.requested_k == [10, 11]
     assert result.metrics.recall_at_10 == 0
     assert result.metrics.f2_at_r == 0
     assert result.gold_rank_beyond_10 == {gold: 11}
@@ -281,8 +296,21 @@ def test_evaluate_retrieval_v2_defaults_to_100_and_records_unranked_gold() -> No
 
     report = evaluate_retrieval_v2(retriever, (question,))
 
-    assert retriever.requested_k == [100]
+    assert retriever.requested_k == [10, 100]
     assert report.per_question[0].gold_rank_beyond_10 == {gold: None}
+
+
+def test_evaluate_retrieval_v2_scores_an_independent_k_10_retrieval() -> None:
+    """A k-sensitive retriever must not let diagnostic depth change metric inputs."""
+    retriever = _KSensitiveRetriever(())
+    gold = _table_id("b")
+    question = _question_with_dimensions("7", gold=(gold,), periods=("2023",))
+
+    report = evaluate_retrieval_v2(retriever, (question,))
+
+    assert retriever.requested_k == [10]
+    assert report.macro.recall_at_10 == 1
+    assert report.macro.mrr == 1
 
 
 def test_evaluate_retrieval_v2_reports_all_required_breakdown_labels() -> None:

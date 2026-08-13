@@ -334,20 +334,28 @@ def evaluate_retrieval_v2(
     per_era: dict[str, list[RetrievalMetricsExtended]] = defaultdict(list)
 
     for question in sorted(questions, key=lambda item: item.question_id):
-        diagnostic_trace = retriever.retrieve(
+        retrieved_at_10 = retriever.retrieve(
             question.question,
             filters=question.filters,
-            k=diagnostic_k,
+            k=10,
             question_id=question.question_id,
         )
-        diagnostic_predicted = tuple(
-            candidate.table_id for candidate in diagnostic_trace.results
-        )
-        predicted = diagnostic_predicted[:10]
+        predicted = tuple(candidate.table_id for candidate in retrieved_at_10.results[:10])
         metrics = score_extended_at_10(predicted, question.gold_table_ids)
         missing_gold = tuple(sorted(set(question.gold_table_ids).difference(predicted)))
-        metric_trace = diagnostic_trace.model_copy(
-            update={"results": diagnostic_trace.results[:10]}
+        metric_trace = retrieved_at_10.model_copy(
+            update={"results": retrieved_at_10.results[:10]}
+        )
+        diagnostic_trace = metric_trace
+        if missing_gold and diagnostic_k > 10:
+            diagnostic_trace = retriever.retrieve(
+                question.question,
+                filters=question.filters,
+                k=diagnostic_k,
+                question_id=question.question_id,
+            )
+        diagnostic_predicted = tuple(
+            candidate.table_id for candidate in diagnostic_trace.results
         )
         failure = _failure_for(
             metric_trace,

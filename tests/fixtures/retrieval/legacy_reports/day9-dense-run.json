@@ -1,0 +1,24 @@
+{
+  "build_seconds": 0.0,
+  "cold_latency": {"p50_seconds": 0.0, "p95_seconds": 0.0, "sample_count": 0},
+  "cold_report": {
+    "by_intent": {},
+    "dataset_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "failure_counts": {},
+    "macro": {"f2": 0.0, "precision": 0.0, "recall": 0.0, "true_positive": 0},
+    "per_question": [],
+    "question_count": 0
+  },
+  "encoder_name": "bge-m3",
+  "encoder_spec_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "index_byte_size": 0,
+  "warm_latency": {"p50_seconds": 0.0, "p95_seconds": 0.0, "sample_count": 0},
+  "warm_report": {
+    "by_intent": {},
+    "dataset_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "failure_counts": {},
+    "macro": {"f2": 0.0, "precision": 0.0, "recall": 0.0, "true_positive": 0},
+    "per_question": [],
+    "question_count": 0
+  }
+}

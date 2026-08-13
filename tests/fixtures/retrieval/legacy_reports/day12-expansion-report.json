@@ -1,0 +1,16 @@
+{
+  "best_params": {
+    "alpha": 0.0,
+    "expand_non_seeds": false,
+    "fan_out": 25,
+    "relations": ["same_document"],
+    "rrf_k": 60,
+    "seed_depth": 50
+  },
+  "bm25_reference": {"f2": 0.0, "precision": 0.0, "recall": 0.0, "true_positive": 0},
+  "dataset_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "decision_reason": "Frozen legacy compatibility fixture.",
+  "evidence_caveat": "Representative legacy shape only.",
+  "grid": [],
+  "question_count": 0
+}

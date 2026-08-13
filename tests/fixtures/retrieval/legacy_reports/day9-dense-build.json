@@ -1,0 +1,9 @@
+{
+  "build_seconds": 0.0,
+  "dataset_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "encoder_name": "bge-m3",
+  "encoder_spec_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "faiss_device": "cpu",
+  "faiss_gpu_count": 0,
+  "index_byte_size": 0
+}
