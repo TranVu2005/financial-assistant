@@ -65,7 +65,7 @@ kiểu dữ liệu, thiếu CSV hoặc truy vấn không chạy lại được �
 
 | Hạng mục | Mức tối thiểu để qua cổng | Mục tiêu cuối tháng |
 |---|---:|---:|
-| Retrieval F2 trên tập kiểm thử khóa | 0,80 | ≥ 0,85 |
+| Retrieval F2@R trên tập kiểm thử khóa | ≥ 0,80 | ≥ 0,85 |
 | Answer accuracy | 0,85 | ≥ 0,90 |
 | Execution accuracy | 0,85 | ≥ 0,90 |
 | Kết quả có nguồn hoặc từ chối hợp lệ | 100% | 100% |
@@ -75,6 +75,11 @@ kiểu dữ liệu, thiếu CSV hoặc truy vấn không chạy lại được �
 | Kịch bản demo ổn định | 8/10 | 10/10 |
 
 Các ngưỡng trên là mục tiêu kiểm soát nội bộ. Khi có tập chấm chính thức, giữ nguyên tập test khóa và bổ sung một tập thích nghi riêng; không điều chỉnh trực tiếp theo đáp án test.
+
+> Retrieval gate dùng **F2@R** theo [ADR 0002](docs/decisions/0002-retrieval-metric-definition.md):
+> `Precision@R` dùng top-`R`, với `R = |gold|`, và F2@R kết hợp Precision@R với Recall@10.
+> Precision@10, Recall@10 và F2@10 được giữ để so sánh lịch sử, không dùng ngưỡng F2@10
+> vượt trần khả thi của phân bố gold.
 
 ### 1.3. Ngoài phạm vi
 
@@ -808,17 +813,27 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 13 — Retrieval evaluation
 
-- [ ] Nâng gold QA lên 70 câu.
-- [ ] Tính Precision, Recall, F2, MRR, Recall@3/5/10 theo intent.
-- [ ] Xuất failure cases với question, gold, predicted, scores, reason.
+- [ ] Chốt định nghĩa metric bằng ADR trước khi mở rộng gold (xem chốt chặn bên dưới).
+- [ ] Nâng gold QA lên 70 câu, phủ thêm niên độ 2015–2019/2024–2025, bảng `notes` và `|gold| ≥ 3`.
+- [ ] Tính Precision, Recall, F2, MRR, Recall@3/5/10 theo intent, cardinality và loại báo cáo.
+- [ ] Xuất failure cases với question, gold, predicted, scores, reason và `root_cause` gán tay.
+- [ ] Re-baseline `_validate_bm25_reference` rồi chạy lại BM25/dense/fusion/graph/expansion.
 - **Đầu ra:** `artifacts/evaluations/retrieval-*.json` và `.md`.
+
+> **⚠️ Chốt chặn phát hiện ngày 2026-08-14:** `score_at_10` dùng mẫu số cố định 10 cho precision,
+> nên với gold 1–2 bảng/câu, **trần lý thuyết của macro F2 là 0,476190** (lookup 0,357143;
+> compare/growth 0,535714). BM25 v3 đang đạt 0,431217 — tức **90,6 % trần**. Cổng F2@10 cũ ở
+> mục 3 và Ngày 14 là bất khả thi về mặt toán học, không phải do retrieval kém. Quyết định
+> [ADR 0002](docs/decisions/0002-retrieval-metric-definition.md) thêm `Precision@R`/`F2@R`
+> song song và giữ nguyên `score_at_10`.
 
 #### Ngày 14 — Review cổng tuần 2
 
 - [ ] Hoàn thành dataset Representative khoảng 60 báo cáo nếu collector ổn.
 - [ ] Ablation: BM25; dense; fusion; fusion + graph.
-- [ ] Giữ graph chỉ khi tăng F2 hoặc multi-table recall có ý nghĩa và chi phí chấp nhận được.
-- **Cổng:** retrieval F2 ≥ 0,80 và Recall@10 ≥ 0,90. Nếu không đạt, ưu tiên normalization/aliases hơn đổi model.
+- [ ] Giữ graph chỉ khi tăng F2@R hoặc multi-table Recall@10 có ý nghĩa và chi phí chấp nhận được.
+- **Cổng:** retrieval F2@R ≥ 0,80 và Recall@10 ≥ 0,90. Precision@10/F2@10 vẫn báo cáo để so sánh
+  lịch sử. Nếu không đạt, ưu tiên normalization/aliases hơn đổi model.
 
 ### Tuần 3 — TableRAG-lite, compiler và kiểm chứng
 
