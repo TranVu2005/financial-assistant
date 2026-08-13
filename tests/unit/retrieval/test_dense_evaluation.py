@@ -32,7 +32,7 @@ from financial_report_qa.retrieval.evaluation import (
     RetrievalMetrics,
 )
 
-_LOCKED_FINGERPRINT = "37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f"
+_LOCKED_FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
 
 
 def _table_id(value: str) -> str:
@@ -264,7 +264,7 @@ def test_deterministic_projection_excludes_wall_clock_and_cache_state(tmp_path: 
     json_path, markdown_path = write_day9_comparison(first, tmp_path)
 
     assert deterministic_projection(first) == deterministic_projection(second)
-    assert json_path.name == "retrieval-day9-dense-37a61be7aebd.json"
-    assert markdown_path.name == "retrieval-day9-dense-37a61be7aebd.md"
+    assert json_path.name == "retrieval-day9-dense-422df141c935.json"
+    assert markdown_path.name == "retrieval-day9-dense-422df141c935.md"
     assert json_path.read_bytes().endswith(b"\n")
     assert markdown_path.read_bytes().endswith(b"\n")

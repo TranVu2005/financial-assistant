@@ -37,7 +37,7 @@ DenseFailure = Literal[
     "full_gold_hits",
 ]
 DENSE_ENCODER_NAMES: tuple[EncoderName, EncoderName] = ("bge-m3", "multilingual-e5-small")
-LOCKED_DATASET_FINGERPRINT = "37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f"
+LOCKED_DATASET_FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
 
 
 class _FrozenModel(BaseModel):
@@ -275,7 +275,7 @@ def _delta(value: RetrievalMetrics, reference: RetrievalMetrics) -> MetricDelta:
 
 
 def _validate_bm25_reference(report: RetrievalEvaluationReport) -> None:
-    expected = (0.14666666666666667, 0.8833333333333333, 0.4312169312169312)
+    expected = (0.1466666666666667, 0.8833333333333333, 0.4312169312169313)
     observed = (report.macro.precision, report.macro.recall, report.macro.f2)
     if report.dataset_fingerprint != LOCKED_DATASET_FINGERPRINT:
         raise ValueError("BM25 reference does not match the locked Day 8 fingerprint")

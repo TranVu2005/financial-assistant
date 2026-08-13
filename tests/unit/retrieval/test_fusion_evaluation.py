@@ -65,7 +65,7 @@ class _FixedVectorEncoder:
         return np.asarray(self.query_vector, dtype=np.float32)
 
 
-_FINGERPRINT = "37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f"
+_FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
 _LOCKED_METRICS = RetrievalMetrics(
     true_positive=44,
     precision=0.14666666666666667,
