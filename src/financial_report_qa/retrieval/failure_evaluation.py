@@ -112,7 +112,7 @@ class RetrievalFailureReport(_FrozenModel):
     """Day 13 failure-only artifact used for source-backed Day 14 decisions."""
 
     dataset_fingerprint: Fingerprint
-    diagnostic_k: Literal[100] = 100
+    diagnostic_k: Literal[100]
     evaluated_question_count: int = Field(ge=0)
     failure_count: int = Field(ge=0)
     failure_counts: dict[FailureOnly, int]
@@ -144,6 +144,8 @@ def build_failure_report(
     annotations: Iterable[FailureRootCauseAnnotation],
 ) -> RetrievalFailureReport:
     """Join automatic V2 failures with independently supplied manual classifications."""
+    if evaluation.diagnostic_k != 100:
+        raise ValueError("Day 13 failure export requires diagnostic_k=100")
     annotation_values = tuple(annotations)
     annotation_by_id = {item.question_id: item for item in annotation_values}
     if len(annotation_by_id) != len(annotation_values):
@@ -181,6 +183,7 @@ def build_failure_report(
     root_counter = Counter(item.root_cause for item in failures)
     return RetrievalFailureReport(
         dataset_fingerprint=evaluation.dataset_fingerprint,
+        diagnostic_k=cast(Literal[100], evaluation.diagnostic_k),
         evaluated_question_count=evaluation.question_count,
         failure_count=len(failures),
         failure_counts={

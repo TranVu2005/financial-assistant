@@ -97,13 +97,15 @@ class _FailureRetriever:
         )
 
 
-def _evaluation() -> RetrievalEvaluationReportV2:
+def _evaluation(*, diagnostic_k: int = 100) -> RetrievalEvaluationReportV2:
     questions = (
         _question("1", (_table_id("a"),)),
         _question("2", (_table_id("b"), _table_id("c"))),
         _question("3", (_table_id("d"),)),
     )
-    return evaluate_retrieval_v2(_FailureRetriever(), questions, diagnostic_k=100)
+    return evaluate_retrieval_v2(
+        _FailureRetriever(), questions, diagnostic_k=diagnostic_k
+    )
 
 
 def _annotations() -> tuple[FailureRootCauseAnnotation, ...]:
@@ -161,6 +163,14 @@ def test_build_failure_report_rejects_missing_manual_labels(
     """A failure without a manually supplied root cause cannot be exported."""
     with pytest.raises(ValueError, match="exactly match failure question IDs"):
         build_failure_report(_evaluation(), annotations)
+
+
+def test_build_failure_report_rejects_a_shallow_diagnostic_evaluation() -> None:
+    """A diagnostic_k=10 run cannot be exported under the required cutoff of 100."""
+    shallow_evaluation = _evaluation(diagnostic_k=10)
+
+    with pytest.raises(ValueError, match="requires diagnostic_k=100"):
+        build_failure_report(shallow_evaluation, _annotations())
 
 
 def test_unknown_root_cause_requires_an_explanatory_note() -> None:

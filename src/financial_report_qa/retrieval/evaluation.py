@@ -104,6 +104,7 @@ class RetrievalEvaluationReportV2(BaseModel):
 
     dataset_fingerprint: str
     question_count: int = Field(ge=0)
+    diagnostic_k: int = Field(ge=10)
     macro: RetrievalMetricsExtended
     by_intent: dict[str, RetrievalMetricsExtended]
     by_gold_cardinality: dict[str, RetrievalMetricsExtended]
@@ -400,6 +401,7 @@ def evaluate_retrieval_v2(
     return RetrievalEvaluationReportV2(
         dataset_fingerprint=questions[0].dataset_fingerprint if questions else "",
         question_count=len(questions),
+        diagnostic_k=diagnostic_k,
         macro=_average_extended(result.metrics for result in results),
         by_intent=averaged(per_intent),
         by_gold_cardinality=averaged(per_gold),

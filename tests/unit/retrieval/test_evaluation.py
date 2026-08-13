@@ -300,6 +300,15 @@ def test_evaluate_retrieval_v2_defaults_to_100_and_records_unranked_gold() -> No
     assert report.per_question[0].gold_rank_beyond_10 == {gold: None}
 
 
+def test_evaluate_retrieval_v2_records_the_diagnostic_cutoff() -> None:
+    """Dropping cutoff provenance would let exporters mislabel shallow diagnostics."""
+    report = evaluate_retrieval_v2(
+        _DiagnosticRetriever((_table_id("a"),)), (_question(),), diagnostic_k=10
+    )
+
+    assert report.diagnostic_k == 10
+
+
 def test_evaluate_retrieval_v2_scores_an_independent_k_10_retrieval() -> None:
     """A k-sensitive retriever must not let diagnostic depth change metric inputs."""
     retriever = _KSensitiveRetriever(())
