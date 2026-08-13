@@ -21,7 +21,7 @@ from financial_report_qa.retrieval.evaluation import RetrievalEvaluationReport, 
 from financial_report_qa.retrieval.gold import stable_question_id
 from financial_report_qa.retrieval.release import ResolvedRetrievalRelease
 
-_FINGERPRINT = "37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f"
+_FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
 _TABLE_ID = f"tbl_{'a' * 64}"
 
 
@@ -99,7 +99,7 @@ def _fixture_release(tmp_path: Path) -> ResolvedRetrievalRelease:
 def _write_fixture_gold(path: Path) -> None:
     filters = RetrievalFilters(company_codes=("DBC",))
     records: list[dict[str, object]] = []
-    for number in range(30):
+    for number in range(70):
         question = f"Doanh thu DBC cau hoi {number:02d}?"
         gold_ids = (_TABLE_ID,)
         records.append(

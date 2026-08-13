@@ -14,7 +14,7 @@ from financial_report_qa.core.errors import RetrievalGoldError
 from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion, RetrievalFilters
 from financial_report_qa.retrieval.release import EXPECTED_FINGERPRINT, ResolvedRetrievalRelease
 
-REQUIRED_GOLD_QUESTION_COUNT = 30
+REQUIRED_GOLD_QUESTION_COUNT = 70
 
 
 def stable_question_id(

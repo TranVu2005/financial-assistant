@@ -97,7 +97,7 @@ def _patch_release_resolver(monkeypatch: MonkeyPatch, release: ResolvedRetrieval
 def _write_fixture_gold(path: Path) -> None:
     filters = RetrievalFilters(company_codes=("DBC",))
     records: list[dict[str, object]] = []
-    for number in range(30):
+    for number in range(70):
         question = f"Tra cứu tổng tài sản của DBC năm 2023 câu {number:02d}?"
         gold_ids = (f"tbl_{'a' * 64}",)
         records.append(
