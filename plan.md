@@ -740,17 +740,59 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 10 — Fusion và entity parser
 
-- [ ] Parse company, year/quarter, metric aliases bằng rule + dictionary.
-- [ ] Hợp nhất BM25/dense bằng Reciprocal Rank Fusion.
-- [ ] Cho điểm phạt khi company/period mâu thuẫn.
+- [x] Parse company, year/quarter, metric aliases bằng rule + dictionary.
+- [x] Hợp nhất BM25/dense bằng Reciprocal Rank Fusion.
+- [x] Cho điểm phạt khi company/period mâu thuẫn.
 - **Đầu ra:** fused retrieval không kém BM25 trên test hiện có.
+  > **✅ HOÀN TẤT ngày 2026-08-10:** Entity parser (`planning/entity_parser.py`) tái dùng nguyên
+  > vẹn `normalization.companies/metrics/statements`; không đoán khi thiếu bằng chứng — field mơ
+  > hồ để rỗng kèm `AmbiguityCode`. Đo trên 1.400 case sinh từ release đã khóa (14 template × 100
+  > công ty, SHA-256 `c57f014d0fc51e8ed5b4dad371903e110bd6e6ec694c829ca422d2c3191247e1`, hai lần
+  > sinh byte-identical): **exact-match 1.000000**, precision/recall/F1 = 1.0 ở cả 5 trường. Held-out
+  > 30 câu gold người viết (chạy đúng một lần): **exact-match company+period 1.000000**, 0 failure.
+  > - Fusion (`retrieval/fusion.py`) là weighted RRF (`rrf_k=60`) với chốt chặn điểm BM25 = 0 và
+  >   demotion theo `(contradiction_count, -fused_score, table_id)` khi company/period parse mâu
+  >   thuẫn metadata — không hằng số phạt tùy ý. Đánh giá toàn bộ lưới 6 điểm trọng số công bố
+  >   trước trên 30 câu gold: mọi trọng số dense > 0 đều làm giảm F2 so với `bm25-v3` (F2 0.4312 →
+  >   0.30–0.42 tùy trọng số), khớp phát hiện Day 9. Điểm tốt nhất là `bm25=1/dense=0` (tương đương
+  >   BM25 nguyên trạng) — đạt đúng ngưỡng `≥ BM25 v3` ở cả F2 và Recall theo nghĩa kỹ thuật, không
+  >   phải đóng góp thật từ dense. `deterministic_projection` khớp tuyệt đối giữa hai build GPU độc
+  >   lập Day 9 (`dense-day9-a`/`-b`).
+  > - `pytest -q tests/unit/planning tests/unit/retrieval tests/integration/retrieval
+  >   tests/integration/planning`: 133 passed, 3 skipped. Full `pytest -q`: 645 passed, 4 skipped
+  >   (+49 so với Day 9). Full `ruff check .`: 102 lỗi có sẵn (0 trong file Day 10). Full `mypy`: 33
+  >   lỗi có sẵn (0 trong file Day 10). `git diff --check` sạch.
+  > - Chi tiết đầy đủ: [README.md § Day 10 Fusion và Entity Parser](README.md#day-10-fusion-và-entity-parser).
 
 #### Ngày 11 — Xây graph
 
-- [ ] Tạo cạnh GTR-lite từ metadata và metric overlap.
-- [ ] Unit test quan hệ đối xứng/bất đối xứng và không tạo self-loop ngoài chủ đích.
-- [ ] Lưu lý do tạo cạnh trong `evidence_json`.
+- [x] Tạo cạnh GTR-lite từ metadata và metric overlap.
+- [x] Unit test quan hệ đối xứng/bất đối xứng và không tạo self-loop ngoài chủ đích.
+- [x] Lưu lý do tạo cạnh trong `evidence_json`.
 - **Đầu ra:** graph build tái lập được từ cùng dataset fingerprint.
+
+> **✅ HOÀN TẤT ngày 2026-08-13:** Bucketed adjacency (`retrieval/graph.py`), không materialize
+> edge list — tổng membership chỉ 397.922 trên corpus khóa 146.011 bảng. 5 quan hệ:
+> `same_document`, `shared_metric` (Jaccard), `adjacent_period`, `same_statement_type` (hằng
+> số 1.0), `explained_by_note` (bất đối xứng: statement → notes cùng tài liệu).
+> - **Loại bỏ `same_company`/`same_period`** khỏi bộ quan hệ: đo được 117.156.769 và 18.686.209
+>   cặp vô hướng trên corpus khóa — không materialize được, và cả 30 câu gold đều đã hard-filter
+>   `company_codes`/`periods` trước khi xếp hạng (`retrieval/filtering.py`) nên hai quan hệ này
+>   chỉ nối tới bảng đã nằm trong pool eligible. Lý do + số đo lưu trong `GraphManifest.excluded_relations`.
+> - Build thật A/B trên release khóa: `buckets.jsonl` và `manifest.json` byte-identical giữa hai
+>   lần build độc lập. Coverage đo được: `same_document` 1.963 bucket/146.011 membership,
+>   `adjacent_period` 1.108/185.514, `shared_metric` 3.807/62.096, `same_statement_type`
+>   313/4.301, `explained_by_note` 3.148 cạnh có hướng trên 1.263 bucket tài liệu. 0 node cô lập
+>   trên toàn bộ 5 quan hệ.
+> - Sửa một lỗi phát hiện khi chạy trên dữ liệu thật (không phát hiện được bằng fixture nhỏ):
+>   20.558 bảng có nhiều `periods` cùng năm (vd. "2024" và "2024-12-31") và 1.449 bảng có
+>   `metric_labels` trùng canonical khác `raw` — bucket ban đầu cộng trùng vị trí bảng nguồn.
+>   Sửa bằng cách khử trùng năm/canonical trước khi thêm vào bucket; thêm test hồi quy
+>   `test_a_table_does_not_duplicate_its_own_position_within_one_bucket`.
+> - `pytest -q tests/unit/retrieval tests/integration/retrieval`: 137 passed, 3 skipped. Full
+>   `pytest -q`: 695 passed, 4 skipped (+50 so với Day 10). Full `ruff check .`: các file Day 11
+>   sạch. Full `mypy`: 33 lỗi có sẵn (0 trong file Day 11). `git diff --check` sạch.
+> - Chi tiết đầy đủ: [README.md § Day 11 Graph](README.md#day-11-graph).
 
 #### Ngày 12 — Graph expansion và rerank
 

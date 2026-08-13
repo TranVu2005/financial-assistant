@@ -318,9 +318,13 @@ def _header_row_count(
         )
         first_token = grid.get((row_idx, 0))
         non_first = [raw_cells[token].text for token in cell_tokens if token != first_token]
-        mostly_non_numeric = bool(non_first) and sum(
-            _is_numeric_looking(value) for value in non_first
-        ) * 2 < len(non_first)
+        # Blank sibling cells alone must not count as header evidence: a section
+        # banner row (label filled, every other column blank) has this exact
+        # shape and must remain a data row, not an extra header line.
+        populated_non_first = [value for value in non_first if value.strip()]
+        mostly_non_numeric = bool(populated_non_first) and sum(
+            _is_numeric_looking(value) for value in populated_non_first
+        ) * 2 < len(populated_non_first)
         if not all_headers and not has_header_signal and not mostly_non_numeric:
             break
         count += 1
@@ -358,6 +362,40 @@ def _metric_column_index(
         ):
             return col_idx
     return 0
+
+
+def _row_group_context_map(
+    grid: dict[tuple[int, int], int],
+    raw_cells: list[_RawCell],
+    header_rows: int,
+    row_count: int,
+    column_count: int,
+    metric_col_idx: int,
+) -> dict[int, str | None]:
+    """Forward-fill the nearest preceding section-banner label onto data rows.
+
+    Vietnamese statement tables interleave section banners (e.g. "A. TÀI SẢN
+    NGẮN HẠN") among data rows: a row whose metric column is populated but every
+    other column is empty. Only one banner level is tracked, so nested banners
+    collapse to the most recent one rather than a full hierarchy path.
+    """
+    contexts: dict[int, str | None] = {}
+    current_group: str | None = None
+    for row_idx in range(header_rows, row_count):
+        metric_token = grid.get((row_idx, metric_col_idx))
+        metric_text = raw_cells[metric_token].text.strip() if metric_token is not None else ""
+        other_texts = [
+            raw_cells[grid[(row_idx, col_idx)]].text.strip()
+            for col_idx in range(column_count)
+            if col_idx != metric_col_idx and (row_idx, col_idx) in grid
+        ]
+        is_banner = bool(metric_text) and all(text == "" for text in other_texts)
+        if is_banner:
+            contexts[row_idx] = current_group
+            current_group = metric_text
+        else:
+            contexts[row_idx] = current_group
+    return contexts
 
 
 def _contains_unit_marker(value: str) -> bool:
@@ -503,6 +541,14 @@ def _materialize_table(
         row_count,
         column_count,
     )
+    row_group_contexts = _row_group_context_map(
+        grid,
+        raw_cells,
+        header_rows,
+        row_count,
+        column_count,
+        metric_col_idx,
+    )
 
     cells: list[CellRecord] = []
     cell_ids: list[str] = []
@@ -512,9 +558,11 @@ def _materialize_table(
         cell_ids.append(cell_id)
         is_header = origin_row < header_rows
         row_label = None
+        group_context = None
         if not is_header:
             metric_token = grid.get((origin_row, metric_col_idx))
             row_label = raw_cells[metric_token].text if metric_token is not None else None
+            group_context = row_group_contexts.get(origin_row)
         cells.append(
             CellRecord(
                 cell_id=cell_id,
@@ -523,6 +571,7 @@ def _materialize_table(
                 col_idx=origin_col,
                 row_label_raw=row_label,
                 row_label_canonical=None,
+                row_group_context_raw=group_context,
                 column_label_raw=None if is_header else column_headers[origin_col],
                 column_label_canonical=None,
                 value_raw=raw_cell.text,

@@ -18,6 +18,10 @@ from financial_report_qa.core.errors import (
     DenseArtifactError,
     DenseInputError,
     DenseModelError,
+    FusionArtifactError,
+    FusionInputError,
+    GraphArtifactError,
+    GraphInputError,
     RetrievalArtifactError,
     RetrievalInputError,
 )
@@ -54,7 +58,13 @@ from financial_report_qa.retrieval.evaluation import (
     evaluate_retrieval,
     write_report,
 )
+from financial_report_qa.retrieval.fusion_evaluation import evaluate_fusion_grid, write_day10_fusion
 from financial_report_qa.retrieval.gold import load_gold_questions
+from financial_report_qa.retrieval.graph import build_graph, load_graph, save_graph
+from financial_report_qa.retrieval.graph_evaluation import (
+    evaluate_graph_coverage,
+    write_day11_graph,
+)
 from financial_report_qa.retrieval.index import build_bm25_index, load_bm25_index, save_bm25_index
 from financial_report_qa.retrieval.release import resolve_retrieval_release
 from financial_report_qa.retrieval.service import RetrievalService
@@ -118,6 +128,24 @@ def _parser() -> argparse.ArgumentParser:
     compare.add_argument("--bge-report", type=Path, required=True)
     compare.add_argument("--e5-report", type=Path, required=True)
     compare.add_argument("--output-dir", type=Path, required=True)
+    fusion = commands.add_parser("evaluate-fusion")
+    fusion.add_argument("--release-lock", type=Path, required=True)
+    fusion.add_argument("--index-dir", type=Path, required=True)
+    fusion.add_argument("--corpus-dir", type=Path, required=True)
+    fusion.add_argument("--dense-index-dir", type=Path, required=True)
+    fusion.add_argument("--encoder", choices=("bge-m3", "multilingual-e5-small"), required=True)
+    fusion.add_argument("--encoder-device", choices=("cpu", "cuda"), default="cpu")
+    fusion.add_argument("--gold-path", type=Path, required=True)
+    fusion.add_argument("--cache-dir", type=Path, required=True)
+    fusion.add_argument("--bm25-report", type=Path, required=True)
+    fusion.add_argument("--output-dir", type=Path, required=True)
+    graph_build = commands.add_parser("build-graph")
+    graph_build.add_argument("--release-lock", type=Path, required=True)
+    graph_build.add_argument("--output-root", type=Path, required=True)
+    graph_evaluate = commands.add_parser("evaluate-graph")
+    graph_evaluate.add_argument("--release-lock", type=Path, required=True)
+    graph_evaluate.add_argument("--graph-dir", type=Path, required=True)
+    graph_evaluate.add_argument("--output-dir", type=Path, required=True)
     cleanup = commands.add_parser("cleanup-day9-data")
     cleanup.add_argument("--repo-root", type=Path, required=True)
     cleanup.add_argument("--quarantine-root", type=Path, required=True)
@@ -231,6 +259,40 @@ def main(argv: Sequence[str] | None = None) -> int:
             save_dense_corpus(corpus, target)
             print(target)
             return 0
+        if args.command == "build-graph":
+            documents = build_table_documents(
+                release.release_dir / "documents.parquet",
+                release.release_dir / "tables.parquet",
+                release.release_dir / "cells.parquet",
+            )
+            graph = build_graph(
+                documents,
+                dataset_fingerprint=release.dataset_fingerprint,
+                release_lock_sha256=release.lock_sha256,
+            )
+            target = args.output_root / release.dataset_fingerprint
+            save_graph(graph, target)
+            print(target)
+            return 0
+        if args.command == "evaluate-graph":
+            documents = build_table_documents(
+                release.release_dir / "documents.parquet",
+                release.release_dir / "tables.parquet",
+                release.release_dir / "cells.parquet",
+            )
+            try:
+                graph = load_graph(
+                    args.graph_dir, documents, release_lock_sha256=release.lock_sha256
+                )
+            except ValueError as exc:
+                raise GraphArtifactError(f"Graph artifact is invalid: {exc}") from exc
+            if graph.manifest.dataset_fingerprint != release.dataset_fingerprint:
+                raise GraphArtifactError("Graph fingerprint does not match release lock")
+            coverage_report = evaluate_graph_coverage(graph, documents)
+            json_path, markdown_path = write_day11_graph(coverage_report, args.output_dir)
+            print(json_path)
+            print(markdown_path)
+            return 0
         if args.command == "build-dense-index":
             encoder_name = cast(EncoderName, args.encoder)
             faiss_device = cast(Literal["cpu", "cuda"], args.faiss_device)
@@ -249,8 +311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             def report_progress(encoded: int, total: int, elapsed: float) -> None:
                 rate = encoded / elapsed if elapsed > 0 else 0.0
                 print(
-                    f"dense-build: {encoded}/{total} vectors, {elapsed:.1f}s, "
-                    f"{rate:.1f} vectors/s",
+                    f"dense-build: {encoded}/{total} vectors, {elapsed:.1f}s, {rate:.1f} vectors/s",
                     flush=True,
                 )
 
@@ -353,11 +414,54 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json_path)
             print(markdown_path)
             return 0
+        if args.command == "evaluate-fusion":
+            gold = load_gold_questions(args.gold_path, release)
+            try:
+                bm25_index = load_bm25_index(
+                    args.index_dir, release_lock_sha256=release.lock_sha256
+                )
+            except ValueError as exc:
+                raise RetrievalArtifactError(f"BM25 index artifact is invalid: {exc}") from exc
+            if bm25_index.manifest.dataset_fingerprint != release.dataset_fingerprint:
+                raise RetrievalArtifactError("BM25 index fingerprint does not match release lock")
+            bm25_service = RetrievalService(bm25_index)
+
+            encoder_name = cast(EncoderName, args.encoder)
+            encoder_device = cast(Literal["cpu", "cuda"], args.encoder_device)
+            encoder = _load_dense_encoder(
+                encoder_name, local_files_only=True, device=encoder_device
+            )
+            encoder_hash = encoder_spec_sha256(encoder.spec)
+            corpus = _checked_dense_corpus(
+                args.corpus_dir,
+                release_fingerprint=release.dataset_fingerprint,
+                lock_sha256=release.lock_sha256,
+            )
+            dense_index = load_dense_index(
+                args.dense_index_dir,
+                corpus,
+                expected_encoder_spec_sha256=encoder_hash,
+                release_lock_sha256=release.lock_sha256,
+            )
+            dense_service = DenseRetrievalService(
+                dense_index, encoder, QueryEmbeddingCache(args.cache_dir, encoder.spec)
+            )
+            bm25_report = RetrievalEvaluationReport.model_validate_json(
+                args.bm25_report.read_text(encoding="utf-8")
+            )
+            try:
+                grid_report = evaluate_fusion_grid(bm25_service, dense_service, gold, bm25_report)
+            except ValueError as exc:
+                raise FusionArtifactError("Fusion grid evaluation inputs are invalid") from exc
+            json_path, markdown_path = write_day10_fusion(grid_report, args.output_dir)
+            print(json_path)
+            print(markdown_path)
+            return 0
         try:
             gold = load_gold_questions(args.gold_path, release)
             index = load_bm25_index(args.index_dir, release_lock_sha256=release.lock_sha256)
         except ValueError as exc:
-            raise RetrievalArtifactError("BM25 index artifact is invalid") from exc
+            raise RetrievalArtifactError(f"BM25 index artifact is invalid: {exc}") from exc
         if index.manifest.dataset_fingerprint != release.dataset_fingerprint:
             raise RetrievalArtifactError("BM25 index fingerprint does not match release lock")
         report = evaluate_retrieval(RetrievalService(index), gold)
@@ -371,6 +475,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         DenseInputError,
         DenseArtifactError,
         DenseModelError,
+        FusionInputError,
+        FusionArtifactError,
+        GraphInputError,
+        GraphArtifactError,
         ValidationError,
         JSONDecodeError,
         RuntimeError,

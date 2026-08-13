@@ -8,6 +8,7 @@ source cell.
 
 import re
 
+from financial_report_qa.core.errors import NormalizationError
 from financial_report_qa.normalization._shared import (
     Decision,
     normalized_key,
@@ -257,6 +258,43 @@ SOURCE_METRICS_BY_STATEMENT = {
     "cash_flow_statement": frozenset(CASH_FLOW_ALIASES.values()),
 }
 
+# A section banner (e.g. "Vay và nợ thuê tài chính") followed by bare
+# "Ngắn hạn"/"Dài hạn" child rows is a common alternate layout for metrics that
+# METRIC_ALIASES already encodes as one fully-qualified phrase (e.g. "Vay và nợ
+# thuê tài chính ngắn hạn"). Rather than hand-writing new business vocabulary,
+# these contextual entries are derived mechanically from the vetted aliases
+# above: only a "<banner> <suffix>" phrase that is already a known alias can
+# produce a "<banner> context -> <suffix> child row" rule. This must never grow
+# into a place for guessed mappings; only add a suffix here once it is backed
+# by an existing exact-phrase alias split this way.
+_CONTEXT_SUFFIXES = ("ngắn hạn", "dài hạn")
+
+
+def _derive_contextual_aliases(
+    aliases: dict[str, str],
+) -> dict[str, dict[str, str]]:
+    contextual: dict[str, dict[str, str]] = {}
+    for raw, canonical in aliases.items():
+        key = normalized_key(raw)
+        for suffix in _CONTEXT_SUFFIXES:
+            if not key.endswith(f" {suffix}"):
+                continue
+            banner_key = key[: -len(suffix) - 1].strip()
+            if not banner_key:
+                continue
+            bucket = contextual.setdefault(banner_key, {})
+            if suffix in bucket and bucket[suffix] != canonical:
+                raise NormalizationError(
+                    f"conflicting contextual alias for banner {banner_key!r}: {suffix!r}"
+                )
+            bucket[suffix] = canonical
+    return contextual
+
+
+CONTEXTUAL_METRIC_ALIASES: dict[str, dict[str, str]] = _derive_contextual_aliases(
+    INCOME_STATEMENT_ALIASES | BALANCE_SHEET_ALIASES | CASH_FLOW_ALIASES
+)
+
 # These values must be produced by an auditable calculation layer with links to
 # their input cells. They are intentionally excluded from METRIC_ALIASES.
 DERIVED_METRICS = frozenset(
@@ -323,7 +361,7 @@ def is_non_metric_label(raw: str | None) -> bool:
     return any(suffix.startswith(prefix) for prefix in _STRUCTURAL_TEXT_PREFIXES)
 
 
-def normalize_metric(raw: str | None) -> Decision[str]:
+def normalize_metric(raw: str | None, *, group_context: str | None = None) -> Decision[str]:
     if raw is None:
         return Decision(value=None)
 
@@ -334,5 +372,12 @@ def normalize_metric(raw: str | None) -> Decision[str]:
     canonical = METRIC_ALIASES.get(key)
     if canonical is not None:
         return Decision(value=canonical)
+
+    if group_context is not None:
+        contextual = CONTEXTUAL_METRIC_ALIASES.get(normalized_key(group_context))
+        if contextual is not None:
+            canonical = contextual.get(key)
+            if canonical is not None:
+                return Decision(value=canonical)
 
     return Decision(value=None, issue_code="metric_unknown")

@@ -44,6 +44,7 @@ def _cell(
     row_label: str,
     column_label: str,
     value: str,
+    row_group_context: str | None = None,
 ) -> CellRecord:
     return CellRecord(
         cell_id=stable_cell_id(table_id, row_idx, col_idx),
@@ -52,6 +53,7 @@ def _cell(
         col_idx=col_idx,
         row_label_raw=row_label,
         row_label_canonical=None,
+        row_group_context_raw=row_group_context,
         column_label_raw=column_label,
         column_label_canonical=None,
         value_raw=value,
@@ -177,6 +179,32 @@ def test_metric_unknown_is_emitted_once_per_logical_row() -> None:
 
     assert len(issues) == 1
     assert issues[0].raw_value == "Chỉ tiêu chưa đăng ký"
+
+
+def test_row_group_context_resolves_metric_for_bare_child_row() -> None:
+    document = _document()
+    table_id = stable_table_id(document.doc_id, 10, 20)
+    cells = [
+        _cell(
+            table_id,
+            row_idx=0,
+            col_idx=col_idx,
+            row_label="Ngắn hạn",
+            row_group_context="Vay và nợ thuê tài chính",
+            column_label=year,
+            value=value,
+        )
+        for col_idx, (year, value) in enumerate((("2024", "100"), ("2023", "90")))
+    ]
+
+    normalized = normalize_extraction(document, _extraction(document, cells))
+    issues = _issues_for(normalized.issues, field="metric", code="metric_unknown")
+    canonical = {
+        cell.row_label_canonical for table in normalized.extraction.tables for cell in table.cells
+    }
+
+    assert issues == []
+    assert canonical == {"short_term_debt"}
 
 
 def test_period_issue_is_emitted_once_per_logical_column() -> None:

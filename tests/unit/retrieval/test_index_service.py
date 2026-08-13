@@ -294,6 +294,27 @@ def test_loader_rejects_v2_manifest_before_reading_bm25_artifacts(tmp_path: Path
         load_bm25_index(output_dir)
 
 
+def test_loader_rejects_a_v3_manifest_with_fields_from_a_different_build(
+    tmp_path: Path,
+) -> None:
+    """A manifest declaring bm25-index-v3 but carrying fields this build's
+    contract does not know (e.g. from another branch's builder) must fail
+    with a message that names the fields and says to rebuild -- not a raw
+    pydantic dump -- and must fail before any artifact bytes are read."""
+    index = build_bm25_index(_documents(), dataset_fingerprint="f" * 64)
+    output_dir = tmp_path / "index"
+    save_bm25_index(index, output_dir)
+    manifest_path = output_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["release_table_count"] = 1
+    manifest["release_tables_sha256"] = "a" * 64
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    (output_dir / "documents.jsonl").write_bytes(b"corrupted")  # would break reads if reached
+
+    with pytest.raises(ValueError, match="release_table_count, release_tables_sha256"):
+        load_bm25_index(output_dir)
+
+
 @pytest.mark.parametrize("manifest_payload", ([], None, "not-an-object"))
 def test_loader_rejects_non_object_manifest_before_reading_artifacts(
     tmp_path: Path, manifest_payload: object

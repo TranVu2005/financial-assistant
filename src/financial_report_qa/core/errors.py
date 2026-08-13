@@ -87,3 +87,39 @@ class DenseArtifactError(RetrievalArtifactError):
 
 class DenseModelError(RetrievalInputError):
     """A pinned dense encoder model cannot be loaded exactly."""
+
+
+class FusionError(RetrievalError):
+    """Base class for deterministic BM25/dense fusion failures."""
+
+
+class FusionInputError(FusionError):
+    """Fusion weights, gold, or CLI inputs are invalid."""
+
+
+class FusionArtifactError(FusionError):
+    """A fusion evaluation artifact is corrupt or mismatched."""
+
+
+class GraphError(RetrievalError):
+    """Base class for deterministic GTR-lite graph failures."""
+
+
+class GraphInputError(GraphError):
+    """Graph build inputs, corpus, or CLI arguments are invalid."""
+
+
+class GraphArtifactError(GraphError):
+    """A generated graph artifact is corrupt or mismatched."""
+
+
+class PlanningError(FinancialReportQAError):
+    """Base class for deterministic query-planning failures."""
+
+
+class PlanningInputError(PlanningError):
+    """Entity-parser inputs, templates, or CLI arguments are invalid."""
+
+
+class PlanningArtifactError(PlanningError):
+    """A generated planning artifact is corrupt or mismatched."""

@@ -192,6 +192,59 @@ def _company_evidence_codes(value: str) -> set[str]:
     return evidence
 
 
+_BARE_TICKER_SCAN_RE = re.compile(r"\b[A-Z0-9]{2,10}\b")
+
+
+def explicit_tickers_in_text(value: str) -> tuple[str, ...]:
+    """Return tickers explicitly labeled by a "mã CK"/"ticker" marker in text."""
+
+    return tuple(sorted(_explicit_tickers(value)))
+
+
+def bare_tickers_in_text(value: str) -> tuple[str, ...]:
+    """Return registry tickers written as bare uppercase tokens in text.
+
+    Gated by registry membership so an unrelated all-caps word (``GDP``,
+    ``EBITDA``, a Roman-numeral quarter) is never mistaken for a ticker.
+    """
+
+    matches = _BARE_TICKER_SCAN_RE.findall(value)
+    return tuple(sorted({token for token in matches if token in COMPANY_REGISTRY}))
+
+
+def company_name_codes_in_text(value: str) -> tuple[str, ...]:
+    """Return tickers evidenced only by an issuer name or alias appearing in text."""
+
+    name_key = _company_name_key(value)
+    codes = set(_contained_company_codes(name_key))
+    exact = _EXACT_NAME_INDEX.get(name_key)
+    if exact is not None:
+        codes.add(exact)
+    return tuple(sorted(codes))
+
+
+def company_codes_in_text(value: str) -> tuple[str, ...]:
+    """Find tickers unambiguously evidenced anywhere inside free text.
+
+    Unlike `_company_evidence_codes`, which treats its entire input as one
+    title-like field, this scans a longer string (a natural-language
+    question) for embedded evidence: explicit "mã CK: DBC" patterns, bare
+    uppercase tickers that are actual registry members (never a bare guess
+    such as "GDP" or "Q1"), and full or partial issuer names contained
+    anywhere in the text. Returns every distinct ticker found; the caller
+    decides whether several distinct tickers mean "compare these companies"
+    or "the evidence contradicts itself".
+    """
+
+    if not value.strip():
+        return ()
+
+    evidence = set(explicit_tickers_in_text(value))
+    evidence.update(bare_tickers_in_text(value))
+    evidence.update(company_name_codes_in_text(value))
+    return tuple(sorted(evidence))
+
+
 def resolve_company_code(raw_value: str | None) -> Decision[str]:
     """Resolve a ticker or issuer name without fuzzy/substring ticker guessing.
 

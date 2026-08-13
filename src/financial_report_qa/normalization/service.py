@@ -116,7 +116,9 @@ def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> 
         for row_idx, cell_list in rows.items():
             first_label = cell_list[0].row_label_raw
             if first_label is not None:
-                m_dec = normalize_metric(first_label)
+                m_dec = normalize_metric(
+                    first_label, group_context=cell_list[0].row_group_context_raw
+                )
                 row_metric_decisions[row_idx] = (m_dec.value, m_dec.issue_code)
                 if m_dec.issue_code is not None:
                     row_has_numeric_value = any(

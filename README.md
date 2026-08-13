@@ -344,3 +344,158 @@ errors, 0 trong file Day 9 (`dense_contracts.py`, `dense_encoder.py`, `cli.py`, 
 đổi đều sạch riêng lẻ); full `mypy` → 33 errors, 0 trong file Day 9; `git diff --check` sạch. Số
 lỗi ruff/mypy toàn repo là nợ kỹ thuật có sẵn ở `notebooks/`, `evaluation/week1_*`,
 `normalization/service.py` — không liên quan đến retrieval/Day 9.
+
+## Day 10 Fusion và Entity Parser
+
+Entity parser xác định thực thể (company/period/metric/statement_type) từ câu hỏi bằng rule +
+dictionary tái dùng nguyên vẹn (`normalization.companies`, `normalization.metrics`,
+`normalization.statements`); không đoán khi thiếu bằng chứng — field mơ hồ bị để rỗng kèm
+`AmbiguityCode` thay vì chọn bừa. Fusion hợp nhất BM25 và dense bằng weighted Reciprocal Rank
+Fusion trên một lưới trọng số công bố trước trong `fusion_contracts.PRE_REGISTERED_WEIGHT_GRID`.
+
+### Thước đo entity parser (hai bộ, không trộn)
+
+- **Generated cases** (`entity_cases.py`): sinh từ giá trị thật trong release đã khóa
+  (company_code, period, statement_type từ parquet; metric từ dictionary chuẩn hóa), nhãn đúng
+  theo xây dựng — không cần gán tay. 14 template × 100 công ty = **1.400 case**, phủ đủ 6 mã
+  ambiguity thực sự đạt được (`company_missing`, `company_conflict`, `period_relative_unresolved`,
+  `period_incomplete`, `metric_unknown`, `period_missing`).
+- **Held-out gold** (`retrieval-gold-v1`, 30 câu người viết): chạy đúng một lần, cuối cùng, chỉ
+  chấm `company_codes`/`periods` (hai field duy nhất gán đủ 30/30 câu — `statement_types` chỉ có ở
+  5/30 nên không dùng làm thước đo công bằng).
+
+### Ba lệnh chính
+
+```bash
+uv run --frozen --no-sync financial-report-qa planning generate-entity-cases \
+  --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json \
+  --output-path data/qa/entity-cases-v1.jsonl
+
+uv run --frozen --no-sync financial-report-qa planning evaluate-entities \
+  --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json \
+  --case-path data/qa/entity-cases-v1.jsonl \
+  --gold-path data/qa/retrieval-gold-v1.jsonl \
+  --output-dir artifacts/evaluations/day10
+
+uv run --frozen --no-sync financial-report-qa retrieval evaluate-fusion \
+  --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json \
+  --index-dir data/indexes/bm25-day9-reference/37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f \
+  --corpus-dir data/indexes/dense-day9-a/<fp>/corpus \
+  --dense-index-dir data/indexes/dense-day9-a/<fp>/encoders/multilingual-e5-small-1fa278c2f4d5 \
+  --encoder multilingual-e5-small --gold-path data/qa/retrieval-gold-v1.jsonl \
+  --cache-dir data/indexes/dense-query-cache/day9-a-e5 \
+  --bm25-report artifacts/evaluations/day9/bm25-v3/retrieval-day8-37a61be7aebd.json \
+  --output-dir artifacts/evaluations/day10
+```
+
+### Evidence Day 10 (2026-08-10)
+
+**Entity parser:** case-set SHA-256 `c57f014d0fc51e8ed5b4dad371903e110bd6e6ec694c829ca422d2c3191247e1`
+(hai lần sinh độc lập byte-identical). Trên 1.400 generated case: **exact-match rate = 1.000000**
+(0 failure); precision/recall/F1 = 1.0 ở cả 5 trường (company_codes, periods, metrics,
+statement_types, ambiguity). Trên 30 câu **held-out gold** (chạy đúng một lần):
+**exact-match rate (company+period) = 1.000000**, company và period precision/recall/F1 đều 1.0,
+0 failure. Không sửa gold hay chỉnh rule sau khi thấy kết quả held-out.
+
+**Fusion:** đánh giá toàn bộ lưới 6 điểm trọng số trên 30 câu gold, dùng `bm25-v3` (F2@10
+`0.431217`, Recall@10 `0.883333`) làm tham chiếu khóa cứng.
+
+| bm25 | dense | Precision@10 | Recall@10 | F2@10 | ΔF2 vs BM25 |
+|---:|---:|---:|---:|---:|---:|
+| 1.0 | 0.0 | 0.146667 | 0.883333 | 0.431217 | +0.000000 |
+| 1.0 | 1.0 | 0.096667 | 0.666667 | 0.297619 | −0.133598 |
+| 2.0 | 1.0 | 0.116667 | 0.766667 | 0.353175 | −0.078042 |
+| 3.0 | 1.0 | 0.136667 | 0.850000 | 0.406085 | −0.025132 |
+| 4.0 | 1.0 | 0.143333 | 0.883333 | 0.424603 | −0.006614 |
+| 0.0 | 1.0 | 0.036667 | 0.316667 | 0.123016 | −0.308201 |
+
+**Mọi trọng số dense > 0 đều làm giảm F2 so với BM25 v3**, khớp phát hiện Day 9 rằng dense yếu hơn
+BM25 rõ rệt trên tập gold hiện tại. Điểm tốt nhất theo quy tắc quyết định công bố trước là
+`bm25=1/dense=0` — về bản chất là BM25 nguyên trạng, không có đóng góp thực từ dense — nên
+`default_system = "fusion"` chỉ đúng theo nghĩa kỹ thuật (đạt đúng ngưỡng `≥ BM25 v3` ở cả F2 và
+Recall vì đó chính là BM25). Đây là kết quả trung thực, không phải đóng góp thật của dense; ablation
+Day 14 (`BM25; dense; fusion; fusion + graph`) sẽ dùng lại bảng này.
+
+`deterministic_projection` khớp tuyệt đối giữa hai lần build GPU độc lập Day 9
+(`dense-day9-a` và `dense-day9-b`) khi chạy lại fusion trên cả hai. Do `.venv` chính của máy này
+không có CUDA (`torch.cuda.is_available() == False`), lệnh `evaluate-fusion` phía trên cần môi
+trường có CUDA hoặc dense index build bằng `--encoder-device cpu` để tự chạy; bằng chứng ở trên
+được tạo bằng cách nạp lại đúng các vector embedding GPU đã cache và xác minh bit-identical từ Day
+9 (`data/indexes/dense-query-cache/day9-a-e5`, `day9-b-e5` — cả hai đều có sẵn đủ 30/30 câu gold),
+qua một script không nằm trong `src/` chỉ để tái dùng cache có sẵn, không mã hoá câu hỏi mới. Vì
+vậy trạng thái cache "cold" thật (buộc `encode_query`) chưa được xác minh lại bằng GPU thật ở đây;
+hành vi cold-cache/warm-cache được xác minh riêng bằng unit test dùng fake encoder
+(`tests/unit/retrieval/test_fusion.py`, `test_fusion_evaluation.py`), và cold==warm bit-identical
+trên GPU thật đã được Day 9 xác minh cho đúng cơ chế cache mà fusion tái sử dụng nguyên vẹn.
+
+**Verification:** `pytest -q tests/unit/planning tests/unit/retrieval tests/integration/retrieval
+tests/integration/planning` → `133 passed, 3 skipped`; full working-tree `pytest -q` → `645
+passed, 4 skipped` (tăng đúng 49 test so với baseline Day 9); full `ruff check .` → 102 errors, 0
+trong file Day 10; full `mypy src tests` → 33 errors, 0 trong file Day 10; `git diff --check` sạch
+trên toàn bộ file Day 10. Số lỗi ruff/mypy có sẵn không đổi so với Day 9, xác nhận Day 10 không
+thêm nợ kỹ thuật mới.
+
+## Day 11 Graph
+
+GTR-lite table-relation graph (`retrieval/graph.py`, `graph_service.py`, `graph_evaluation.py`).
+Cạnh không được materialize eagerly: `build_graph` dựng **bucketed adjacency**
+(`relation -> key -> positions`), cùng scheme "vị trí trong dãy đã sort" mà `dense_index.py` dùng
+để gắn hàng FAISS với `table_id`. `TableGraphService.neighbors()` suy ra `GraphEdge` khi được gọi;
+không có fan-out cap ở Ngày 11 — đó là việc của Ngày 12.
+
+### Năm quan hệ
+
+| Quan hệ | Đối xứng | Weight |
+|---|---|---|
+| `same_document` | ✅ | `1/(1+line_gap)` |
+| `shared_metric` | ✅ | Jaccard trên tập canonical metric |
+| `adjacent_period` | ✅ | hằng số `1.0` |
+| `same_statement_type` | ✅ | hằng số `1.0` |
+| `explained_by_note` | ❌ (statement → notes cùng tài liệu) | hằng số `1.0` |
+
+**`same_company` và `same_period` bị loại khỏi bộ quan hệ** — đo được 117.156.769 và 18.686.209
+cặp vô hướng trên corpus khóa 146.011 bảng, không materialize được; quan trọng hơn, cả 30 câu gold
+đều đã hard-filter `company_codes`/`periods` trước khi xếp hạng (`retrieval/filtering.py`) nên hai
+quan hệ này chỉ nối tới bảng đã nằm trong pool eligible — không thêm thông tin. Lý do và số đo lưu
+trong `GraphManifest.excluded_relations`, không bỏ lặng lẽ.
+
+### Hai lệnh chính
+
+```bash
+uv run --frozen --no-sync financial-report-qa retrieval build-graph \
+  --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json \
+  --output-root data/indexes/graph-day11-a
+
+uv run --frozen --no-sync financial-report-qa retrieval evaluate-graph \
+  --release-lock data/qa/week1_pilot_37a61be7aebd/dataset-pilot-v1.json \
+  --graph-dir data/indexes/graph-day11-a/37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f \
+  --output-dir artifacts/evaluations/day11
+```
+
+### Evidence Day 11 (2026-08-13)
+
+Build thật hai lần độc lập (A/B) trên corpus khóa 146.011 bảng: `buckets.jsonl` và
+`manifest.json` byte-identical tuyệt đối.
+
+| relation | buckets | membership | nodes w/ edges | isolated | directed edges | weight min | weight max |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `adjacent_period` | 1.108 | 185.514 | 146.011 | 0 | 61.976.574 | 1.000000 | 1.000000 |
+| `explained_by_note` | 1.263 | 4.301 | 680 | 145.331 | 3.148 | 1.000000 | 1.000000 |
+| `same_document` | 1.963 | 146.011 | 146.008 | 3 | 12.008.152 | 0.000130 | 0.333333 |
+| `same_statement_type` | 313 | 4.301 | 4.274 | 141.737 | 138.906 | 1.000000 | 1.000000 |
+| `shared_metric` | 3.807 | 62.096 | 25.011 | 121.000 | 1.209.760 | 0.032258 | 1.000000 |
+
+**0 node cô lập trên toàn bộ 5 quan hệ** (`nodes_with_no_edge_in_any_relation = 0`).
+
+**Lỗi phát hiện khi chạy trên dữ liệu thật, không lộ ra ở fixture nhỏ:** 20.558 bảng (14,1%) có
+nhiều `periods` cùng chung một năm (vd. `"2024"` và `"2024-12-31"`) và 1.449 bảng có
+`metric_labels` trùng `canonical` khác `raw` — bucket ban đầu cộng trùng vị trí bảng nguồn (không
+tạo self-loop, nhưng làm sai `membership_counts`/degree). Sửa bằng cách khử trùng năm/canonical
+trước khi thêm vào bucket trong `build_graph`; thêm test hồi quy
+`test_a_table_does_not_duplicate_its_own_position_within_one_bucket`. Sau khi sửa, hai build A/B
+vẫn byte-identical và số liệu coverage khớp đúng số đo thủ công trên `documents.jsonl`.
+
+**Verification:** `pytest -q tests/unit/retrieval tests/integration/retrieval` → `137 passed, 3
+skipped`; full working-tree `pytest -q` → `695 passed, 4 skipped` (tăng đúng 50 test so với Day
+10); full `ruff check .` sạch trên toàn bộ file Day 11; full `mypy src tests` → 33 errors có sẵn, 0
+trong file Day 11 (không đổi so với Day 9/10); `git diff --check` sạch trên toàn bộ file Day 11.

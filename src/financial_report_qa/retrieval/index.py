@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import bm25s  # type: ignore[import-untyped]
+from pydantic import ValidationError
 
 from financial_report_qa.retrieval.contracts import BM25IndexManifest, TableDocument
 
@@ -164,7 +165,17 @@ def load_bm25_index(
         raise ValueError("BM25 index manifest must be a JSON object")
     if manifest_payload.get("schema_version") != "bm25-index-v3":
         raise ValueError("unsupported BM25 index schema; rebuild the index")
-    manifest = BM25IndexManifest.model_validate(manifest_payload)
+    unknown_fields = sorted(set(manifest_payload) - set(BM25IndexManifest.model_fields))
+    if unknown_fields:
+        raise ValueError(
+            "BM25 index manifest declares bm25-index-v3 but carries fields this build does "
+            f"not know ({', '.join(unknown_fields)}); it was written by a different build — "
+            "rebuild the index"
+        )
+    try:
+        manifest = BM25IndexManifest.model_validate(manifest_payload)
+    except ValidationError as exc:
+        raise ValueError(f"BM25 index manifest is invalid; rebuild the index: {exc}") from exc
     if (
         release_lock_sha256 is not None
         and manifest.release_lock_sha256 != release_lock_sha256

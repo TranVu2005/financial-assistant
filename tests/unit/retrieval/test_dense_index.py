@@ -85,6 +85,50 @@ def test_dense_index_batches_and_persists_vectors(tmp_path: Path) -> None:
     assert loaded.faiss_index.d == 2
 
 
+def test_save_dense_index_is_a_no_op_when_the_target_already_matches(tmp_path: Path) -> None:
+    """Rebuilding into an existing, content-identical target must succeed
+    silently (like save_bm25_index/save_dense_corpus), not just because the
+    directory happens to exist."""
+    corpus = _corpus()
+    target = tmp_path / "index"
+    save_dense_index(build_dense_index(corpus, _encoder()), target)
+    first_bytes = (target / "index.faiss").read_bytes()
+
+    save_dense_index(build_dense_index(corpus, _encoder()), target)
+
+    assert (target / "index.faiss").read_bytes() == first_bytes
+
+
+def test_save_dense_index_rejects_a_target_with_different_content(tmp_path: Path) -> None:
+    """A path collision across two different builds (e.g. two dataset releases
+    sharing an encoder-name-derived path) must fail loudly instead of silently
+    keeping whichever index happened to be written first."""
+    target = tmp_path / "index"
+    save_dense_index(build_dense_index(_corpus(), _encoder()), target)
+
+    other_docs = tuple(
+        TableDocument(
+            table_id=f"tbl_{token * 64}",
+            doc_id=f"doc_{token}",
+            text=token,
+            metadata=TableMetadata(
+                table_id=f"tbl_{token * 64}",
+                doc_id=f"doc_{token}",
+                source_path=f"{token}.txt",
+                line_start=1,
+                line_end=1,
+            ),
+        )
+        for token in ("d", "e")
+    )
+    other_corpus = build_dense_corpus(
+        other_docs, dataset_fingerprint="d" * 64, release_lock_sha256="e" * 64
+    )
+
+    with pytest.raises(DenseArtifactError, match="already exists with different content"):
+        save_dense_index(build_dense_index(other_corpus, _encoder()), target)
+
+
 def test_cuda_build_uses_gpu_then_returns_cpu_index(monkeypatch: MonkeyPatch) -> None:
     calls: list[str] = []
     gpu_batches: list[int] = []

@@ -39,6 +39,11 @@ def _parser() -> argparse.ArgumentParser:
         add_help=False,
         help="Build, validate, and evaluate the deterministic Day 8 BM25 baseline.",
     )
+    commands.add_parser(
+        "planning",
+        add_help=False,
+        help="Generate and evaluate the deterministic Day 10 entity parser.",
+    )
     return parser
 
 
@@ -63,6 +68,10 @@ def main(
         from financial_report_qa.retrieval.cli import main as retrieval_main
 
         return retrieval_main(remaining)
+    if parsed.command == "planning":
+        from financial_report_qa.planning.cli import main as planning_main
+
+        return planning_main(remaining)
     raise AssertionError("argparse accepted an unknown command")
 
 

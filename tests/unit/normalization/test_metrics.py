@@ -1,6 +1,7 @@
 import pytest
 
 from financial_report_qa.normalization.metrics import (
+    CONTEXTUAL_METRIC_ALIASES,
     DERIVED_METRICS,
     METRIC_ALIASES,
     SOURCE_METRICS_BY_STATEMENT,
@@ -66,6 +67,50 @@ def test_derived_metrics_are_separate_from_source_aliases() -> None:
 
     assert {"ebit", "ebitda", "return_on_equity", "free_cash_flow"} <= DERIVED_METRICS
     assert DERIVED_METRICS.isdisjoint(source_metrics)
+
+
+@pytest.mark.parametrize(
+    ("group_context", "raw", "canonical"),
+    [
+        ("Vay và nợ thuê tài chính", "Ngắn hạn", "short_term_debt"),
+        ("Vay và nợ thuê tài chính", "Dài hạn", "long_term_debt"),
+        ("Đầu tư tài chính", "Ngắn hạn", "short_term_investments"),
+        ("Tài sản", "Dài hạn", "non_current_assets"),
+    ],
+)
+def test_group_context_resolves_bare_short_or_long_term_child_rows(
+    group_context: str, raw: str, canonical: str
+) -> None:
+    decision = normalize_metric(raw, group_context=group_context)
+
+    assert decision.value == canonical
+    assert decision.issue_code is None
+
+
+def test_group_context_never_overrides_a_direct_alias_match() -> None:
+    decision = normalize_metric("Tổng tài sản", group_context="Nợ phải trả")
+
+    assert decision.value == "total_assets"
+
+
+def test_unmatched_group_context_still_reports_metric_unknown() -> None:
+    decision = normalize_metric("Ngắn hạn", group_context="Một nhóm không xác định")
+
+    assert decision.value is None
+    assert decision.issue_code == "metric_unknown"
+
+
+def test_no_group_context_behaves_exactly_as_before() -> None:
+    decision = normalize_metric("Ngắn hạn")
+
+    assert decision.value is None
+    assert decision.issue_code == "metric_unknown"
+
+
+def test_contextual_aliases_are_derived_only_from_vetted_exact_phrase_aliases() -> None:
+    for banner, suffixes in CONTEXTUAL_METRIC_ALIASES.items():
+        for suffix, canonical in suffixes.items():
+            assert METRIC_ALIASES.get(f"{banner} {suffix}") == canonical
     assert DERIVED_METRICS.isdisjoint(METRIC_ALIASES.values())
 
 

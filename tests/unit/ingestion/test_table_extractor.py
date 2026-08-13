@@ -126,6 +126,56 @@ def test_composes_multiline_headers_without_normalizing_values(tmp_path: Path) -
     ) == (4, 4)
 
 
+def test_section_banner_context_propagates_to_child_rows(tmp_path: Path) -> None:
+    source = (
+        "<table>"
+        "<tr><td>Chỉ tiêu</td><td>2024</td></tr>"
+        "<tr><td>A. TÀI SẢN NGẮN HẠN</td><td></td></tr>"
+        "<tr><td>Tiền và các khoản tương đương tiền</td><td>100</td></tr>"
+        "<tr><td>Hàng tồn kho</td><td>200</td></tr>"
+        "<tr><td>B. TÀI SẢN DÀI HẠN</td><td></td></tr>"
+        "<tr><td>Tài sản cố định</td><td>300</td></tr>"
+        "</table>\n"
+    )
+
+    values = {cell.value_raw: cell for cell in extract(tmp_path, source).tables[0].cells}
+
+    assert values["A. TÀI SẢN NGẮN HẠN"].row_group_context_raw is None
+    assert values["100"].row_group_context_raw == "A. TÀI SẢN NGẮN HẠN"
+    assert values["200"].row_group_context_raw == "A. TÀI SẢN NGẮN HẠN"
+    assert values["B. TÀI SẢN DÀI HẠN"].row_group_context_raw == "A. TÀI SẢN NGẮN HẠN"
+    assert values["300"].row_group_context_raw == "B. TÀI SẢN DÀI HẠN"
+
+
+def test_no_section_banner_leaves_group_context_none(tmp_path: Path) -> None:
+    source = (
+        "<table>"
+        "<tr><td>Chỉ tiêu</td><td>2024</td></tr>"
+        "<tr><td>Doanh thu</td><td>100</td></tr>"
+        "</table>\n"
+    )
+
+    table = extract(tmp_path, source).tables[0]
+
+    assert all(cell.row_group_context_raw is None for cell in table.cells)
+
+
+def test_header_rows_have_no_group_context(tmp_path: Path) -> None:
+    source = (
+        "<table>"
+        '<tr><th rowspan="2">Chỉ tiêu</th><th colspan="2">Năm</th></tr>'
+        "<tr><th>2024</th><th>2023</th></tr>"
+        "<tr><td>A. TÀI SẢN</td><td></td><td></td></tr>"
+        "<tr><td>Tiền</td><td>1</td><td>2</td></tr>"
+        "</table>\n"
+    )
+
+    table = extract(tmp_path, source).tables[0]
+    header_cells = [cell for cell in table.cells if cell.row_idx < 2]
+
+    assert all(cell.row_group_context_raw is None for cell in header_cells)
+
+
 @pytest.mark.parametrize(
     ("attribute", "reason"),
     [('rowspan="0"', "invalid_span_value"), ('colspan="100001"', "expansion_limit_exceeded")],

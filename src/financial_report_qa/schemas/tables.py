@@ -123,6 +123,7 @@ class CellRecord(BaseModel):
     col_idx: int = Field(strict=True, ge=0)
     row_label_raw: str | None
     row_label_canonical: NonEmptyString | None
+    row_group_context_raw: str | None = None
     column_label_raw: str | None
     column_label_canonical: NonEmptyString | None
     value_raw: str

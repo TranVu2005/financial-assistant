@@ -111,8 +111,19 @@ def build_dense_index(
     )
 
 
+def _dense_index_identity(manifest: DenseIndexManifest) -> dict[str, object]:
+    return manifest.model_dump(mode="json", exclude={"artifact_sha256", "index_byte_size"})
+
+
 def save_dense_index(index: DenseIndex, output_dir: Path) -> Path:
+    """Publish atomically; reject an existing non-identical content-addressed target."""
     if output_dir.exists():
+        existing_payload = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+        existing_manifest = DenseIndexManifest.model_validate(existing_payload)
+        if _dense_index_identity(existing_manifest) != _dense_index_identity(index.manifest):
+            raise DenseArtifactError(
+                f"Dense index target already exists with different content: {output_dir}"
+            )
         return output_dir
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.", dir=output_dir.parent))
