@@ -27,12 +27,12 @@ from financial_report_qa.retrieval.expansion_evaluation import (
 from financial_report_qa.retrieval.graph_service import TableGraphService
 from financial_report_qa.retrieval.service import RetrievalService
 
-_FINGERPRINT = "37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f"
+_FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
 _REFERENCE = RetrievalMetrics(
-    true_positive=44,
-    precision=0.14666666666666667,
-    recall=0.8833333333333333,
-    f2=0.4312169312169312,
+    true_positive=105,
+    precision=0.1499999999999999,
+    recall=0.880952380952381,
+    f2=0.4224545295973871,
 )
 
 
@@ -113,7 +113,7 @@ def _question(
 def _bm25_report() -> RetrievalEvaluationReport:
     return RetrievalEvaluationReport(
         dataset_fingerprint=_FINGERPRINT,
-        question_count=30,
+        question_count=70,
         macro=_REFERENCE,
         by_intent={"lookup": _REFERENCE},
         per_question=(),
@@ -209,7 +209,7 @@ def test_report_records_caveat_without_a_default_system(
     )
     dumped = report.model_dump()
     assert "default_system" not in dumped
-    assert "4/30" in report.evidence_caveat
+    assert "70-question" in report.evidence_caveat
     assert "Day 14" in report.decision_reason
 
 
@@ -230,6 +230,6 @@ def test_deterministic_projection_scrubs_latency() -> None:
             expand_non_seeds=False,
         ),
         decision_reason="Day 14 decides.",
-        evidence_caveat="4/30",
+        evidence_caveat="11/70",
     )
     assert "latency" not in deterministic_projection(report)

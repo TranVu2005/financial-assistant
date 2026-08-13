@@ -275,11 +275,11 @@ def _delta(value: RetrievalMetrics, reference: RetrievalMetrics) -> MetricDelta:
 
 
 def _validate_bm25_reference(report: RetrievalEvaluationReport) -> None:
-    expected = (0.1466666666666667, 0.8833333333333333, 0.4312169312169313)
+    expected = (0.1499999999999999, 0.880952380952381, 0.4224545295973871)
     observed = (report.macro.precision, report.macro.recall, report.macro.f2)
     if report.dataset_fingerprint != LOCKED_DATASET_FINGERPRINT:
         raise ValueError("BM25 reference does not match the locked Day 8 fingerprint")
-    if report.question_count != 30 or any(
+    if report.question_count != 70 or any(
         not math.isclose(value, target, abs_tol=5e-8, rel_tol=0.0)
         for value, target in zip(observed, expected, strict=True)
     ):

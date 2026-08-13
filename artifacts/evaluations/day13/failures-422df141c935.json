@@ -1,0 +1,4246 @@
+{
+  "dataset_fingerprint": "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a",
+  "diagnostic_k": 100,
+  "evaluated_question_count": 70,
+  "failure_count": 11,
+  "failure_counts": {
+    "no_eligible_documents": 0,
+    "no_index_tokens": 0,
+    "partial_gold_hits": 4,
+    "zero_gold_hits": 7
+  },
+  "failures": [
+    {
+      "failure": "zero_gold_hits",
+      "filters": {
+        "company_codes": [
+          "STB"
+        ],
+        "periods": [
+          "2024"
+        ],
+        "statement_types": [
+          "balance_sheet"
+        ]
+      },
+      "gold_rank_beyond_10": {
+        "tbl_43553d14f989fbed07d18b01f093f4c6f25d89e30917cde81ae3217bb747b42e": 20
+      },
+      "gold_table_ids": [
+        "tbl_43553d14f989fbed07d18b01f093f4c6f25d89e30917cde81ae3217bb747b42e"
+      ],
+      "intent": "lookup",
+      "missing_gold_table_ids": [
+        "tbl_43553d14f989fbed07d18b01f093f4c6f25d89e30917cde81ae3217bb747b42e"
+      ],
+      "note": "Reviewed source line 174 contains the exact labels 'Cho vay khách hàng' and 'Chứng khoán đầu tư', but the BM25 document retains neither label; the eligible gold table ranks 20.",
+      "predicted_table_ids": [
+        "tbl_deecbbbc5fb25e0418697f5f2a924972d60e8c8f94ae272ac64a4f4d5e176f85",
+        "tbl_14a9f0bf0f63c3dd4a4dbbb9ebd8171a56a32dda99b91f63989ab05fda26e760",
+        "tbl_5f555d03dbc0fd5375c6f4834ad689fb057eb3db74d98930f9bb58c39565ec89",
+        "tbl_95b6c4f0fb5b5817be871593054757228694a80d8038271a890255318b6c30b9",
+        "tbl_16e88505689822625693eb48655b73ffe4cbe338ffb2e8f98b1f565ef65f77fa",
+        "tbl_85f0775f1a5f4d50d26a63a29d74e76435cbbc35e44b60742b2c75a3b78c412d",
+        "tbl_f786a786c466edea0518a270e25e3fce5b0b0a5bdf4e39dc99712dac6fea10e3",
+        "tbl_6a89e765332710b0c8ada3d87ff56fc5697f86d6fe059439706ee7b0bdd24136",
+        "tbl_f0020d7700414f371b26c5410f3aebb353894610ca00598755529f5bc7092bbe",
+        "tbl_4f7f0705a8eaca16e22481d37547c9ada7ce66ae9a021c8d33174aaa2a2140aa"
+      ],
+      "question": "Tra cứu cho vay khách hàng và chứng khoán đầu tư của STB tại cuối năm 2024.",
+      "question_id": "retq_0eaaf1a9804038a40987869bdcc2da226dbe3aba08d02943873b029d4f172848",
+      "root_cause": "missing_alias",
+      "trace": {
+        "eligible_count": 22,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 2568,
+            "field": "company_codes",
+            "matched_count_before_intersection": 2568,
+            "requested_values": [
+              "STB"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 294,
+            "field": "periods",
+            "matched_count_before_intersection": 20269,
+            "requested_values": [
+              "2024"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 22,
+            "field": "statement_types",
+            "matched_count_before_intersection": 7745,
+            "requested_values": [
+              "balance_sheet"
+            ]
+          }
+        ],
+        "metric_expansions": [],
+        "query": "Tra cứu cho vay khách hàng và chứng khoán đầu tư của STB tại cuối năm 2024.",
+        "query_tokens": [
+          "tra",
+          "cứu",
+          "cho",
+          "vay",
+          "khách",
+          "hàng",
+          "và",
+          "chứng",
+          "khoán",
+          "đầu",
+          "tư",
+          "của",
+          "stb",
+          "tại",
+          "cuối",
+          "năm",
+          "2024"
+        ],
+        "question_id": "retq_0eaaf1a9804038a40987869bdcc2da226dbe3aba08d02943873b029d4f172848",
+        "results": [
+          {
+            "matched_tokens": [
+              "2024",
+              "của",
+              "hàng",
+              "năm",
+              "stb",
+              "tại",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "STB",
+              "doc_id": "doc_7022a24fe7480f1ed2d9cf7450d4b6046cf8611b91bc887ed8118a5e96717001",
+              "group_contexts": [],
+              "line_end": 3059,
+              "line_start": 3059,
+              "periods": [
+                "2024"
+              ],
+              "source_path": "STB/2024/STB_financial_statements_2024_separate/STB_financial_statements_2024_separate_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_deecbbbc5fb25e0418697f5f2a924972d60e8c8f94ae272ac64a4f4d5e176f85",
+              "title": "Báng sau trình bày giá trị ghi sổ và giá trị hợp lý của các tài sản tài chính và nợ phải trả tài chính của Ngân hàng tại ngày 31 tháng 12 năm 2024;"
+            },
+            "rank": 1,
+            "score": 6.508769989013672,
+            "snippet": "title: Báng sau trình bày giá trị ghi sổ và giá trị hợp lý của các tài sản tài chính và nợ phải trả tài chính của Ngân hàng tại ngày 31 tháng 12 năm 2024;\nstatement: balance sheet\ncompany: STB\nperiods: 2024\nunits: VND million",
+            "table_id": "tbl_deecbbbc5fb25e0418697f5f2a924972d60e8c8f94ae272ac64a4f4d5e176f85"
+          },
+          {
+            "matched_tokens": [
+              "2024",
+              "của",
+              "hàng",
+              "năm",
+              "stb",
+              "tại",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "STB",
+              "doc_id": "doc_7022a24fe7480f1ed2d9cf7450d4b6046cf8611b91bc887ed8118a5e96717001",
+              "group_contexts": [],
+              "line_end": 3166,
+              "line_start": 3166,
+              "periods": [
+                "2024"
+              ],
+              "source_path": "STB/2024/STB_financial_statements_2024_separate/STB_financial_statements_2024_separate_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_14a9f0bf0f63c3dd4a4dbbb9ebd8171a56a32dda99b91f63989ab05fda26e760",
+              "title": "Thông tin về các khoản mục tài sản và nợ phải trả của các bộ phận theo hoạt động kinh doanh của Ngân hàng tại ngày 31 tháng 12 năm 2024 như sau:"
+            },
+            "rank": 2,
+            "score": 5.869368553161621,
+            "snippet": "title: Thông tin về các khoản mục tài sản và nợ phải trả của các bộ phận theo hoạt động kinh doanh của Ngân hàng tại ngày 31 tháng 12 năm 2024 như sau:\nstatement: balance sheet\nmetrics: fixed assets | total assets\nmetric aliases: Tài sản cố định | TỔNG TÀI SẢN\ncompany: STB\nperiods: 2024\nunits: VND million",
+            "table_id": "tbl_14a9f0bf0f63c3dd4a4dbbb9ebd8171a56a32dda99b91f63989ab05fda26e760"
+          },
+          {
+            "matched_tokens": [
+              "2024",
+              "của",
+              "năm",
+              "stb",
+              "tại",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "STB",
+              "doc_id": "doc_260f48117093756942e647b2bdf002963feecbd07704b3939685f656a9cf5da6",
+              "group_contexts": [],
+              "line_end": 3181,
+              "line_start": 3181,
+              "periods": [
+                "2024"
+              ],
+              "source_path": "STB/2024/STB_financial_statements_2024_consolidated/STB_financial_statements_2024_consolidated_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_5f555d03dbc0fd5375c6f4834ad689fb057eb3db74d98930f9bb58c39565ec89",
+              "title": "Bảng sau trình bày giá trị ghi số và giá trị hợp lý của các tài sản tài chính và nợ phải trả tài chính của Tập đoàn tại ngày 31 tháng 12 năm 2024:"
+            },
+            "rank": 3,
+            "score": 5.785299777984619,
+            "snippet": "title: Bảng sau trình bày giá trị ghi số và giá trị hợp lý của các tài sản tài chính và nợ phải trả tài chính của Tập đoàn tại ngày 31 tháng 12 năm 2024:\nstatement: balance sheet\ncompany: STB\nperiods: 2024\nunits: VND million",
+            "table_id": "tbl_5f555d03dbc0fd5375c6f4834ad689fb057eb3db74d98930f9bb58c39565ec89"
+          },
+          {
+            "matched_tokens": [
+              "2024",
+              "của",
+              "hàng",
+              "năm",
+              "stb",
+              "tại",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "STB",
+              "doc_id": "doc_7022a24fe7480f1ed2d9cf7450d4b6046cf8611b91bc887ed8118a5e96717001",
+              "group_contexts": [],
+              "line_end": 3186,
+              "line_start": 3186,
+              "periods": [
+                "2024"
+              ],
+              "source_path": "STB/2024/STB_financial_statements_2024_separate/STB_financial_statements_2024_separate_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_95b6c4f0fb5b5817be871593054757228694a80d8038271a890255318b6c30b9",
+              "title": "Thông tin về các khoản mục tải sản và nợ phải trả của các bộ phận theo hoạt động kinh doanh của Ngân hàng tại ngày 31 tháng 12 năm 2023 như sau:"
+            },
+            "rank": 4,
+            "score": 5.720798492431641,
+            "snippet": "title: Thông tin về các khoản mục tải sản và nợ phải trả của các bộ phận theo hoạt động kinh doanh của Ngân hàng tại ngày 31 tháng 12 năm 2023 như sau:\nstatement: balance sheet\nmetrics: total assets\nmetric aliases: TỔNG TÀI SẢN\ncompany: STB\nperiods: 2024\nunits: VND million",
+            "table_id": "tbl_95b6c4f0fb5b5817be871593054757228694a80d8038271a890255318b6c30b9"
+          },
+          {
+            "matched_tokens": [
+              "2024",
+              "của",
+              "năm",
+              "stb",
+              "tại",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "STB",
+              "doc_id": "doc_260f48117093756942e647b2bdf002963feecbd07704b3939685f656a9cf5da6",
+              "group_contexts": [],
+              "line_end": 3292,
+              "line_start": 3292,
+              "periods": [
+                "2024"
+              ],
+              "source_path": "STB/2024/STB_financial_statements_2024_consolidated/STB_financial_statements_2024_consolidated_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_16e88505689822625693eb48655b73ffe4cbe338ffb2e8f98b1f565ef65f77fa",
+              "title": "Thông tin về các khoản mục tài sản và nợ phải trả của các bộ phận theo hoạt động kinh doanh của Tập đoàn tại ngày 31 tháng 12 năm 2023 như sau:"
+            },
+            "rank": 5,
+            "score": 5.020645618438721,
+            "snippet": "title: Thông tin về các khoản mục tài sản và nợ phải trả của các bộ phận theo hoạt động kinh doanh của Tập đoàn tại ngày 31 tháng 12 năm 2023 như sau:\nstatement: balance sheet\nmetrics: total assets\nmetric aliases: TỔNG TÀI SẢN\ncompany: STB\nperiods: 2024\nunits: VND million",
+            "table_id": "tbl_16e88505689822625693eb48655b73ffe4cbe338ffb2e8f98b1f565ef65f77fa"
+          },
+          {
+            "matched_tokens": [
+              "2024",
+              "của",
+              "hàng",
+              "năm",
+              "stb",
+              "tư"
+            ],
+            "metadata": {
+              "company_code": "STB",
+              "doc_id": "doc_260f48117093756942e647b2bdf002963feecbd07704b3939685f656a9cf5da6",
+              "group_contexts": [],
+              "line_end": 2985,
+              "line_start": 2985,
+              "periods": [
+                "2024"
+              ],
+              "source_path": "STB/2024/STB_financial_statements_2024_consolidated/STB_financial_statements_2024_consolidated_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_85f0775f1a5f4d50d26a63a29d74e76435cbbc35e44b60742b2c75a3b78c412d",
+              "title": "(Ban hành theo Thông tư số 49/2014/TT-NHNN ngày 31 tháng 12 năm 2014 của Ngân hàng Nhà nước Việt Nam)"
+            },
+            "rank": 6,
+            "score": 4.85331392288208,
+            "snippet": "title: (Ban hành theo Thông tư số 49/2014/TT-NHNN ngày 31 tháng 12 năm 2014 của Ngân hàng Nhà nước Việt Nam)\nstatement: balance sheet\nmetrics: fixed assets | total liabilities\nmetric aliases: Nợ phải trả | Tài sản cố định\ncompany: STB\nperiods: 2024\nunits: VND million",
+            "table_id": "tbl_85f0775f1a5f4d50d26a63a29d74e76435cbbc35e44b60742b2c75a3b78c412d"
+          },
+          {
+            "matched_tokens": [
+              "2024",
+              "của",
+              "hàng",
+              "năm",
+              "stb",
+              "tư"
+            ],
+            "metadata": {
+              "company_code": "STB",
+              "doc_id": "doc_7022a24fe7480f1ed2d9cf7450d4b6046cf8611b91bc887ed8118a5e96717001",
+              "group_contexts": [],
+              "line_end": 2829,
+              "line_start": 2829,
+              "periods": [
+                "2024"
+              ],
+              "source_path": "STB/2024/STB_financial_statements_2024_separate/STB_financial_statements_2024_separate_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_f786a786c466edea0518a270e25e3fce5b0b0a5bdf4e39dc99712dac6fea10e3",
+              "title": "(Ban hành theo Thông tư số 49/2014/TT-NHNN ngày 31 tháng 12 năm 2014 của Ngân hàng Nhà nước Việt Nam)"
+            },
+            "rank": 7,
+            "score": 4.85331392288208,
+            "snippet": "title: (Ban hành theo Thông tư số 49/2014/TT-NHNN ngày 31 tháng 12 năm 2014 của Ngân hàng Nhà nước Việt Nam)\nstatement: balance sheet\nmetrics: fixed assets | total liabilities\nmetric aliases: Nợ phải trả | Tài sản cố định\ncompany: STB\nperiods: 2024\nunits: VND million",
+            "table_id": "tbl_f786a786c466edea0518a270e25e3fce5b0b0a5bdf4e39dc99712dac6fea10e3"
+          },
+          {
+            "matched_tokens": [
+              "2024",
+              "của",
+              "hàng",
+              "năm",
+              "stb",
+              "tư"
+            ],
+            "metadata": {
+              "company_code": "STB",
+              "doc_id": "doc_7022a24fe7480f1ed2d9cf7450d4b6046cf8611b91bc887ed8118a5e96717001",
+              "group_contexts": [
+                "Nợ phải trả",
+                "Tải sản"
+              ],
+              "line_end": 3026,
+              "line_start": 3026,
+              "periods": [
+                "2024"
+              ],
+              "source_path": "STB/2024/STB_financial_statements_2024_separate/STB_financial_statements_2024_separate_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_6a89e765332710b0c8ada3d87ff56fc5697f86d6fe059439706ee7b0bdd24136",
+              "title": "(Ban hành theo Thông tư số 49/2014/TT-NHNN ngày 31 tháng 12 năm 2014 của Ngân hàng Nhà nước Việt Nam)"
+            },
+            "rank": 8,
+            "score": 4.826817035675049,
+            "snippet": "title: (Ban hành theo Thông tư số 49/2014/TT-NHNN ngày 31 tháng 12 năm 2014 của Ngân hàng Nhà nước Việt Nam)\nstatement: balance sheet\nmetrics: total liabilities\nmetric aliases: Nợ phải trả\ngroup context: Nợ phải trả | Tải sản\ncompany: STB\nperiods: 2024\nunits: VND million",
+            "table_id": "tbl_6a89e765332710b0c8ada3d87ff56fc5697f86d6fe059439706ee7b0bdd24136"
+          },
+          {
+            "matched_tokens": [
+              "2024",
+              "của",
+              "hàng",
+              "năm",
+              "stb",
+              "tư"
+            ],
+            "metadata": {
+              "company_code": "STB",
+              "doc_id": "doc_260f48117093756942e647b2bdf002963feecbd07704b3939685f656a9cf5da6",
+              "group_contexts": [
+                "Nợ phải trả",
+                "Tải sản"
+              ],
+              "line_end": 3054,
+              "line_start": 3054,
+              "periods": [
+                "2024"
+              ],
+              "source_path": "STB/2024/STB_financial_statements_2024_consolidated/STB_financial_statements_2024_consolidated_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_f0020d7700414f371b26c5410f3aebb353894610ca00598755529f5bc7092bbe",
+              "title": "(Ban hành theo Thông tư số 49/2014/TT-NHNN ngày 31 tháng 12 năm 2014 của Ngân hàng Nhà nước Việt Nam)"
+            },
+            "rank": 9,
+            "score": 4.826817035675049,
+            "snippet": "title: (Ban hành theo Thông tư số 49/2014/TT-NHNN ngày 31 tháng 12 năm 2014 của Ngân hàng Nhà nước Việt Nam)\nstatement: balance sheet\nmetrics: total liabilities\nmetric aliases: Nợ phải trả\ngroup context: Nợ phải trả | Tải sản\ncompany: STB\nperiods: 2024\nunits: VND million",
+            "table_id": "tbl_f0020d7700414f371b26c5410f3aebb353894610ca00598755529f5bc7092bbe"
+          },
+          {
+            "matched_tokens": [
+              "2024",
+              "của",
+              "hàng",
+              "năm",
+              "stb",
+              "tư"
+            ],
+            "metadata": {
+              "company_code": "STB",
+              "doc_id": "doc_260f48117093756942e647b2bdf002963feecbd07704b3939685f656a9cf5da6",
+              "group_contexts": [
+                "Nợ phải trả",
+                "Tài sản"
+              ],
+              "line_end": 3126,
+              "line_start": 3126,
+              "periods": [
+                "2024"
+              ],
+              "source_path": "STB/2024/STB_financial_statements_2024_consolidated/STB_financial_statements_2024_consolidated_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_4f7f0705a8eaca16e22481d37547c9ada7ce66ae9a021c8d33174aaa2a2140aa",
+              "title": "(Ban hành theo Thông tư số 49/2014/TT-NHNN ngày 31 tháng 12 năm 2014 của Ngân hàng Nhà nước Việt Nam)"
+            },
+            "rank": 10,
+            "score": 4.673717021942139,
+            "snippet": "title: (Ban hành theo Thông tư số 49/2014/TT-NHNN ngày 31 tháng 12 năm 2014 của Ngân hàng Nhà nước Việt Nam)\nstatement: balance sheet\nmetrics: fixed assets | total liabilities\nmetric aliases: Nợ phải trả | Tài sản cố định\ngroup context: Nợ phải trả | Tài sản\ncompany: STB\nperiods: 2024\nunits: VND million",
+            "table_id": "tbl_4f7f0705a8eaca16e22481d37547c9ada7ce66ae9a021c8d33174aaa2a2140aa"
+          }
+        ]
+      }
+    },
+    {
+      "failure": "zero_gold_hits",
+      "filters": {
+        "company_codes": [
+          "HDB"
+        ],
+        "periods": [
+          "2022",
+          "2023"
+        ],
+        "statement_types": []
+      },
+      "gold_rank_beyond_10": {
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0": 42
+      },
+      "gold_table_ids": [
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0"
+      ],
+      "intent": "compare",
+      "missing_gold_table_ids": [
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0"
+      ],
+      "note": "The reviewed source contains consolidated 2022/2023 total assets; the eligible gold document has canonical total_assets and the query expansion, but ranks 42 behind other HDB fragments.",
+      "predicted_table_ids": [
+        "tbl_372401f3c194d40741dc2672604546ff4bb354f00dc3c0b9b0b8a2e697ed2510",
+        "tbl_1023e8dce509a03c9b05d6827a8c2178a530c665efaf58947721e0f8e7695ef6",
+        "tbl_c4f2b5873b56347e476b7e7cdac4202ef415d872371bb054101976f080c1ecb3",
+        "tbl_44ea0dfdb1ae6fb87b5feea9f3d0459610faa035bb346c65bd40c2866642bd66",
+        "tbl_70eff70e8607a22d5aefa3a3362de6aebc934b526d8096ea45ecdad5ab2d3e91",
+        "tbl_929b58991fe4338c757276556a424ddb430c2d44aca0703c3f4acca21f2fb2d6",
+        "tbl_ad7f3da068de1feba8aa6aeaa19e1ecec7bbf9c163a6ab47bb5b6aab9367530e",
+        "tbl_5dd01704e92cdbd559d6723cbce0c7a42177f939d8cd5b1f72fa414345980269",
+        "tbl_0b806ba5d2a01cecd33be5927a877bab3711ee1c2111d6796a4a7ab430338533",
+        "tbl_2f32b7520214715111a367b968521ceccfa86e45b0f20eb0aea152afdb795e6c"
+      ],
+      "question": "So sánh tổng tài sản hợp nhất của HDB giữa năm 2022 và năm 2023.",
+      "question_id": "retq_46612a9c276fa94b4b682731803874a302616a3d4aaea063b36609e4603b7196",
+      "root_cause": "ranking_only",
+      "trace": {
+        "eligible_count": 672,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 1835,
+            "field": "company_codes",
+            "matched_count_before_intersection": 1835,
+            "requested_values": [
+              "HDB"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 672,
+            "field": "periods",
+            "matched_count_before_intersection": 33721,
+            "requested_values": [
+              "2022",
+              "2023"
+            ]
+          }
+        ],
+        "metric_expansions": [
+          {
+            "added_tokens": [
+              "total",
+              "assets"
+            ],
+            "alias_tokens": [
+              "tổng",
+              "tài",
+              "sản"
+            ],
+            "canonical_metric": "total_assets"
+          }
+        ],
+        "query": "So sánh tổng tài sản hợp nhất của HDB giữa năm 2022 và năm 2023.",
+        "query_tokens": [
+          "so",
+          "sánh",
+          "tổng",
+          "tài",
+          "sản",
+          "hợp",
+          "nhất",
+          "của",
+          "hdb",
+          "giữa",
+          "năm",
+          "2022",
+          "và",
+          "2023",
+          "total",
+          "assets"
+        ],
+        "question_id": "retq_46612a9c276fa94b4b682731803874a302616a3d4aaea063b36609e4603b7196",
+        "results": [
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "hợp",
+              "nhất",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_d89c6d87faae54c66b373e735536f67a9dbce34eb7a2d586fe49f5ef1ab893ee",
+              "group_contexts": [],
+              "line_end": 136,
+              "line_start": 136,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_2/HDB_financial_statements_2023_consolidated_2_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_372401f3c194d40741dc2672604546ff4bb354f00dc3c0b9b0b8a2e697ed2510",
+              "title": "BÁO CÁO TÌNH HÌNH TÀI CHÍNH HỢP NHẤT"
+            },
+            "rank": 1,
+            "score": 10.889310836791992,
+            "snippet": "title: BÁO CÁO TÌNH HÌNH TÀI CHÍNH HỢP NHẤT\nstatement: cash flow statement\nmetrics: accounts receivable | fixed assets | intangible assets | property plant equipment | total assets\nmetric aliases: Các khoản phải thu | Tài sản cố định | Tài sản cố định hữu hình | Tài sản cố định vô hình | TỔNG TÀI SẢN\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_372401f3c194d40741dc2672604546ff4bb354f00dc3c0b9b0b8a2e697ed2510"
+          },
+          {
+            "matched_tokens": [
+              "2022",
+              "assets",
+              "hdb",
+              "hợp",
+              "nhất",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_43e277154b1ac89913b75cf6f8f71be85bdf8dcfe25335b06a9abf74779c6eb1",
+              "group_contexts": [],
+              "line_end": 137,
+              "line_start": 137,
+              "periods": [
+                "2022"
+              ],
+              "source_path": "HDB/2022/HDB_financial_statements_2022_consolidated/HDB_financial_statements_2022_consolidated_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_1023e8dce509a03c9b05d6827a8c2178a530c665efaf58947721e0f8e7695ef6",
+              "title": "BÁO CÁO TÌNH HÌNH TÀI CHÍNH HỢP NHẤT"
+            },
+            "rank": 2,
+            "score": 10.883622169494629,
+            "snippet": "title: BÁO CÁO TÌNH HÌNH TÀI CHÍNH HỢP NHẤT\nstatement: cash flow statement\nmetrics: accounts receivable | fixed assets | intangible assets | property plant equipment | total assets\nmetric aliases: Các khoản phải thu | Tài sản cố định | Tài sản cố định hữu hình | Tài sản cố định vô hình | TỔNG TÀI SẢN\ncompany: HDB\nperiods: 2022\nunits: VND million",
+            "table_id": "tbl_1023e8dce509a03c9b05d6827a8c2178a530c665efaf58947721e0f8e7695ef6"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "của",
+              "hdb",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_969e1c27df205139d52dc3d1b993a36a461a947451bd3736241f73b41f101905",
+              "group_contexts": [
+                "Nợ phải trả",
+                "Tài sản"
+              ],
+              "line_end": 1591,
+              "line_start": 1591,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_1/HDB_financial_statements_2023_separate_1_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_c4f2b5873b56347e476b7e7cdac4202ef415d872371bb054101976f080c1ecb3",
+              "title": "Bảng dưới đây trình bày các tài sản và nợ của Ngân hàng theo giá trị ghi số và theo loại tiên tệ tại ngày 31 tháng 12 năm 2023:"
+            },
+            "rank": 3,
+            "score": 10.414493560791016,
+            "snippet": "title: Bảng dưới đây trình bày các tài sản và nợ của Ngân hàng theo giá trị ghi số và theo loại tiên tệ tại ngày 31 tháng 12 năm 2023:\nstatement: balance sheet\nmetrics: total assets | total liabilities\nmetric aliases: Nợ phải trả | Tổng nợ phải trả | Tổng tài sản\ngroup context: Nợ phải trả | Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_c4f2b5873b56347e476b7e7cdac4202ef415d872371bb054101976f080c1ecb3"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "của",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_c6750c4715083d005ee76e66ae367d3734b1d00642163fb9bf5bd5acd4077557",
+              "group_contexts": [
+                "Nợ phải trả",
+                "Tài sản"
+              ],
+              "line_end": 1615,
+              "line_start": 1615,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_1/HDB_financial_statements_2023_consolidated_1_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_44ea0dfdb1ae6fb87b5feea9f3d0459610faa035bb346c65bd40c2866642bd66",
+              "title": "Băng dưới đây trình bày các tài sản và nợ của Ngân hàng và công ty con theo giá trị ghi sổ và theo loại tiền tệ:"
+            },
+            "rank": 4,
+            "score": 9.811821937561035,
+            "snippet": "title: Băng dưới đây trình bày các tài sản và nợ của Ngân hàng và công ty con theo giá trị ghi sổ và theo loại tiền tệ:\nstatement: balance sheet\nmetrics: total assets | total liabilities\nmetric aliases: Nợ phải trả | Tổng nợ phải trả | Tổng tài sản\ngroup context: Nợ phải trả | Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_44ea0dfdb1ae6fb87b5feea9f3d0459610faa035bb346c65bd40c2866642bd66"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_6d7b1237705b40aa68af09efd36e495197bd346378d32d84068dea4543b35bd2",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2387,
+              "line_start": 2387,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_2/HDB_financial_statements_2023_separate_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_70eff70e8607a22d5aefa3a3362de6aebc934b526d8096ea45ecdad5ab2d3e91",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 5,
+            "score": 9.319830894470215,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_70eff70e8607a22d5aefa3a3362de6aebc934b526d8096ea45ecdad5ab2d3e91"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_6d7b1237705b40aa68af09efd36e495197bd346378d32d84068dea4543b35bd2",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2297,
+              "line_start": 2297,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_2/HDB_financial_statements_2023_separate_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_929b58991fe4338c757276556a424ddb430c2d44aca0703c3f4acca21f2fb2d6",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 6,
+            "score": 9.319830894470215,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_929b58991fe4338c757276556a424ddb430c2d44aca0703c3f4acca21f2fb2d6"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_d89c6d87faae54c66b373e735536f67a9dbce34eb7a2d586fe49f5ef1ab893ee",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2361,
+              "line_start": 2361,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_2/HDB_financial_statements_2023_consolidated_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_ad7f3da068de1feba8aa6aeaa19e1ecec7bbf9c163a6ab47bb5b6aab9367530e",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 7,
+            "score": 9.319830894470215,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_ad7f3da068de1feba8aa6aeaa19e1ecec7bbf9c163a6ab47bb5b6aab9367530e"
+          },
+          {
+            "matched_tokens": [
+              "2022",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_43e277154b1ac89913b75cf6f8f71be85bdf8dcfe25335b06a9abf74779c6eb1",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2278,
+              "line_start": 2278,
+              "periods": [
+                "2022"
+              ],
+              "source_path": "HDB/2022/HDB_financial_statements_2022_consolidated/HDB_financial_statements_2022_consolidated_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_5dd01704e92cdbd559d6723cbce0c7a42177f939d8cd5b1f72fa414345980269",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 8,
+            "score": 9.31355094909668,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2022\nunits: VND million",
+            "table_id": "tbl_5dd01704e92cdbd559d6723cbce0c7a42177f939d8cd5b1f72fa414345980269"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_d89c6d87faae54c66b373e735536f67a9dbce34eb7a2d586fe49f5ef1ab893ee",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2314,
+              "line_start": 2314,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_2/HDB_financial_statements_2023_consolidated_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_0b806ba5d2a01cecd33be5927a877bab3711ee1c2111d6796a4a7ab430338533",
+              "title": "41.3.2 Rùi ro lãi suất (tiếp theo)"
+            },
+            "rank": 9,
+            "score": 9.23455810546875,
+            "snippet": "title: 41.3.2 Rùi ro lãi suất (tiếp theo)\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023",
+            "table_id": "tbl_0b806ba5d2a01cecd33be5927a877bab3711ee1c2111d6796a4a7ab430338533"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_6d7b1237705b40aa68af09efd36e495197bd346378d32d84068dea4543b35bd2",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2318,
+              "line_start": 2318,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_2/HDB_financial_statements_2023_separate_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_2f32b7520214715111a367b968521ceccfa86e45b0f20eb0aea152afdb795e6c",
+              "title": "41.3.2 Rủi ro lãi suất (tiếp theo)"
+            },
+            "rank": 10,
+            "score": 9.23455810546875,
+            "snippet": "title: 41.3.2 Rủi ro lãi suất (tiếp theo)\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023",
+            "table_id": "tbl_2f32b7520214715111a367b968521ceccfa86e45b0f20eb0aea152afdb795e6c"
+          }
+        ]
+      }
+    },
+    {
+      "failure": "partial_gold_hits",
+      "filters": {
+        "company_codes": [
+          "HSG"
+        ],
+        "periods": [
+          "2019"
+        ],
+        "statement_types": [
+          "notes"
+        ]
+      },
+      "gold_rank_beyond_10": {
+        "tbl_5f59924a66120962e7825d29f63bfd67f40f97052199e33d8a0cf9284a116caf": 12
+      },
+      "gold_table_ids": [
+        "tbl_0c27b7e394cdbd3f23417664dc831a22fa4ede462d8628b27bdf18588a425ce9",
+        "tbl_5f59924a66120962e7825d29f63bfd67f40f97052199e33d8a0cf9284a116caf",
+        "tbl_c2b475a1371ca3ff5aa0efcd6805436905662a14992ccd6e36aa01864e6a868c"
+      ],
+      "intent": "compare",
+      "missing_gold_table_ids": [
+        "tbl_5f59924a66120962e7825d29f63bfd67f40f97052199e33d8a0cf9284a116caf"
+      ],
+      "note": "Reviewed source line 768 names associated-company investments, while the BM25 document has a generic notes title and no metric labels; the gold table ranks 12.",
+      "predicted_table_ids": [
+        "tbl_b4746a668ff55f69408298505571ab066903986fad1b56dd8f3c846093a7d34e",
+        "tbl_7f324fa48e13db105a678ddec7f0122ee5128fde4d9ae706d14d43d3869616f9",
+        "tbl_e830ced8f2b7ba65fbd036fd3af42143b1126e41edc6c505262efdd903c3eb98",
+        "tbl_9744eaf875f087c439ac0e87d3d1457545a0a33ae5c41f86db4dd31a5690cff8",
+        "tbl_0c27b7e394cdbd3f23417664dc831a22fa4ede462d8628b27bdf18588a425ce9",
+        "tbl_267031f63ffe8e9433f046800e45dd583c86901b72d4f8f6271f8d818104a3ff",
+        "tbl_4bd4f6874fa41eb156f28eaa8b412a0b8e35c270fb4e39cd9eabbcf63ee2f41e",
+        "tbl_c2b475a1371ca3ff5aa0efcd6805436905662a14992ccd6e36aa01864e6a868c",
+        "tbl_d105c6c410b5a22e264baacaaf6242b79a34736e7906c3172b9432409d3d2b7d",
+        "tbl_f82cc0e8bfc1201dfce22aa75e4a9255371168e13e629886645128298c683be6"
+      ],
+      "question": "So sánh cơ cấu công ty con, công ty liên kết và các khoản đầu tư liên kết của HSG năm 2019.",
+      "question_id": "retq_4af1d194037feec883a2ad351fad2d857c5a714df82de48c323b5b03da976fd4",
+      "root_cause": "missing_alias",
+      "trace": {
+        "eligible_count": 16,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 1650,
+            "field": "company_codes",
+            "matched_count_before_intersection": 1650,
+            "requested_values": [
+              "HSG"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 142,
+            "field": "periods",
+            "matched_count_before_intersection": 15553,
+            "requested_values": [
+              "2019"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 16,
+            "field": "statement_types",
+            "matched_count_before_intersection": 1479,
+            "requested_values": [
+              "notes"
+            ]
+          }
+        ],
+        "metric_expansions": [],
+        "query": "So sánh cơ cấu công ty con, công ty liên kết và các khoản đầu tư liên kết của HSG năm 2019.",
+        "query_tokens": [
+          "so",
+          "sánh",
+          "cơ",
+          "cấu",
+          "công",
+          "ty",
+          "con",
+          "liên",
+          "kết",
+          "và",
+          "các",
+          "khoản",
+          "đầu",
+          "tư",
+          "của",
+          "hsg",
+          "năm",
+          "2019"
+        ],
+        "question_id": "retq_4af1d194037feec883a2ad351fad2d857c5a714df82de48c323b5b03da976fd4",
+        "results": [
+          {
+            "matched_tokens": [
+              "2019",
+              "hsg",
+              "kết",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "HSG",
+              "doc_id": "doc_6bd65df45d6e342420d24cc47a66077cd68e44d79b75402865ef1b61be6ec480",
+              "group_contexts": [],
+              "line_end": 1052,
+              "line_start": 1052,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "HSG/2019/HSG_financial_statements_2019_separate/HSG_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_b4746a668ff55f69408298505571ab066903986fad1b56dd8f3c846093a7d34e",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)"
+            },
+            "rank": 1,
+            "score": 5.021499156951904,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)\nstatement: notes\ncompany: HSG\nperiods: 2019",
+            "table_id": "tbl_b4746a668ff55f69408298505571ab066903986fad1b56dd8f3c846093a7d34e"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "hsg",
+              "kết",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "HSG",
+              "doc_id": "doc_6547bd93d40c24c06a510411392e04c24611661a4faf298632f0b507081a893f",
+              "group_contexts": [],
+              "line_end": 996,
+              "line_start": 996,
+              "periods": [
+                "2018-10-01",
+                "2019",
+                "2019-09-30"
+              ],
+              "source_path": "HSG/2019/HSG_financial_statements_2019_consolidated/HSG_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_7f324fa48e13db105a678ddec7f0122ee5128fde4d9ae706d14d43d3869616f9",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)"
+            },
+            "rank": 2,
+            "score": 4.99904727935791,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)\nstatement: notes\ncompany: HSG\nperiods: 2018-10-01 | 2019 | 2019-09-30\nunits: VND",
+            "table_id": "tbl_7f324fa48e13db105a678ddec7f0122ee5128fde4d9ae706d14d43d3869616f9"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "hsg",
+              "kết",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "HSG",
+              "doc_id": "doc_6547bd93d40c24c06a510411392e04c24611661a4faf298632f0b507081a893f",
+              "group_contexts": [],
+              "line_end": 1044,
+              "line_start": 1044,
+              "periods": [
+                "2018-10-01",
+                "2019",
+                "2019-09-30"
+              ],
+              "source_path": "HSG/2019/HSG_financial_statements_2019_consolidated/HSG_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_e830ced8f2b7ba65fbd036fd3af42143b1126e41edc6c505262efdd903c3eb98",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)"
+            },
+            "rank": 3,
+            "score": 4.99904727935791,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)\nstatement: notes\ncompany: HSG\nperiods: 2018-10-01 | 2019 | 2019-09-30\nunits: VND",
+            "table_id": "tbl_e830ced8f2b7ba65fbd036fd3af42143b1126e41edc6c505262efdd903c3eb98"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "hsg",
+              "kết",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "HSG",
+              "doc_id": "doc_6bd65df45d6e342420d24cc47a66077cd68e44d79b75402865ef1b61be6ec480",
+              "group_contexts": [],
+              "line_end": 830,
+              "line_start": 830,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "HSG/2019/HSG_financial_statements_2019_separate/HSG_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_9744eaf875f087c439ac0e87d3d1457545a0a33ae5c41f86db4dd31a5690cff8",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)"
+            },
+            "rank": 4,
+            "score": 4.967262268066406,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)\nstatement: notes\ncompany: HSG\nperiods: 2019\nunits: VND",
+            "table_id": "tbl_9744eaf875f087c439ac0e87d3d1457545a0a33ae5c41f86db4dd31a5690cff8"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "hsg",
+              "kết",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "HSG",
+              "doc_id": "doc_6547bd93d40c24c06a510411392e04c24611661a4faf298632f0b507081a893f",
+              "group_contexts": [],
+              "line_end": 306,
+              "line_start": 306,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "HSG/2019/HSG_financial_statements_2019_consolidated/HSG_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_0c27b7e394cdbd3f23417664dc831a22fa4ede462d8628b27bdf18588a425ce9",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)"
+            },
+            "rank": 5,
+            "score": 4.940592288970947,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)\nstatement: notes\ncompany: HSG\nperiods: 2019\nunits: percent",
+            "table_id": "tbl_0c27b7e394cdbd3f23417664dc831a22fa4ede462d8628b27bdf18588a425ce9"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "hsg",
+              "kết",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "HSG",
+              "doc_id": "doc_6bd65df45d6e342420d24cc47a66077cd68e44d79b75402865ef1b61be6ec480",
+              "group_contexts": [],
+              "line_end": 674,
+              "line_start": 674,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "HSG/2019/HSG_financial_statements_2019_separate/HSG_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_267031f63ffe8e9433f046800e45dd583c86901b72d4f8f6271f8d818104a3ff",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)"
+            },
+            "rank": 6,
+            "score": 4.940592288970947,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)\nstatement: notes\ncompany: HSG\nperiods: 2019\nunits: VND | percent",
+            "table_id": "tbl_267031f63ffe8e9433f046800e45dd583c86901b72d4f8f6271f8d818104a3ff"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "hsg",
+              "kết",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "HSG",
+              "doc_id": "doc_6bd65df45d6e342420d24cc47a66077cd68e44d79b75402865ef1b61be6ec480",
+              "group_contexts": [],
+              "line_end": 1068,
+              "line_start": 1068,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "HSG/2019/HSG_financial_statements_2019_separate/HSG_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_4bd4f6874fa41eb156f28eaa8b412a0b8e35c270fb4e39cd9eabbcf63ee2f41e",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)"
+            },
+            "rank": 7,
+            "score": 4.940592288970947,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)\nstatement: notes\ncompany: HSG\nperiods: 2019\nunits: VND | percent",
+            "table_id": "tbl_4bd4f6874fa41eb156f28eaa8b412a0b8e35c270fb4e39cd9eabbcf63ee2f41e"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "hsg",
+              "kết",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "HSG",
+              "doc_id": "doc_6547bd93d40c24c06a510411392e04c24611661a4faf298632f0b507081a893f",
+              "group_contexts": [],
+              "line_end": 298,
+              "line_start": 298,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "HSG/2019/HSG_financial_statements_2019_consolidated/HSG_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_c2b475a1371ca3ff5aa0efcd6805436905662a14992ccd6e36aa01864e6a868c",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)"
+            },
+            "rank": 8,
+            "score": 4.940592288970947,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)\nstatement: notes\ncompany: HSG\nperiods: 2019\nunits: percent",
+            "table_id": "tbl_c2b475a1371ca3ff5aa0efcd6805436905662a14992ccd6e36aa01864e6a868c"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "hsg",
+              "kết",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "HSG",
+              "doc_id": "doc_6547bd93d40c24c06a510411392e04c24611661a4faf298632f0b507081a893f",
+              "group_contexts": [],
+              "line_end": 1127,
+              "line_start": 1127,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "HSG/2019/HSG_financial_statements_2019_consolidated/HSG_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_d105c6c410b5a22e264baacaaf6242b79a34736e7906c3172b9432409d3d2b7d",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)"
+            },
+            "rank": 9,
+            "score": 4.940592288970947,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)\nstatement: notes\ncompany: HSG\nperiods: 2019\nunits: VND",
+            "table_id": "tbl_d105c6c410b5a22e264baacaaf6242b79a34736e7906c3172b9432409d3d2b7d"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "hsg",
+              "kết",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "HSG",
+              "doc_id": "doc_6547bd93d40c24c06a510411392e04c24611661a4faf298632f0b507081a893f",
+              "group_contexts": [],
+              "line_end": 860,
+              "line_start": 860,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "HSG/2019/HSG_financial_statements_2019_consolidated/HSG_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_f82cc0e8bfc1201dfce22aa75e4a9255371168e13e629886645128298c683be6",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)"
+            },
+            "rank": 10,
+            "score": 4.940592288970947,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 30 tháng 9 năm 2019 (tiếp theo)\nstatement: notes\ncompany: HSG\nperiods: 2019\nunits: VND",
+            "table_id": "tbl_f82cc0e8bfc1201dfce22aa75e4a9255371168e13e629886645128298c683be6"
+          }
+        ]
+      }
+    },
+    {
+      "failure": "partial_gold_hits",
+      "filters": {
+        "company_codes": [
+          "MSN"
+        ],
+        "periods": [
+          "2019"
+        ],
+        "statement_types": [
+          "notes"
+        ]
+      },
+      "gold_rank_beyond_10": {
+        "tbl_d1a533562e37f19983730375b041745f25652491d0544a9e5bc8fe6acf8085c1": 16
+      },
+      "gold_table_ids": [
+        "tbl_1da562d2f881f6961c036f97219e00c615a517bf5bc79a3af85ef64009f16bd8",
+        "tbl_30c45beb5ae410b12ece4be9022a0472557e5440698403d64c8ed048f840bdad",
+        "tbl_9c9d1bb0b9374cfd1a0c9ead1f989d11d23c6921009cfce54f22f984861371ad",
+        "tbl_d1a533562e37f19983730375b041745f25652491d0544a9e5bc8fe6acf8085c1"
+      ],
+      "intent": "growth",
+      "missing_gold_table_ids": [
+        "tbl_d1a533562e37f19983730375b041745f25652491d0544a9e5bc8fe6acf8085c1"
+      ],
+      "note": "Reviewed source line 313 contains subsidiary ownership percentages, while the BM25 document has a generic notes title and no metric labels; the gold table ranks 16.",
+      "predicted_table_ids": [
+        "tbl_a41efffc23b838943088bfa105bfd935b8587afc6212a9d635822bb44c9cadb2",
+        "tbl_e5e3e0bec5d0817623caa23d1605bc09a18c05a9f2f143ca477f03f07eeafd90",
+        "tbl_29918745c5d49e496fad0238605e40e1a8f113ebad7cfd97a96a6450217210be",
+        "tbl_94aed7cc0d3eba60a4fd6088c94ffc2d48eeea21a2aec0edba71cd47a25abf16",
+        "tbl_1da562d2f881f6961c036f97219e00c615a517bf5bc79a3af85ef64009f16bd8",
+        "tbl_30c45beb5ae410b12ece4be9022a0472557e5440698403d64c8ed048f840bdad",
+        "tbl_46bf1fc9965efefef41680e93bb52542f2017ad580ee7488afd2f36a532add32",
+        "tbl_8288bad492d25c1b22691f870b3bc1ad9d9d5427e06083ddc0136a7917cfb8f8",
+        "tbl_9c9d1bb0b9374cfd1a0c9ead1f989d11d23c6921009cfce54f22f984861371ad",
+        "tbl_bab88f9d1a554509454e97c234bb653aa223e639d9b62f52ca8a2dd21ca0e73d"
+      ],
+      "question": "Tính biến động tỷ lệ sở hữu tại các nhóm công ty con chủ chốt của MSN trong năm 2019.",
+      "question_id": "retq_5bc82c57026f9a9c465c6de9a5423aa4dcc47c3bcb909980e2a8b34312c723e5",
+      "root_cause": "missing_alias",
+      "trace": {
+        "eligible_count": 17,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 1502,
+            "field": "company_codes",
+            "matched_count_before_intersection": 1502,
+            "requested_values": [
+              "MSN"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 148,
+            "field": "periods",
+            "matched_count_before_intersection": 15553,
+            "requested_values": [
+              "2019"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 17,
+            "field": "statement_types",
+            "matched_count_before_intersection": 1479,
+            "requested_values": [
+              "notes"
+            ]
+          }
+        ],
+        "metric_expansions": [],
+        "query": "Tính biến động tỷ lệ sở hữu tại các nhóm công ty con chủ chốt của MSN trong năm 2019.",
+        "query_tokens": [
+          "tính",
+          "biến",
+          "động",
+          "tỷ",
+          "lệ",
+          "sở",
+          "hữu",
+          "tại",
+          "các",
+          "nhóm",
+          "công",
+          "ty",
+          "con",
+          "chủ",
+          "chốt",
+          "của",
+          "msn",
+          "trong",
+          "năm",
+          "2019"
+        ],
+        "question_id": "retq_5bc82c57026f9a9c465c6de9a5423aa4dcc47c3bcb909980e2a8b34312c723e5",
+        "results": [
+          {
+            "matched_tokens": [
+              "2019",
+              "msn",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "MSN",
+              "doc_id": "doc_381480bdb4813be137752eb78fe77650f3d6b2373661d71231cf0f83f4be7859",
+              "group_contexts": [],
+              "line_end": 345,
+              "line_start": 345,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "MSN/2019/MSN_financial_statements_2019_consolidated/MSN_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_a41efffc23b838943088bfa105bfd935b8587afc6212a9d635822bb44c9cadb2",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 1,
+            "score": 4.008795738220215,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: MSN\nperiods: 2019",
+            "table_id": "tbl_a41efffc23b838943088bfa105bfd935b8587afc6212a9d635822bb44c9cadb2"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "msn",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "MSN",
+              "doc_id": "doc_381480bdb4813be137752eb78fe77650f3d6b2373661d71231cf0f83f4be7859",
+              "group_contexts": [],
+              "line_end": 353,
+              "line_start": 353,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "MSN/2019/MSN_financial_statements_2019_consolidated/MSN_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_e5e3e0bec5d0817623caa23d1605bc09a18c05a9f2f143ca477f03f07eeafd90",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 2,
+            "score": 4.008795738220215,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: MSN\nperiods: 2019",
+            "table_id": "tbl_e5e3e0bec5d0817623caa23d1605bc09a18c05a9f2f143ca477f03f07eeafd90"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "msn",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "MSN",
+              "doc_id": "doc_29a14ea7c5d228db37a99d9640a94ce1d327c6c5135666157da9bbe5899d5982",
+              "group_contexts": [],
+              "line_end": 784,
+              "line_start": 784,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "MSN/2019/MSN_financial_statements_2019_separate/MSN_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_29918745c5d49e496fad0238605e40e1a8f113ebad7cfd97a96a6450217210be",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 3,
+            "score": 3.9879050254821777,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: MSN\nperiods: 2019\nunits: VND",
+            "table_id": "tbl_29918745c5d49e496fad0238605e40e1a8f113ebad7cfd97a96a6450217210be"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "msn",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "MSN",
+              "doc_id": "doc_29a14ea7c5d228db37a99d9640a94ce1d327c6c5135666157da9bbe5899d5982",
+              "group_contexts": [],
+              "line_end": 541,
+              "line_start": 541,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "MSN/2019/MSN_financial_statements_2019_separate/MSN_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_94aed7cc0d3eba60a4fd6088c94ffc2d48eeea21a2aec0edba71cd47a25abf16",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 4,
+            "score": 3.9879050254821777,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: MSN\nperiods: 2019\nunits: VND",
+            "table_id": "tbl_94aed7cc0d3eba60a4fd6088c94ffc2d48eeea21a2aec0edba71cd47a25abf16"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "msn",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "MSN",
+              "doc_id": "doc_381480bdb4813be137752eb78fe77650f3d6b2373661d71231cf0f83f4be7859",
+              "group_contexts": [],
+              "line_end": 297,
+              "line_start": 297,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "MSN/2019/MSN_financial_statements_2019_consolidated/MSN_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_1da562d2f881f6961c036f97219e00c615a517bf5bc79a3af85ef64009f16bd8",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 5,
+            "score": 3.9672369956970215,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: MSN\nperiods: 2019\nunits: percent",
+            "table_id": "tbl_1da562d2f881f6961c036f97219e00c615a517bf5bc79a3af85ef64009f16bd8"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "msn",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "MSN",
+              "doc_id": "doc_381480bdb4813be137752eb78fe77650f3d6b2373661d71231cf0f83f4be7859",
+              "group_contexts": [],
+              "line_end": 305,
+              "line_start": 305,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "MSN/2019/MSN_financial_statements_2019_consolidated/MSN_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_30c45beb5ae410b12ece4be9022a0472557e5440698403d64c8ed048f840bdad",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 6,
+            "score": 3.9672369956970215,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: MSN\nperiods: 2019\nunits: percent",
+            "table_id": "tbl_30c45beb5ae410b12ece4be9022a0472557e5440698403d64c8ed048f840bdad"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "msn",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "MSN",
+              "doc_id": "doc_381480bdb4813be137752eb78fe77650f3d6b2373661d71231cf0f83f4be7859",
+              "group_contexts": [],
+              "line_end": 361,
+              "line_start": 361,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "MSN/2019/MSN_financial_statements_2019_consolidated/MSN_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_46bf1fc9965efefef41680e93bb52542f2017ad580ee7488afd2f36a532add32",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 7,
+            "score": 3.9672369956970215,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: MSN\nperiods: 2019\nunits: percent",
+            "table_id": "tbl_46bf1fc9965efefef41680e93bb52542f2017ad580ee7488afd2f36a532add32"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "msn",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "MSN",
+              "doc_id": "doc_381480bdb4813be137752eb78fe77650f3d6b2373661d71231cf0f83f4be7859",
+              "group_contexts": [],
+              "line_end": 321,
+              "line_start": 321,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "MSN/2019/MSN_financial_statements_2019_consolidated/MSN_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_8288bad492d25c1b22691f870b3bc1ad9d9d5427e06083ddc0136a7917cfb8f8",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 8,
+            "score": 3.9672369956970215,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: MSN\nperiods: 2019\nunits: percent",
+            "table_id": "tbl_8288bad492d25c1b22691f870b3bc1ad9d9d5427e06083ddc0136a7917cfb8f8"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "msn",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "MSN",
+              "doc_id": "doc_381480bdb4813be137752eb78fe77650f3d6b2373661d71231cf0f83f4be7859",
+              "group_contexts": [],
+              "line_end": 291,
+              "line_start": 291,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "MSN/2019/MSN_financial_statements_2019_consolidated/MSN_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_9c9d1bb0b9374cfd1a0c9ead1f989d11d23c6921009cfce54f22f984861371ad",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 9,
+            "score": 3.9672369956970215,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: MSN\nperiods: 2019\nunits: percent",
+            "table_id": "tbl_9c9d1bb0b9374cfd1a0c9ead1f989d11d23c6921009cfce54f22f984861371ad"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "msn",
+              "năm"
+            ],
+            "metadata": {
+              "company_code": "MSN",
+              "doc_id": "doc_29a14ea7c5d228db37a99d9640a94ce1d327c6c5135666157da9bbe5899d5982",
+              "group_contexts": [],
+              "line_end": 568,
+              "line_start": 568,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "MSN/2019/MSN_financial_statements_2019_separate/MSN_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_bab88f9d1a554509454e97c234bb653aa223e639d9b62f52ca8a2dd21ca0e73d",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 10,
+            "score": 3.9672369956970215,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: MSN\nperiods: 2019\nunits: VND | percent",
+            "table_id": "tbl_bab88f9d1a554509454e97c234bb653aa223e639d9b62f52ca8a2dd21ca0e73d"
+          }
+        ]
+      }
+    },
+    {
+      "failure": "zero_gold_hits",
+      "filters": {
+        "company_codes": [
+          "HDB"
+        ],
+        "periods": [
+          "2022",
+          "2023"
+        ],
+        "statement_types": []
+      },
+      "gold_rank_beyond_10": {
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0": 44
+      },
+      "gold_table_ids": [
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0"
+      ],
+      "intent": "growth",
+      "missing_gold_table_ids": [
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0"
+      ],
+      "note": "The reviewed source contains consolidated 2022/2023 total assets; the eligible gold document has canonical total_assets and the query expansion, but ranks 44 behind other HDB fragments.",
+      "predicted_table_ids": [
+        "tbl_372401f3c194d40741dc2672604546ff4bb354f00dc3c0b9b0b8a2e697ed2510",
+        "tbl_1023e8dce509a03c9b05d6827a8c2178a530c665efaf58947721e0f8e7695ef6",
+        "tbl_904ff7161b3b85eaf7986d779bb6b3e93e7012a2a1c1bbe5b804478943585f2d",
+        "tbl_c4f2b5873b56347e476b7e7cdac4202ef415d872371bb054101976f080c1ecb3",
+        "tbl_70eff70e8607a22d5aefa3a3362de6aebc934b526d8096ea45ecdad5ab2d3e91",
+        "tbl_929b58991fe4338c757276556a424ddb430c2d44aca0703c3f4acca21f2fb2d6",
+        "tbl_ad7f3da068de1feba8aa6aeaa19e1ecec7bbf9c163a6ab47bb5b6aab9367530e",
+        "tbl_5dd01704e92cdbd559d6723cbce0c7a42177f939d8cd5b1f72fa414345980269",
+        "tbl_0b806ba5d2a01cecd33be5927a877bab3711ee1c2111d6796a4a7ab430338533",
+        "tbl_2f32b7520214715111a367b968521ceccfa86e45b0f20eb0aea152afdb795e6c"
+      ],
+      "question": "Tính tốc độ tăng trưởng tổng tài sản hợp nhất của HDB từ năm 2022 đến năm 2023.",
+      "question_id": "retq_76c79261bdcb719e588c362ee794146de50e423a79e93c14949057684cc02dcf",
+      "root_cause": "ranking_only",
+      "trace": {
+        "eligible_count": 672,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 1835,
+            "field": "company_codes",
+            "matched_count_before_intersection": 1835,
+            "requested_values": [
+              "HDB"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 672,
+            "field": "periods",
+            "matched_count_before_intersection": 33721,
+            "requested_values": [
+              "2022",
+              "2023"
+            ]
+          }
+        ],
+        "metric_expansions": [
+          {
+            "added_tokens": [
+              "total",
+              "assets"
+            ],
+            "alias_tokens": [
+              "tổng",
+              "tài",
+              "sản"
+            ],
+            "canonical_metric": "total_assets"
+          }
+        ],
+        "query": "Tính tốc độ tăng trưởng tổng tài sản hợp nhất của HDB từ năm 2022 đến năm 2023.",
+        "query_tokens": [
+          "tính",
+          "tốc",
+          "độ",
+          "tăng",
+          "trưởng",
+          "tổng",
+          "tài",
+          "sản",
+          "hợp",
+          "nhất",
+          "của",
+          "hdb",
+          "từ",
+          "năm",
+          "2022",
+          "đến",
+          "2023",
+          "total",
+          "assets"
+        ],
+        "question_id": "retq_76c79261bdcb719e588c362ee794146de50e423a79e93c14949057684cc02dcf",
+        "results": [
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "hợp",
+              "nhất",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_d89c6d87faae54c66b373e735536f67a9dbce34eb7a2d586fe49f5ef1ab893ee",
+              "group_contexts": [],
+              "line_end": 136,
+              "line_start": 136,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_2/HDB_financial_statements_2023_consolidated_2_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_372401f3c194d40741dc2672604546ff4bb354f00dc3c0b9b0b8a2e697ed2510",
+              "title": "BÁO CÁO TÌNH HÌNH TÀI CHÍNH HỢP NHẤT"
+            },
+            "rank": 1,
+            "score": 10.889310836791992,
+            "snippet": "title: BÁO CÁO TÌNH HÌNH TÀI CHÍNH HỢP NHẤT\nstatement: cash flow statement\nmetrics: accounts receivable | fixed assets | intangible assets | property plant equipment | total assets\nmetric aliases: Các khoản phải thu | Tài sản cố định | Tài sản cố định hữu hình | Tài sản cố định vô hình | TỔNG TÀI SẢN\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_372401f3c194d40741dc2672604546ff4bb354f00dc3c0b9b0b8a2e697ed2510"
+          },
+          {
+            "matched_tokens": [
+              "2022",
+              "assets",
+              "hdb",
+              "hợp",
+              "nhất",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_43e277154b1ac89913b75cf6f8f71be85bdf8dcfe25335b06a9abf74779c6eb1",
+              "group_contexts": [],
+              "line_end": 137,
+              "line_start": 137,
+              "periods": [
+                "2022"
+              ],
+              "source_path": "HDB/2022/HDB_financial_statements_2022_consolidated/HDB_financial_statements_2022_consolidated_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_1023e8dce509a03c9b05d6827a8c2178a530c665efaf58947721e0f8e7695ef6",
+              "title": "BÁO CÁO TÌNH HÌNH TÀI CHÍNH HỢP NHẤT"
+            },
+            "rank": 2,
+            "score": 10.883622169494629,
+            "snippet": "title: BÁO CÁO TÌNH HÌNH TÀI CHÍNH HỢP NHẤT\nstatement: cash flow statement\nmetrics: accounts receivable | fixed assets | intangible assets | property plant equipment | total assets\nmetric aliases: Các khoản phải thu | Tài sản cố định | Tài sản cố định hữu hình | Tài sản cố định vô hình | TỔNG TÀI SẢN\ncompany: HDB\nperiods: 2022\nunits: VND million",
+            "table_id": "tbl_1023e8dce509a03c9b05d6827a8c2178a530c665efaf58947721e0f8e7695ef6"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "từ",
+              "đến"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_c6750c4715083d005ee76e66ae367d3734b1d00642163fb9bf5bd5acd4077557",
+              "group_contexts": [
+                "Vốn tải trợ, ủy thác đầu tư, cho vay"
+              ],
+              "line_end": 1575,
+              "line_start": 1575,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_1/HDB_financial_statements_2023_consolidated_1_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_904ff7161b3b85eaf7986d779bb6b3e93e7012a2a1c1bbe5b804478943585f2d",
+              "title": "Cho gia đoạn từ ngày 01/01/2023 đến ngày 31/12/2023"
+            },
+            "rank": 3,
+            "score": 10.726690292358398,
+            "snippet": "title: Cho gia đoạn từ ngày 01/01/2023 đến ngày 31/12/2023\nstatement: balance sheet\nmetrics: total assets | total liabilities\nmetric aliases: Nợ phải trả | Tổng nợ phải trả | Tổng tài sản\ngroup context: Vốn tải trợ, ủy thác đầu tư, cho vay\ncompany: HDB\nperiods: 2023",
+            "table_id": "tbl_904ff7161b3b85eaf7986d779bb6b3e93e7012a2a1c1bbe5b804478943585f2d"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "của",
+              "hdb",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_969e1c27df205139d52dc3d1b993a36a461a947451bd3736241f73b41f101905",
+              "group_contexts": [
+                "Nợ phải trả",
+                "Tài sản"
+              ],
+              "line_end": 1591,
+              "line_start": 1591,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_1/HDB_financial_statements_2023_separate_1_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_c4f2b5873b56347e476b7e7cdac4202ef415d872371bb054101976f080c1ecb3",
+              "title": "Bảng dưới đây trình bày các tài sản và nợ của Ngân hàng theo giá trị ghi số và theo loại tiên tệ tại ngày 31 tháng 12 năm 2023:"
+            },
+            "rank": 4,
+            "score": 9.612302780151367,
+            "snippet": "title: Bảng dưới đây trình bày các tài sản và nợ của Ngân hàng theo giá trị ghi số và theo loại tiên tệ tại ngày 31 tháng 12 năm 2023:\nstatement: balance sheet\nmetrics: total assets | total liabilities\nmetric aliases: Nợ phải trả | Tổng nợ phải trả | Tổng tài sản\ngroup context: Nợ phải trả | Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_c4f2b5873b56347e476b7e7cdac4202ef415d872371bb054101976f080c1ecb3"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_6d7b1237705b40aa68af09efd36e495197bd346378d32d84068dea4543b35bd2",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2387,
+              "line_start": 2387,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_2/HDB_financial_statements_2023_separate_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_70eff70e8607a22d5aefa3a3362de6aebc934b526d8096ea45ecdad5ab2d3e91",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 5,
+            "score": 9.319830894470215,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_70eff70e8607a22d5aefa3a3362de6aebc934b526d8096ea45ecdad5ab2d3e91"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_6d7b1237705b40aa68af09efd36e495197bd346378d32d84068dea4543b35bd2",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2297,
+              "line_start": 2297,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_2/HDB_financial_statements_2023_separate_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_929b58991fe4338c757276556a424ddb430c2d44aca0703c3f4acca21f2fb2d6",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 6,
+            "score": 9.319830894470215,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_929b58991fe4338c757276556a424ddb430c2d44aca0703c3f4acca21f2fb2d6"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_d89c6d87faae54c66b373e735536f67a9dbce34eb7a2d586fe49f5ef1ab893ee",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2361,
+              "line_start": 2361,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_2/HDB_financial_statements_2023_consolidated_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_ad7f3da068de1feba8aa6aeaa19e1ecec7bbf9c163a6ab47bb5b6aab9367530e",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 7,
+            "score": 9.319830894470215,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_ad7f3da068de1feba8aa6aeaa19e1ecec7bbf9c163a6ab47bb5b6aab9367530e"
+          },
+          {
+            "matched_tokens": [
+              "2022",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_43e277154b1ac89913b75cf6f8f71be85bdf8dcfe25335b06a9abf74779c6eb1",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2278,
+              "line_start": 2278,
+              "periods": [
+                "2022"
+              ],
+              "source_path": "HDB/2022/HDB_financial_statements_2022_consolidated/HDB_financial_statements_2022_consolidated_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_5dd01704e92cdbd559d6723cbce0c7a42177f939d8cd5b1f72fa414345980269",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 8,
+            "score": 9.31355094909668,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2022\nunits: VND million",
+            "table_id": "tbl_5dd01704e92cdbd559d6723cbce0c7a42177f939d8cd5b1f72fa414345980269"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_d89c6d87faae54c66b373e735536f67a9dbce34eb7a2d586fe49f5ef1ab893ee",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2314,
+              "line_start": 2314,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_2/HDB_financial_statements_2023_consolidated_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_0b806ba5d2a01cecd33be5927a877bab3711ee1c2111d6796a4a7ab430338533",
+              "title": "41.3.2 Rùi ro lãi suất (tiếp theo)"
+            },
+            "rank": 9,
+            "score": 9.23455810546875,
+            "snippet": "title: 41.3.2 Rùi ro lãi suất (tiếp theo)\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023",
+            "table_id": "tbl_0b806ba5d2a01cecd33be5927a877bab3711ee1c2111d6796a4a7ab430338533"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_6d7b1237705b40aa68af09efd36e495197bd346378d32d84068dea4543b35bd2",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2318,
+              "line_start": 2318,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_2/HDB_financial_statements_2023_separate_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_2f32b7520214715111a367b968521ceccfa86e45b0f20eb0aea152afdb795e6c",
+              "title": "41.3.2 Rủi ro lãi suất (tiếp theo)"
+            },
+            "rank": 10,
+            "score": 9.23455810546875,
+            "snippet": "title: 41.3.2 Rủi ro lãi suất (tiếp theo)\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023",
+            "table_id": "tbl_2f32b7520214715111a367b968521ceccfa86e45b0f20eb0aea152afdb795e6c"
+          }
+        ]
+      }
+    },
+    {
+      "failure": "zero_gold_hits",
+      "filters": {
+        "company_codes": [
+          "HDB"
+        ],
+        "periods": [
+          "2023"
+        ],
+        "statement_types": []
+      },
+      "gold_rank_beyond_10": {
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0": 21
+      },
+      "gold_table_ids": [
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0"
+      ],
+      "intent": "lookup",
+      "missing_gold_table_ids": [
+        "tbl_c1bf93f626705cff88c7f64eb14839c9d3993ce49cf334053eb59f9c5a8de9a0"
+      ],
+      "note": "The reviewed source contains consolidated 2023 total assets; the eligible gold document has canonical total_assets and the query expansion, but ranks 21 behind other HDB fragments.",
+      "predicted_table_ids": [
+        "tbl_372401f3c194d40741dc2672604546ff4bb354f00dc3c0b9b0b8a2e697ed2510",
+        "tbl_c4f2b5873b56347e476b7e7cdac4202ef415d872371bb054101976f080c1ecb3",
+        "tbl_70eff70e8607a22d5aefa3a3362de6aebc934b526d8096ea45ecdad5ab2d3e91",
+        "tbl_929b58991fe4338c757276556a424ddb430c2d44aca0703c3f4acca21f2fb2d6",
+        "tbl_ad7f3da068de1feba8aa6aeaa19e1ecec7bbf9c163a6ab47bb5b6aab9367530e",
+        "tbl_0b806ba5d2a01cecd33be5927a877bab3711ee1c2111d6796a4a7ab430338533",
+        "tbl_2f32b7520214715111a367b968521ceccfa86e45b0f20eb0aea152afdb795e6c",
+        "tbl_99cab0babba599e3c5b47709778ef4e01f13de8e0dce95717c2181b84984f430",
+        "tbl_d272df1c5a9744f702469a8b26c15ccefee1300877b438fe8e454bdb0b0b706f",
+        "tbl_0dd98cc4d3f022ccce3c302b0324c1b60e54404c21d0d8c98794b30356d70f0e"
+      ],
+      "question": "Tra cứu tổng tài sản hợp nhất của HDB năm 2023.",
+      "question_id": "retq_905e8568becf90520e588c3292c269b0a7030ba5ec4eff4f4cbcf8d21a0fba23",
+      "root_cause": "ranking_only",
+      "trace": {
+        "eligible_count": 346,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 1835,
+            "field": "company_codes",
+            "matched_count_before_intersection": 1835,
+            "requested_values": [
+              "HDB"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 346,
+            "field": "periods",
+            "matched_count_before_intersection": 18228,
+            "requested_values": [
+              "2023"
+            ]
+          }
+        ],
+        "metric_expansions": [
+          {
+            "added_tokens": [
+              "total",
+              "assets"
+            ],
+            "alias_tokens": [
+              "tổng",
+              "tài",
+              "sản"
+            ],
+            "canonical_metric": "total_assets"
+          }
+        ],
+        "query": "Tra cứu tổng tài sản hợp nhất của HDB năm 2023.",
+        "query_tokens": [
+          "tra",
+          "cứu",
+          "tổng",
+          "tài",
+          "sản",
+          "hợp",
+          "nhất",
+          "của",
+          "hdb",
+          "năm",
+          "2023",
+          "total",
+          "assets"
+        ],
+        "question_id": "retq_905e8568becf90520e588c3292c269b0a7030ba5ec4eff4f4cbcf8d21a0fba23",
+        "results": [
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "hợp",
+              "nhất",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_d89c6d87faae54c66b373e735536f67a9dbce34eb7a2d586fe49f5ef1ab893ee",
+              "group_contexts": [],
+              "line_end": 136,
+              "line_start": 136,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_2/HDB_financial_statements_2023_consolidated_2_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_372401f3c194d40741dc2672604546ff4bb354f00dc3c0b9b0b8a2e697ed2510",
+              "title": "BÁO CÁO TÌNH HÌNH TÀI CHÍNH HỢP NHẤT"
+            },
+            "rank": 1,
+            "score": 10.889310836791992,
+            "snippet": "title: BÁO CÁO TÌNH HÌNH TÀI CHÍNH HỢP NHẤT\nstatement: cash flow statement\nmetrics: accounts receivable | fixed assets | intangible assets | property plant equipment | total assets\nmetric aliases: Các khoản phải thu | Tài sản cố định | Tài sản cố định hữu hình | Tài sản cố định vô hình | TỔNG TÀI SẢN\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_372401f3c194d40741dc2672604546ff4bb354f00dc3c0b9b0b8a2e697ed2510"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "của",
+              "hdb",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_969e1c27df205139d52dc3d1b993a36a461a947451bd3736241f73b41f101905",
+              "group_contexts": [
+                "Nợ phải trả",
+                "Tài sản"
+              ],
+              "line_end": 1591,
+              "line_start": 1591,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_1/HDB_financial_statements_2023_separate_1_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_c4f2b5873b56347e476b7e7cdac4202ef415d872371bb054101976f080c1ecb3",
+              "title": "Bảng dưới đây trình bày các tài sản và nợ của Ngân hàng theo giá trị ghi số và theo loại tiên tệ tại ngày 31 tháng 12 năm 2023:"
+            },
+            "rank": 2,
+            "score": 9.612302780151367,
+            "snippet": "title: Bảng dưới đây trình bày các tài sản và nợ của Ngân hàng theo giá trị ghi số và theo loại tiên tệ tại ngày 31 tháng 12 năm 2023:\nstatement: balance sheet\nmetrics: total assets | total liabilities\nmetric aliases: Nợ phải trả | Tổng nợ phải trả | Tổng tài sản\ngroup context: Nợ phải trả | Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_c4f2b5873b56347e476b7e7cdac4202ef415d872371bb054101976f080c1ecb3"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_6d7b1237705b40aa68af09efd36e495197bd346378d32d84068dea4543b35bd2",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2387,
+              "line_start": 2387,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_2/HDB_financial_statements_2023_separate_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_70eff70e8607a22d5aefa3a3362de6aebc934b526d8096ea45ecdad5ab2d3e91",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 3,
+            "score": 9.319830894470215,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_70eff70e8607a22d5aefa3a3362de6aebc934b526d8096ea45ecdad5ab2d3e91"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_6d7b1237705b40aa68af09efd36e495197bd346378d32d84068dea4543b35bd2",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2297,
+              "line_start": 2297,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_2/HDB_financial_statements_2023_separate_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_929b58991fe4338c757276556a424ddb430c2d44aca0703c3f4acca21f2fb2d6",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 4,
+            "score": 9.319830894470215,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_929b58991fe4338c757276556a424ddb430c2d44aca0703c3f4acca21f2fb2d6"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_d89c6d87faae54c66b373e735536f67a9dbce34eb7a2d586fe49f5ef1ab893ee",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2361,
+              "line_start": 2361,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_2/HDB_financial_statements_2023_consolidated_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_ad7f3da068de1feba8aa6aeaa19e1ecec7bbf9c163a6ab47bb5b6aab9367530e",
+              "title": "Đơn vị: Triệu đồng"
+            },
+            "rank": 5,
+            "score": 9.319830894470215,
+            "snippet": "title: Đơn vị: Triệu đồng\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023\nunits: VND million",
+            "table_id": "tbl_ad7f3da068de1feba8aa6aeaa19e1ecec7bbf9c163a6ab47bb5b6aab9367530e"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_d89c6d87faae54c66b373e735536f67a9dbce34eb7a2d586fe49f5ef1ab893ee",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2314,
+              "line_start": 2314,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_2/HDB_financial_statements_2023_consolidated_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_0b806ba5d2a01cecd33be5927a877bab3711ee1c2111d6796a4a7ab430338533",
+              "title": "41.3.2 Rùi ro lãi suất (tiếp theo)"
+            },
+            "rank": 6,
+            "score": 9.23455810546875,
+            "snippet": "title: 41.3.2 Rùi ro lãi suất (tiếp theo)\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023",
+            "table_id": "tbl_0b806ba5d2a01cecd33be5927a877bab3711ee1c2111d6796a4a7ab430338533"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_6d7b1237705b40aa68af09efd36e495197bd346378d32d84068dea4543b35bd2",
+              "group_contexts": [
+                "Tài sản"
+              ],
+              "line_end": 2318,
+              "line_start": 2318,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_2/HDB_financial_statements_2023_separate_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_2f32b7520214715111a367b968521ceccfa86e45b0f20eb0aea152afdb795e6c",
+              "title": "41.3.2 Rủi ro lãi suất (tiếp theo)"
+            },
+            "rank": 7,
+            "score": 9.23455810546875,
+            "snippet": "title: 41.3.2 Rủi ro lãi suất (tiếp theo)\nstatement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tài sản\ncompany: HDB\nperiods: 2023",
+            "table_id": "tbl_2f32b7520214715111a367b968521ceccfa86e45b0f20eb0aea152afdb795e6c"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_969e1c27df205139d52dc3d1b993a36a461a947451bd3736241f73b41f101905",
+              "group_contexts": [
+                "Nợ phải trả",
+                "Tài sản"
+              ],
+              "line_end": 1633,
+              "line_start": 1633,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_1/HDB_financial_statements_2023_separate_1_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_99cab0babba599e3c5b47709778ef4e01f13de8e0dce95717c2181b84984f430",
+              "title": null
+            },
+            "rank": 8,
+            "score": 9.106573104858398,
+            "snippet": "statement: balance sheet\nmetrics: total assets | total liabilities\nmetric aliases: Nợ phải trả | Tổng nợ phải trả | Tổng tài sản\ngroup context: Nợ phải trả | Tài sản\ncompany: HDB\nperiods: 2023",
+            "table_id": "tbl_99cab0babba599e3c5b47709778ef4e01f13de8e0dce95717c2181b84984f430"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_c6750c4715083d005ee76e66ae367d3734b1d00642163fb9bf5bd5acd4077557",
+              "group_contexts": [
+                "Nợ phải trả",
+                "Tài sản"
+              ],
+              "line_end": 1657,
+              "line_start": 1657,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_consolidated_1/HDB_financial_statements_2023_consolidated_1_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_d272df1c5a9744f702469a8b26c15ccefee1300877b438fe8e454bdb0b0b706f",
+              "title": null
+            },
+            "rank": 9,
+            "score": 9.106573104858398,
+            "snippet": "statement: balance sheet\nmetrics: total assets | total liabilities\nmetric aliases: Nợ phải trả | Tổng nợ phải trả | Tổng tài sản\ngroup context: Nợ phải trả | Tài sản\ncompany: HDB\nperiods: 2023",
+            "table_id": "tbl_d272df1c5a9744f702469a8b26c15ccefee1300877b438fe8e454bdb0b0b706f"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "hdb",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "HDB",
+              "doc_id": "doc_6d7b1237705b40aa68af09efd36e495197bd346378d32d84068dea4543b35bd2",
+              "group_contexts": [],
+              "line_end": 2250,
+              "line_start": 2250,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "HDB/2023/HDB_financial_statements_2023_separate_2/HDB_financial_statements_2023_separate_2_extracted.txt",
+              "statement_type": "balance_sheet",
+              "table_id": "tbl_0dd98cc4d3f022ccce3c302b0324c1b60e54404c21d0d8c98794b30356d70f0e",
+              "title": null
+            },
+            "rank": 10,
+            "score": 9.069023132324219,
+            "snippet": "statement: balance sheet\nmetrics: fixed assets | total assets | total liabilities\nmetric aliases: Nợ phải trả | TSCĐ | Tổng nợ phải trả | Tổng tài sản\ncompany: HDB\nperiods: 2023\nunits: VND | VND million",
+            "table_id": "tbl_0dd98cc4d3f022ccce3c302b0324c1b60e54404c21d0d8c98794b30356d70f0e"
+          }
+        ]
+      }
+    },
+    {
+      "failure": "zero_gold_hits",
+      "filters": {
+        "company_codes": [
+          "VSF"
+        ],
+        "periods": [
+          "2019"
+        ],
+        "statement_types": [
+          "notes"
+        ]
+      },
+      "gold_rank_beyond_10": {
+        "tbl_14356d221adccea2fca9acbeee9d317b6f47f366293dac5df7af6e949304a3a7": 19,
+        "tbl_7178f397f374720112e3934ca2ab11c3be497c59c51d32701d91706486988430": 12,
+        "tbl_b2157506dc11a7cd6a1f3a6e30090d1f696a96da3c3325119b4489a2adb7f0d1": 21
+      },
+      "gold_table_ids": [
+        "tbl_14356d221adccea2fca9acbeee9d317b6f47f366293dac5df7af6e949304a3a7",
+        "tbl_7178f397f374720112e3934ca2ab11c3be497c59c51d32701d91706486988430",
+        "tbl_b2157506dc11a7cd6a1f3a6e30090d1f696a96da3c3325119b4489a2adb7f0d1"
+      ],
+      "intent": "compare",
+      "missing_gold_table_ids": [
+        "tbl_14356d221adccea2fca9acbeee9d317b6f47f366293dac5df7af6e949304a3a7",
+        "tbl_7178f397f374720112e3934ca2ab11c3be497c59c51d32701d91706486988430",
+        "tbl_b2157506dc11a7cd6a1f3a6e30090d1f696a96da3c3325119b4489a2adb7f0d1"
+      ],
+      "note": "All three reviewed source spans contain ownership/investment terms, while their BM25 documents have generic notes titles and no metric labels; ranks are 12, 19, and 21.",
+      "predicted_table_ids": [
+        "tbl_4be1f97d8c84732baa4e4cc5389388c8a34e99f2c9d8878baa26456174fd7845",
+        "tbl_916e9082786974a0cfe1315f678c30a3b06f17be4607b5f43e76cf80d96c4389",
+        "tbl_56cbcb8ac1a87eec41efff9d983110645468e67b3521d3c1d36d6d76a222973d",
+        "tbl_3af54f7053fa6b59c4fc7d459a42e765f6e463a11b6a33bafa26c32c5262b02f",
+        "tbl_4809a2aae1ef555902270dfc380be3c7d0983a97b2e17fd9404678ff611bbf16",
+        "tbl_21a88164c203323e200236ecce1691c5cf2ab7334d5282cc33ccd147e83cae39",
+        "tbl_57cdf5d3869f9f30d68912f3125b1c7d03755d7087da72e9e079761a16437049",
+        "tbl_5f2528a814e3613568a1803c666a3e2a85127ad0c49084eaa076ee7629137f12",
+        "tbl_86cdac87d86f4ee3767f27db3299d81db237acfd1d9a638b223e20cc8c44ca75",
+        "tbl_0a5f2c4e9fbbedc73d8cce9347158eee39cf32a28064d535a67b11bd79ad9df0"
+      ],
+      "question": "Đối chiếu tỷ lệ sở hữu và giá trị đầu tư tại các công ty liên kết của VSF năm 2019.",
+      "question_id": "retq_9a05b36a4b132789fe7ddd37f32f3ea8f6d14b2f51bef2ca73991c166adfa1d5",
+      "root_cause": "missing_alias",
+      "trace": {
+        "eligible_count": 24,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 1194,
+            "field": "company_codes",
+            "matched_count_before_intersection": 1194,
+            "requested_values": [
+              "VSF"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 183,
+            "field": "periods",
+            "matched_count_before_intersection": 15553,
+            "requested_values": [
+              "2019"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 24,
+            "field": "statement_types",
+            "matched_count_before_intersection": 1479,
+            "requested_values": [
+              "notes"
+            ]
+          }
+        ],
+        "metric_expansions": [],
+        "query": "Đối chiếu tỷ lệ sở hữu và giá trị đầu tư tại các công ty liên kết của VSF năm 2019.",
+        "query_tokens": [
+          "đối",
+          "chiếu",
+          "tỷ",
+          "lệ",
+          "sở",
+          "hữu",
+          "và",
+          "giá",
+          "trị",
+          "đầu",
+          "tư",
+          "tại",
+          "các",
+          "công",
+          "ty",
+          "liên",
+          "kết",
+          "của",
+          "vsf",
+          "năm",
+          "2019"
+        ],
+        "question_id": "retq_9a05b36a4b132789fe7ddd37f32f3ea8f6d14b2f51bef2ca73991c166adfa1d5",
+        "results": [
+          {
+            "matched_tokens": [
+              "2019",
+              "các",
+              "kết",
+              "năm",
+              "tư",
+              "vsf",
+              "đầu"
+            ],
+            "metadata": {
+              "company_code": "VSF",
+              "doc_id": "doc_d2431df85a09c6e80015583109970f03e3ea9b63a01929a5d53ea7852879c719",
+              "group_contexts": [
+                "Các khoản đầu tư dài hạn khác"
+              ],
+              "line_end": 865,
+              "line_start": 865,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "VSF/2019/VSF_financial_statements_2019_separate/VSF_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_4be1f97d8c84732baa4e4cc5389388c8a34e99f2c9d8878baa26456174fd7845",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 1,
+            "score": 7.08885383605957,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ngroup context: Các khoản đầu tư dài hạn khác\ncompany: VSF\nperiods: 2019\nunits: VND | percent",
+            "table_id": "tbl_4be1f97d8c84732baa4e4cc5389388c8a34e99f2c9d8878baa26456174fd7845"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "kết",
+              "năm",
+              "tư",
+              "vsf",
+              "và",
+              "đầu"
+            ],
+            "metadata": {
+              "company_code": "VSF",
+              "doc_id": "doc_129681d5e2fada15e7a1d1f5f043459376fcd54d7b7e7de77116e5a09f0627ac",
+              "group_contexts": [
+                "Ngân hàng BNP Paribas – Chi nhánh Thành phố Hồ Chí Minh",
+                "Ngân hàng Thương mại Cổ phần An Bình",
+                "Ngân hàng Thương mại Cổ phần Hàng hải Việt Nam – Chi nhánh Hồ Chí Minh",
+                "Ngân hàng Thương mại Cổ phần Phát triển Thành phố Hồ Chí Minh",
+                "Ngân hàng Thương mại Cổ phần Quân đội",
+                "Ngân hàng Thương mại Cổ phần Xuất nhập khẩu Việt Nam – Chi nhánh Sài Gòn",
+                "Ngân hàng Thương mại Cổ phần Đầu tư và Phát triển Việt Nam"
+              ],
+              "line_end": 1445,
+              "line_start": 1445,
+              "periods": [
+                "2019",
+                "2019-01-01",
+                "2019-12-31"
+              ],
+              "source_path": "VSF/2019/VSF_financial_statements_2019_consolidated/VSF_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_916e9082786974a0cfe1315f678c30a3b06f17be4607b5f43e76cf80d96c4389",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 2,
+            "score": 5.382600784301758,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ngroup context: Ngân hàng BNP Paribas – Chi nhánh Thành phố Hồ Chí Minh | Ngân hàng Thương mại Cổ phần An Bình | Ngân hàng Thương mại Cổ phần Hàng hải Việt Nam – Chi nhánh Hồ Chí Minh | Ngân hàng Thương mại Cổ phần Phát triển Thành phố Hồ Chí Minh | Ngân hàng Thương mại Cổ phần Quân đội | Ngân hàng Thương mại Cổ phần Xuất nhập khẩu Việt Nam – Chi nhánh Sài Gòn | Ngân hàng Thương m",
+            "table_id": "tbl_916e9082786974a0cfe1315f678c30a3b06f17be4607b5f43e76cf80d96c4389"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "kết",
+              "năm",
+              "vsf"
+            ],
+            "metadata": {
+              "company_code": "VSF",
+              "doc_id": "doc_d2431df85a09c6e80015583109970f03e3ea9b63a01929a5d53ea7852879c719",
+              "group_contexts": [],
+              "line_end": 1062,
+              "line_start": 1062,
+              "periods": [
+                "2019",
+                "2019-01-01",
+                "2019-12-31"
+              ],
+              "source_path": "VSF/2019/VSF_financial_statements_2019_separate/VSF_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_56cbcb8ac1a87eec41efff9d983110645468e67b3521d3c1d36d6d76a222973d",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 3,
+            "score": 5.282284259796143,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: VSF\nperiods: 2019 | 2019-01-01 | 2019-12-31\nunits: VND",
+            "table_id": "tbl_56cbcb8ac1a87eec41efff9d983110645468e67b3521d3c1d36d6d76a222973d"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "kết",
+              "năm",
+              "vsf"
+            ],
+            "metadata": {
+              "company_code": "VSF",
+              "doc_id": "doc_129681d5e2fada15e7a1d1f5f043459376fcd54d7b7e7de77116e5a09f0627ac",
+              "group_contexts": [],
+              "line_end": 1191,
+              "line_start": 1191,
+              "periods": [
+                "2019",
+                "2019-01-01",
+                "2019-12-31"
+              ],
+              "source_path": "VSF/2019/VSF_financial_statements_2019_consolidated/VSF_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_3af54f7053fa6b59c4fc7d459a42e765f6e463a11b6a33bafa26c32c5262b02f",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 4,
+            "score": 5.257406234741211,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: VSF\nperiods: 2019 | 2019-01-01 | 2019-12-31\nunits: VND",
+            "table_id": "tbl_3af54f7053fa6b59c4fc7d459a42e765f6e463a11b6a33bafa26c32c5262b02f"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "kết",
+              "năm",
+              "vsf"
+            ],
+            "metadata": {
+              "company_code": "VSF",
+              "doc_id": "doc_129681d5e2fada15e7a1d1f5f043459376fcd54d7b7e7de77116e5a09f0627ac",
+              "group_contexts": [],
+              "line_end": 1181,
+              "line_start": 1181,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "VSF/2019/VSF_financial_statements_2019_consolidated/VSF_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_4809a2aae1ef555902270dfc380be3c7d0983a97b2e17fd9404678ff611bbf16",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 5,
+            "score": 5.120902061462402,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: VSF\nperiods: 2019",
+            "table_id": "tbl_4809a2aae1ef555902270dfc380be3c7d0983a97b2e17fd9404678ff611bbf16"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "kết",
+              "năm",
+              "vsf"
+            ],
+            "metadata": {
+              "company_code": "VSF",
+              "doc_id": "doc_d2431df85a09c6e80015583109970f03e3ea9b63a01929a5d53ea7852879c719",
+              "group_contexts": [],
+              "line_end": 1070,
+              "line_start": 1070,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "VSF/2019/VSF_financial_statements_2019_separate/VSF_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_21a88164c203323e200236ecce1691c5cf2ab7334d5282cc33ccd147e83cae39",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 6,
+            "score": 5.093153953552246,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: VSF\nperiods: 2019\nunits: VND",
+            "table_id": "tbl_21a88164c203323e200236ecce1691c5cf2ab7334d5282cc33ccd147e83cae39"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "kết",
+              "năm",
+              "vsf"
+            ],
+            "metadata": {
+              "company_code": "VSF",
+              "doc_id": "doc_d2431df85a09c6e80015583109970f03e3ea9b63a01929a5d53ea7852879c719",
+              "group_contexts": [],
+              "line_end": 1303,
+              "line_start": 1303,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "VSF/2019/VSF_financial_statements_2019_separate/VSF_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_57cdf5d3869f9f30d68912f3125b1c7d03755d7087da72e9e079761a16437049",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 7,
+            "score": 5.093153953552246,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: VSF\nperiods: 2019\nunits: VND",
+            "table_id": "tbl_57cdf5d3869f9f30d68912f3125b1c7d03755d7087da72e9e079761a16437049"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "kết",
+              "năm",
+              "vsf"
+            ],
+            "metadata": {
+              "company_code": "VSF",
+              "doc_id": "doc_d2431df85a09c6e80015583109970f03e3ea9b63a01929a5d53ea7852879c719",
+              "group_contexts": [],
+              "line_end": 982,
+              "line_start": 982,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "VSF/2019/VSF_financial_statements_2019_separate/VSF_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_5f2528a814e3613568a1803c666a3e2a85127ad0c49084eaa076ee7629137f12",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 8,
+            "score": 5.093153953552246,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: VSF\nperiods: 2019\nunits: VND",
+            "table_id": "tbl_5f2528a814e3613568a1803c666a3e2a85127ad0c49084eaa076ee7629137f12"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "kết",
+              "năm",
+              "vsf"
+            ],
+            "metadata": {
+              "company_code": "VSF",
+              "doc_id": "doc_d2431df85a09c6e80015583109970f03e3ea9b63a01929a5d53ea7852879c719",
+              "group_contexts": [],
+              "line_end": 990,
+              "line_start": 990,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "VSF/2019/VSF_financial_statements_2019_separate/VSF_financial_statements_2019_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_86cdac87d86f4ee3767f27db3299d81db237acfd1d9a638b223e20cc8c44ca75",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 9,
+            "score": 5.093153953552246,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: VSF\nperiods: 2019\nunits: VND",
+            "table_id": "tbl_86cdac87d86f4ee3767f27db3299d81db237acfd1d9a638b223e20cc8c44ca75"
+          },
+          {
+            "matched_tokens": [
+              "2019",
+              "kết",
+              "năm",
+              "vsf"
+            ],
+            "metadata": {
+              "company_code": "VSF",
+              "doc_id": "doc_129681d5e2fada15e7a1d1f5f043459376fcd54d7b7e7de77116e5a09f0627ac",
+              "group_contexts": [],
+              "line_end": 1439,
+              "line_start": 1439,
+              "periods": [
+                "2019"
+              ],
+              "source_path": "VSF/2019/VSF_financial_statements_2019_consolidated/VSF_financial_statements_2019_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_0a5f2c4e9fbbedc73d8cce9347158eee39cf32a28064d535a67b11bd79ad9df0",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)"
+            },
+            "rank": 10,
+            "score": 5.065711975097656,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2019 (tiếp theo)\nstatement: notes\ncompany: VSF\nperiods: 2019\nunits: VND",
+            "table_id": "tbl_0a5f2c4e9fbbedc73d8cce9347158eee39cf32a28064d535a67b11bd79ad9df0"
+          }
+        ]
+      }
+    },
+    {
+      "failure": "zero_gold_hits",
+      "filters": {
+        "company_codes": [
+          "SHB"
+        ],
+        "periods": [
+          "2020"
+        ],
+        "statement_types": [
+          "cash_flow_statement"
+        ]
+      },
+      "gold_rank_beyond_10": {
+        "tbl_4a47c080f3d554db3a4571de05947364e88cc56c9d3c4072f8ec2ba0360ac805": 12
+      },
+      "gold_table_ids": [
+        "tbl_4a47c080f3d554db3a4571de05947364e88cc56c9d3c4072f8ec2ba0360ac805"
+      ],
+      "intent": "lookup",
+      "missing_gold_table_ids": [
+        "tbl_4a47c080f3d554db3a4571de05947364e88cc56c9d3c4072f8ec2ba0360ac805"
+      ],
+      "note": "Reviewed source line 261 contains deposits, loans, and securities-trading cash-flow rows, but the BM25 document retains only other_income; the eligible gold ranks 12.",
+      "predicted_table_ids": [
+        "tbl_6cd9280fb1ccf696546c3105309cfb03d36b793aaf34c19ae2ee7182bbf03b5a",
+        "tbl_9c0ecd8483c744dbde1a8c63b889cab1d316a8f93cc89ef1e712e5166a1e2aee",
+        "tbl_bcc298850727ce47ffb486a816084a898b0248c262d6a5e30879a60d88ed4abd",
+        "tbl_db9f28f018705e45aaf7c2f0612afde43f2d8fd1f5662778e8862e14dbc5ece0",
+        "tbl_e72e098266759ee6cb9aee74fc2a06dc0c8d62d78b4dd3cf6f3b5ecb7fd9f2f1",
+        "tbl_1b86ffe5d9531b3725f7a6b178811c39161ef247190fac181131af8ba1cb7aa3",
+        "tbl_1a542b2c26ce1ea6f0de6a612c13a8ea2087cefb4f8e2d69f5ac236fc436d0a0",
+        "tbl_300e02a3be9aa06b1837ac909ec75afd0a182d5d6e7d6871aa119800d1ff262c",
+        "tbl_5ae75c42f82fb0199678428ba30d633feed0b3c86ecd343a549bd022e88fb0d7",
+        "tbl_d7cabbe6198ab299af4d4fe56a5254815974df9e294ddb307750a43bb36c3543"
+      ],
+      "question": "Tra cứu biến động tiền gửi, tiền vay và kinh doanh chứng khoán trên LCTT riêng của SHB năm 2020.",
+      "question_id": "retq_a92e064c27aea88ce6b2d4d81bae32e94fc23ac351036e8fd88058ed484d3d62",
+      "root_cause": "missing_alias",
+      "trace": {
+        "eligible_count": 13,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 2238,
+            "field": "company_codes",
+            "matched_count_before_intersection": 2238,
+            "requested_values": [
+              "SHB"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 234,
+            "field": "periods",
+            "matched_count_before_intersection": 17285,
+            "requested_values": [
+              "2020"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 13,
+            "field": "statement_types",
+            "matched_count_before_intersection": 13712,
+            "requested_values": [
+              "cash_flow_statement"
+            ]
+          }
+        ],
+        "metric_expansions": [],
+        "query": "Tra cứu biến động tiền gửi, tiền vay và kinh doanh chứng khoán trên LCTT riêng của SHB năm 2020.",
+        "query_tokens": [
+          "tra",
+          "cứu",
+          "biến",
+          "động",
+          "tiền",
+          "gửi",
+          "vay",
+          "và",
+          "kinh",
+          "doanh",
+          "chứng",
+          "khoán",
+          "trên",
+          "riêng",
+          "của",
+          "shb",
+          "năm",
+          "2020"
+        ],
+        "question_id": "retq_a92e064c27aea88ce6b2d4d81bae32e94fc23ac351036e8fd88058ed484d3d62",
+        "results": [
+          {
+            "matched_tokens": [
+              "2020",
+              "của",
+              "shb",
+              "động"
+            ],
+            "metadata": {
+              "company_code": "SHB",
+              "doc_id": "doc_513b91c70b26a36e1f8e8fef189f63bc82de19c56f987eb20938b155d584ca00",
+              "group_contexts": [
+                "Những thay đổi về nợ hoạt động",
+                "Những thay đổi về tài sản hoạt động"
+              ],
+              "line_end": 273,
+              "line_start": 273,
+              "periods": [
+                "2019",
+                "2020"
+              ],
+              "source_path": "SHB/2020/SHB_financial_statements_2020_consolidated/SHB_financial_statements_2020_consolidated_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_6cd9280fb1ccf696546c3105309cfb03d36b793aaf34c19ae2ee7182bbf03b5a",
+              "title": "của Ngân hàng Nhà nước Việt Nam)"
+            },
+            "rank": 1,
+            "score": 4.015345573425293,
+            "snippet": "title: của Ngân hàng Nhà nước Việt Nam)\nstatement: cash flow statement\nmetrics: other income\nmetric aliases: Thu nhập khác\ngroup context: Những thay đổi về nợ hoạt động | Những thay đổi về tài sản hoạt động\ncompany: SHB\nperiods: 2019 | 2020\nunits: VND million",
+            "table_id": "tbl_6cd9280fb1ccf696546c3105309cfb03d36b793aaf34c19ae2ee7182bbf03b5a"
+          },
+          {
+            "matched_tokens": [
+              "2020",
+              "năm",
+              "shb"
+            ],
+            "metadata": {
+              "company_code": "SHB",
+              "doc_id": "doc_193952ebfcf9e81221a5d8dc153ee1439f8784e6973e9df1794898f481a77927",
+              "group_contexts": [],
+              "line_end": 1538,
+              "line_start": 1538,
+              "periods": [
+                "2020"
+              ],
+              "source_path": "SHB/2020/SHB_financial_statements_2020_separate/SHB_financial_statements_2020_separate_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_9c0ecd8483c744dbde1a8c63b889cab1d316a8f93cc89ef1e712e5166a1e2aee",
+              "title": "Năm kết thúc ngày 31 tháng 12 năm 2020"
+            },
+            "rank": 2,
+            "score": 3.917804479598999,
+            "snippet": "title: Năm kết thúc ngày 31 tháng 12 năm 2020\nstatement: cash flow statement\ncompany: SHB\nperiods: 2020\nunits: VND million",
+            "table_id": "tbl_9c0ecd8483c744dbde1a8c63b889cab1d316a8f93cc89ef1e712e5166a1e2aee"
+          },
+          {
+            "matched_tokens": [
+              "2020",
+              "năm",
+              "shb"
+            ],
+            "metadata": {
+              "company_code": "SHB",
+              "doc_id": "doc_193952ebfcf9e81221a5d8dc153ee1439f8784e6973e9df1794898f481a77927",
+              "group_contexts": [],
+              "line_end": 1493,
+              "line_start": 1493,
+              "periods": [
+                "2020"
+              ],
+              "source_path": "SHB/2020/SHB_financial_statements_2020_separate/SHB_financial_statements_2020_separate_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_bcc298850727ce47ffb486a816084a898b0248c262d6a5e30879a60d88ed4abd",
+              "title": "Năm kết thúc ngày 31 tháng 12 năm 2020"
+            },
+            "rank": 3,
+            "score": 3.917804479598999,
+            "snippet": "title: Năm kết thúc ngày 31 tháng 12 năm 2020\nstatement: cash flow statement\ncompany: SHB\nperiods: 2020\nunits: VND million",
+            "table_id": "tbl_bcc298850727ce47ffb486a816084a898b0248c262d6a5e30879a60d88ed4abd"
+          },
+          {
+            "matched_tokens": [
+              "2020",
+              "năm",
+              "shb"
+            ],
+            "metadata": {
+              "company_code": "SHB",
+              "doc_id": "doc_513b91c70b26a36e1f8e8fef189f63bc82de19c56f987eb20938b155d584ca00",
+              "group_contexts": [],
+              "line_end": 1647,
+              "line_start": 1647,
+              "periods": [
+                "2020"
+              ],
+              "source_path": "SHB/2020/SHB_financial_statements_2020_consolidated/SHB_financial_statements_2020_consolidated_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_db9f28f018705e45aaf7c2f0612afde43f2d8fd1f5662778e8862e14dbc5ece0",
+              "title": "Năm kết thúc ngày 31 tháng 12 năm 2020"
+            },
+            "rank": 4,
+            "score": 3.917804479598999,
+            "snippet": "title: Năm kết thúc ngày 31 tháng 12 năm 2020\nstatement: cash flow statement\ncompany: SHB\nperiods: 2020\nunits: VND million",
+            "table_id": "tbl_db9f28f018705e45aaf7c2f0612afde43f2d8fd1f5662778e8862e14dbc5ece0"
+          },
+          {
+            "matched_tokens": [
+              "2020",
+              "năm",
+              "shb"
+            ],
+            "metadata": {
+              "company_code": "SHB",
+              "doc_id": "doc_513b91c70b26a36e1f8e8fef189f63bc82de19c56f987eb20938b155d584ca00",
+              "group_contexts": [],
+              "line_end": 1597,
+              "line_start": 1597,
+              "periods": [
+                "2020"
+              ],
+              "source_path": "SHB/2020/SHB_financial_statements_2020_consolidated/SHB_financial_statements_2020_consolidated_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_e72e098266759ee6cb9aee74fc2a06dc0c8d62d78b4dd3cf6f3b5ecb7fd9f2f1",
+              "title": "Năm kết thúc ngày 31 tháng 12 năm 2020"
+            },
+            "rank": 5,
+            "score": 3.917804479598999,
+            "snippet": "title: Năm kết thúc ngày 31 tháng 12 năm 2020\nstatement: cash flow statement\ncompany: SHB\nperiods: 2020\nunits: VND million",
+            "table_id": "tbl_e72e098266759ee6cb9aee74fc2a06dc0c8d62d78b4dd3cf6f3b5ecb7fd9f2f1"
+          },
+          {
+            "matched_tokens": [
+              "2020",
+              "năm",
+              "shb"
+            ],
+            "metadata": {
+              "company_code": "SHB",
+              "doc_id": "doc_193952ebfcf9e81221a5d8dc153ee1439f8784e6973e9df1794898f481a77927",
+              "group_contexts": [],
+              "line_end": 1565,
+              "line_start": 1565,
+              "periods": [
+                "2020"
+              ],
+              "source_path": "SHB/2020/SHB_financial_statements_2020_separate/SHB_financial_statements_2020_separate_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_1b86ffe5d9531b3725f7a6b178811c39161ef247190fac181131af8ba1cb7aa3",
+              "title": "Năm kết thúc ngày 31 tháng 12 năm 2019"
+            },
+            "rank": 6,
+            "score": 3.5616800785064697,
+            "snippet": "title: Năm kết thúc ngày 31 tháng 12 năm 2019\nstatement: cash flow statement\ncompany: SHB\nperiods: 2020\nunits: VND million",
+            "table_id": "tbl_1b86ffe5d9531b3725f7a6b178811c39161ef247190fac181131af8ba1cb7aa3"
+          },
+          {
+            "matched_tokens": [
+              "2020",
+              "shb",
+              "động"
+            ],
+            "metadata": {
+              "company_code": "SHB",
+              "doc_id": "doc_d39276f1c8cc41f8377c6463643a072b7885e7cfd52519d83a4951a31750e0ea",
+              "group_contexts": [
+                "Trong đó:"
+              ],
+              "line_end": 2103,
+              "line_start": 2103,
+              "periods": [
+                "2020",
+                "2021"
+              ],
+              "source_path": "SHB/2021/SHB_financial_statements_2021_consolidated/SHB_financial_statements_2021_consolidated_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_1a542b2c26ce1ea6f0de6a612c13a8ea2087cefb4f8e2d69f5ac236fc436d0a0",
+              "title": "32. Chi phí hoạt động"
+            },
+            "rank": 7,
+            "score": 3.2176551818847656,
+            "snippet": "title: 32. Chi phí hoạt động\nstatement: cash flow statement\nmetrics: depreciation\nmetric aliases: Khấu hao tài sản cố định\ngroup context: Trong đó:\ncompany: SHB\nperiods: 2020 | 2021\nunits: VND million",
+            "table_id": "tbl_1a542b2c26ce1ea6f0de6a612c13a8ea2087cefb4f8e2d69f5ac236fc436d0a0"
+          },
+          {
+            "matched_tokens": [
+              "2020",
+              "shb",
+              "động"
+            ],
+            "metadata": {
+              "company_code": "SHB",
+              "doc_id": "doc_193952ebfcf9e81221a5d8dc153ee1439f8784e6973e9df1794898f481a77927",
+              "group_contexts": [
+                "Trong đó:"
+              ],
+              "line_end": 1941,
+              "line_start": 1941,
+              "periods": [
+                "2019",
+                "2020"
+              ],
+              "source_path": "SHB/2020/SHB_financial_statements_2020_separate/SHB_financial_statements_2020_separate_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_300e02a3be9aa06b1837ac909ec75afd0a182d5d6e7d6871aa119800d1ff262c",
+              "title": "30. Chi phí hoạt động"
+            },
+            "rank": 8,
+            "score": 3.2176551818847656,
+            "snippet": "title: 30. Chi phí hoạt động\nstatement: cash flow statement\nmetrics: depreciation\nmetric aliases: Khấu hao tài sản cố định\ngroup context: Trong đó:\ncompany: SHB\nperiods: 2019 | 2020\nunits: VND million",
+            "table_id": "tbl_300e02a3be9aa06b1837ac909ec75afd0a182d5d6e7d6871aa119800d1ff262c"
+          },
+          {
+            "matched_tokens": [
+              "2020",
+              "shb",
+              "động"
+            ],
+            "metadata": {
+              "company_code": "SHB",
+              "doc_id": "doc_513b91c70b26a36e1f8e8fef189f63bc82de19c56f987eb20938b155d584ca00",
+              "group_contexts": [
+                "Trong đó:"
+              ],
+              "line_end": 1968,
+              "line_start": 1968,
+              "periods": [
+                "2019",
+                "2020"
+              ],
+              "source_path": "SHB/2020/SHB_financial_statements_2020_consolidated/SHB_financial_statements_2020_consolidated_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_5ae75c42f82fb0199678428ba30d633feed0b3c86ecd343a549bd022e88fb0d7",
+              "title": "31. Chi phí hoạt động"
+            },
+            "rank": 9,
+            "score": 3.2176551818847656,
+            "snippet": "title: 31. Chi phí hoạt động\nstatement: cash flow statement\nmetrics: depreciation\nmetric aliases: Khấu hao tài sản cố định\ngroup context: Trong đó:\ncompany: SHB\nperiods: 2019 | 2020\nunits: VND million",
+            "table_id": "tbl_5ae75c42f82fb0199678428ba30d633feed0b3c86ecd343a549bd022e88fb0d7"
+          },
+          {
+            "matched_tokens": [
+              "2020",
+              "shb",
+              "động"
+            ],
+            "metadata": {
+              "company_code": "SHB",
+              "doc_id": "doc_2779f8d0fbeac5e15923a72227f88acfb59d68229c583779fab947270e744c32",
+              "group_contexts": [
+                "Trong đó:"
+              ],
+              "line_end": 2048,
+              "line_start": 2048,
+              "periods": [
+                "2020",
+                "2021"
+              ],
+              "source_path": "SHB/2021/SHB_financial_statements_2021_separate/SHB_financial_statements_2021_separate_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_d7cabbe6198ab299af4d4fe56a5254815974df9e294ddb307750a43bb36c3543",
+              "title": "32. Chi phí hoạt động"
+            },
+            "rank": 10,
+            "score": 3.2176551818847656,
+            "snippet": "title: 32. Chi phí hoạt động\nstatement: cash flow statement\nmetrics: depreciation\nmetric aliases: Khấu hao tài sản cố định\ngroup context: Trong đó:\ncompany: SHB\nperiods: 2020 | 2021\nunits: VND million",
+            "table_id": "tbl_d7cabbe6198ab299af4d4fe56a5254815974df9e294ddb307750a43bb36c3543"
+          }
+        ]
+      }
+    },
+    {
+      "failure": "zero_gold_hits",
+      "filters": {
+        "company_codes": [
+          "SJG"
+        ],
+        "periods": [
+          "2018"
+        ],
+        "statement_types": [
+          "notes"
+        ]
+      },
+      "gold_rank_beyond_10": {
+        "tbl_48dc6bdecfc04c5fece016f1a2e710e71b7576fb8ed92e482ec71ce61a6345fb": 17,
+        "tbl_9eb0512b316a80754491a8cfb2acac52b79c8cd1c89e7c366f272a27f846a470": 18,
+        "tbl_ff659cea1878c04aa499e1360803b41e95dcf12aea9bee5859dbbb483a115bbf": 19
+      },
+      "gold_table_ids": [
+        "tbl_48dc6bdecfc04c5fece016f1a2e710e71b7576fb8ed92e482ec71ce61a6345fb",
+        "tbl_9eb0512b316a80754491a8cfb2acac52b79c8cd1c89e7c366f272a27f846a470",
+        "tbl_ff659cea1878c04aa499e1360803b41e95dcf12aea9bee5859dbbb483a115bbf"
+      ],
+      "intent": "growth",
+      "missing_gold_table_ids": [
+        "tbl_48dc6bdecfc04c5fece016f1a2e710e71b7576fb8ed92e482ec71ce61a6345fb",
+        "tbl_9eb0512b316a80754491a8cfb2acac52b79c8cd1c89e7c366f272a27f846a470",
+        "tbl_ff659cea1878c04aa499e1360803b41e95dcf12aea9bee5859dbbb483a115bbf"
+      ],
+      "note": "The three reviewed source spans contain direct/indirect subsidiaries and associates, while their BM25 documents have generic notes titles and no metric labels; ranks are 17 through 19.",
+      "predicted_table_ids": [
+        "tbl_5ebe2562368be829ee0b5991b52d554678e603bf4a2b68eb550c9c374a998614",
+        "tbl_5e89cdff7d6cfd9656789049d96779e76703bdde43572ff2bc50a55a9c78b713",
+        "tbl_08a1347ad21595e39ab185c569eb19e269e096c4852286de3e8944772edd2d6f",
+        "tbl_1cc4620fdd365e8d31cc7d5f6e8f8e6ca4429053f73c2ce0d56858d9bd73d92e",
+        "tbl_33dbbb8195d92fcaa176db24fa018ba583e685e5b455d50d8e3c74016f528efb",
+        "tbl_3fd94a4efa2f9d2388b4d86f2ac386f6f759dee49abdb5697cb6213f7dd13e8f",
+        "tbl_4cbaf89da1b07de2ea55b96315e56f3335ee2bc01b1c65a3111d34d9dd4a5a8f",
+        "tbl_60c9a00ca389d599ce985fe01ed9efb6098966ea8577c6f3041fcd38dcc42c4e",
+        "tbl_7f8e44bc632a30b6fc4b91fd28fbf6f72379b73241c41bd1623aa97b155d814c",
+        "tbl_8fe8f08786aa417bdae87a61e6095e7374823c5c19eca9ce8d3f7c17db8ecc5d"
+      ],
+      "question": "Tính biến động và rà soát cơ cấu các công ty con, công ty liên kết của SJG trong năm 2018.",
+      "question_id": "retq_af86db7ee5e169a65e2211bd3a20af63c4ecd906bf97d4572b15d0b6ea01859b",
+      "root_cause": "missing_alias",
+      "trace": {
+        "eligible_count": 21,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 1056,
+            "field": "company_codes",
+            "matched_count_before_intersection": 1056,
+            "requested_values": [
+              "SJG"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 174,
+            "field": "periods",
+            "matched_count_before_intersection": 14691,
+            "requested_values": [
+              "2018"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 21,
+            "field": "statement_types",
+            "matched_count_before_intersection": 1479,
+            "requested_values": [
+              "notes"
+            ]
+          }
+        ],
+        "metric_expansions": [],
+        "query": "Tính biến động và rà soát cơ cấu các công ty con, công ty liên kết của SJG trong năm 2018.",
+        "query_tokens": [
+          "tính",
+          "biến",
+          "động",
+          "và",
+          "rà",
+          "soát",
+          "cơ",
+          "cấu",
+          "các",
+          "công",
+          "ty",
+          "con",
+          "liên",
+          "kết",
+          "của",
+          "sjg",
+          "trong",
+          "năm",
+          "2018"
+        ],
+        "question_id": "retq_af86db7ee5e169a65e2211bd3a20af63c4ecd906bf97d4572b15d0b6ea01859b",
+        "results": [
+          {
+            "matched_tokens": [
+              "2018",
+              "sjg"
+            ],
+            "metadata": {
+              "company_code": "SJG",
+              "doc_id": "doc_378421c4d4e3473f27280733f31d0b93a7a5bc138c4fbd2b3cf676a603963c19",
+              "group_contexts": [
+                "Giá trị còn lại",
+                "Giá trị hao mòn",
+                "Tại ngày 31/12/2018"
+              ],
+              "line_end": 1456,
+              "line_start": 1456,
+              "periods": [
+                "2018"
+              ],
+              "source_path": "SJG/2018/SJG_financial_statements_2018_consolidated/SJG_financial_statements_2018_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_5ebe2562368be829ee0b5991b52d554678e603bf4a2b68eb550c9c374a998614",
+              "title": "Bản thuyết minh Báo cáo tài chính hợp nhất (tiếp theo)"
+            },
+            "rank": 1,
+            "score": 3.0874388217926025,
+            "snippet": "title: Bản thuyết minh Báo cáo tài chính hợp nhất (tiếp theo)\nstatement: notes\ngroup context: Giá trị còn lại | Giá trị hao mòn | Tại ngày 31/12/2018\ncompany: SJG\nperiods: 2018",
+            "table_id": "tbl_5ebe2562368be829ee0b5991b52d554678e603bf4a2b68eb550c9c374a998614"
+          },
+          {
+            "matched_tokens": [
+              "2018",
+              "năm",
+              "sjg"
+            ],
+            "metadata": {
+              "company_code": "SJG",
+              "doc_id": "doc_378421c4d4e3473f27280733f31d0b93a7a5bc138c4fbd2b3cf676a603963c19",
+              "group_contexts": [
+                "Nợ phải trả không phân bổ theo bộ phận",
+                "Nợ phải trả phân bổ cho bộ phận",
+                "Số cuối năm",
+                "Số đầu năm",
+                "Tài sản phân bổ cho bộ phận"
+              ],
+              "line_end": 1848,
+              "line_start": 1848,
+              "periods": [
+                "2018"
+              ],
+              "source_path": "SJG/2018/SJG_financial_statements_2018_consolidated/SJG_financial_statements_2018_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_5e89cdff7d6cfd9656789049d96779e76703bdde43572ff2bc50a55a9c78b713",
+              "title": "Bản thuyết minh Báo cáo tài chính hợp nhất (tiếp theo)"
+            },
+            "rank": 2,
+            "score": 2.978044033050537,
+            "snippet": "title: Bản thuyết minh Báo cáo tài chính hợp nhất (tiếp theo)\nstatement: notes\nmetrics: profit after tax | total assets | total liabilities\nmetric aliases: Lợi nhuận sau thuế thu nhập doanh nghiệp | Tổng nợ phải trả | Tổng tài sản\ngroup context: Nợ phải trả không phân bổ theo bộ phận | Nợ phải trả phân bổ cho bộ phận | Số cuối năm | Số đầu năm | Tài sản phân bổ cho bộ phận\ncompany: SJG\nperiods: 2018",
+            "table_id": "tbl_5e89cdff7d6cfd9656789049d96779e76703bdde43572ff2bc50a55a9c78b713"
+          },
+          {
+            "matched_tokens": [
+              "2018",
+              "sjg"
+            ],
+            "metadata": {
+              "company_code": "SJG",
+              "doc_id": "doc_378421c4d4e3473f27280733f31d0b93a7a5bc138c4fbd2b3cf676a603963c19",
+              "group_contexts": [],
+              "line_end": 1297,
+              "line_start": 1297,
+              "periods": [
+                "2018"
+              ],
+              "source_path": "SJG/2018/SJG_financial_statements_2018_consolidated/SJG_financial_statements_2018_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_08a1347ad21595e39ab185c569eb19e269e096c4852286de3e8944772edd2d6f",
+              "title": "Bản thuyết minh Báo cáo tài chính hợp nhất (tiếp theo)"
+            },
+            "rank": 3,
+            "score": 2.9727401733398438,
+            "snippet": "title: Bản thuyết minh Báo cáo tài chính hợp nhất (tiếp theo)\nstatement: notes\ncompany: SJG\nperiods: 2018",
+            "table_id": "tbl_08a1347ad21595e39ab185c569eb19e269e096c4852286de3e8944772edd2d6f"
+          },
+          {
+            "matched_tokens": [
+              "2018",
+              "sjg"
+            ],
+            "metadata": {
+              "company_code": "SJG",
+              "doc_id": "doc_67400603878caca22e5212a1886b3610ba94812f370d2d46725ad6d111e91bd3",
+              "group_contexts": [],
+              "line_end": 1076,
+              "line_start": 1076,
+              "periods": [
+                "2018"
+              ],
+              "source_path": "SJG/2018/SJG_financial_statements_2018_aggregated/SJG_financial_statements_2018_aggregated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_1cc4620fdd365e8d31cc7d5f6e8f8e6ca4429053f73c2ce0d56858d9bd73d92e",
+              "title": "Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)"
+            },
+            "rank": 4,
+            "score": 2.9727401733398438,
+            "snippet": "title: Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)\nstatement: notes\ncompany: SJG\nperiods: 2018",
+            "table_id": "tbl_1cc4620fdd365e8d31cc7d5f6e8f8e6ca4429053f73c2ce0d56858d9bd73d92e"
+          },
+          {
+            "matched_tokens": [
+              "2018",
+              "sjg"
+            ],
+            "metadata": {
+              "company_code": "SJG",
+              "doc_id": "doc_67400603878caca22e5212a1886b3610ba94812f370d2d46725ad6d111e91bd3",
+              "group_contexts": [],
+              "line_end": 743,
+              "line_start": 743,
+              "periods": [
+                "2018"
+              ],
+              "source_path": "SJG/2018/SJG_financial_statements_2018_aggregated/SJG_financial_statements_2018_aggregated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_33dbbb8195d92fcaa176db24fa018ba583e685e5b455d50d8e3c74016f528efb",
+              "title": "Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)"
+            },
+            "rank": 5,
+            "score": 2.9727401733398438,
+            "snippet": "title: Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)\nstatement: notes\ncompany: SJG\nperiods: 2018",
+            "table_id": "tbl_33dbbb8195d92fcaa176db24fa018ba583e685e5b455d50d8e3c74016f528efb"
+          },
+          {
+            "matched_tokens": [
+              "2018",
+              "sjg"
+            ],
+            "metadata": {
+              "company_code": "SJG",
+              "doc_id": "doc_67400603878caca22e5212a1886b3610ba94812f370d2d46725ad6d111e91bd3",
+              "group_contexts": [],
+              "line_end": 1278,
+              "line_start": 1278,
+              "periods": [
+                "2018"
+              ],
+              "source_path": "SJG/2018/SJG_financial_statements_2018_aggregated/SJG_financial_statements_2018_aggregated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_3fd94a4efa2f9d2388b4d86f2ac386f6f759dee49abdb5697cb6213f7dd13e8f",
+              "title": "Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)"
+            },
+            "rank": 6,
+            "score": 2.9727401733398438,
+            "snippet": "title: Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)\nstatement: notes\ncompany: SJG\nperiods: 2018",
+            "table_id": "tbl_3fd94a4efa2f9d2388b4d86f2ac386f6f759dee49abdb5697cb6213f7dd13e8f"
+          },
+          {
+            "matched_tokens": [
+              "2018",
+              "sjg"
+            ],
+            "metadata": {
+              "company_code": "SJG",
+              "doc_id": "doc_67400603878caca22e5212a1886b3610ba94812f370d2d46725ad6d111e91bd3",
+              "group_contexts": [],
+              "line_end": 1124,
+              "line_start": 1124,
+              "periods": [
+                "2018"
+              ],
+              "source_path": "SJG/2018/SJG_financial_statements_2018_aggregated/SJG_financial_statements_2018_aggregated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_4cbaf89da1b07de2ea55b96315e56f3335ee2bc01b1c65a3111d34d9dd4a5a8f",
+              "title": "Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)"
+            },
+            "rank": 7,
+            "score": 2.9727401733398438,
+            "snippet": "title: Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)\nstatement: notes\ncompany: SJG\nperiods: 2018",
+            "table_id": "tbl_4cbaf89da1b07de2ea55b96315e56f3335ee2bc01b1c65a3111d34d9dd4a5a8f"
+          },
+          {
+            "matched_tokens": [
+              "2018",
+              "sjg"
+            ],
+            "metadata": {
+              "company_code": "SJG",
+              "doc_id": "doc_67400603878caca22e5212a1886b3610ba94812f370d2d46725ad6d111e91bd3",
+              "group_contexts": [],
+              "line_end": 1178,
+              "line_start": 1178,
+              "periods": [
+                "2018"
+              ],
+              "source_path": "SJG/2018/SJG_financial_statements_2018_aggregated/SJG_financial_statements_2018_aggregated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_60c9a00ca389d599ce985fe01ed9efb6098966ea8577c6f3041fcd38dcc42c4e",
+              "title": "Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)"
+            },
+            "rank": 8,
+            "score": 2.9727401733398438,
+            "snippet": "title: Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)\nstatement: notes\ncompany: SJG\nperiods: 2018",
+            "table_id": "tbl_60c9a00ca389d599ce985fe01ed9efb6098966ea8577c6f3041fcd38dcc42c4e"
+          },
+          {
+            "matched_tokens": [
+              "2018",
+              "sjg"
+            ],
+            "metadata": {
+              "company_code": "SJG",
+              "doc_id": "doc_67400603878caca22e5212a1886b3610ba94812f370d2d46725ad6d111e91bd3",
+              "group_contexts": [],
+              "line_end": 1153,
+              "line_start": 1153,
+              "periods": [
+                "2018"
+              ],
+              "source_path": "SJG/2018/SJG_financial_statements_2018_aggregated/SJG_financial_statements_2018_aggregated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_7f8e44bc632a30b6fc4b91fd28fbf6f72379b73241c41bd1623aa97b155d814c",
+              "title": "Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)"
+            },
+            "rank": 9,
+            "score": 2.9727401733398438,
+            "snippet": "title: Bản thuyết minh Báo cáo tài chính tổng hợp (tiếp theo)\nstatement: notes\ncompany: SJG\nperiods: 2018",
+            "table_id": "tbl_7f8e44bc632a30b6fc4b91fd28fbf6f72379b73241c41bd1623aa97b155d814c"
+          },
+          {
+            "matched_tokens": [
+              "2018",
+              "sjg"
+            ],
+            "metadata": {
+              "company_code": "SJG",
+              "doc_id": "doc_378421c4d4e3473f27280733f31d0b93a7a5bc138c4fbd2b3cf676a603963c19",
+              "group_contexts": [],
+              "line_end": 1443,
+              "line_start": 1443,
+              "periods": [
+                "2018"
+              ],
+              "source_path": "SJG/2018/SJG_financial_statements_2018_consolidated/SJG_financial_statements_2018_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_8fe8f08786aa417bdae87a61e6095e7374823c5c19eca9ce8d3f7c17db8ecc5d",
+              "title": "Bản thuyết minh Báo cáo tài chính hợp nhất (tiếp theo)"
+            },
+            "rank": 10,
+            "score": 2.9727401733398438,
+            "snippet": "title: Bản thuyết minh Báo cáo tài chính hợp nhất (tiếp theo)\nstatement: notes\ncompany: SJG\nperiods: 2018",
+            "table_id": "tbl_8fe8f08786aa417bdae87a61e6095e7374823c5c19eca9ce8d3f7c17db8ecc5d"
+          }
+        ]
+      }
+    },
+    {
+      "failure": "partial_gold_hits",
+      "filters": {
+        "company_codes": [
+          "DBC"
+        ],
+        "periods": [
+          "2022",
+          "2023"
+        ],
+        "statement_types": []
+      },
+      "gold_rank_beyond_10": {
+        "tbl_047406408377a99a416e8363bae707fc49347d465958e3f8f9556ba82075547b": 11
+      },
+      "gold_table_ids": [
+        "tbl_047406408377a99a416e8363bae707fc49347d465958e3f8f9556ba82075547b",
+        "tbl_88e63205de2b51d7e5588d6cebea6c40310588683ade51a8cd368a74e6022331"
+      ],
+      "intent": "compare",
+      "missing_gold_table_ids": [
+        "tbl_047406408377a99a416e8363bae707fc49347d465958e3f8f9556ba82075547b"
+      ],
+      "note": "The reviewed 2022 source contains total assets; the eligible BM25 document has canonical total_assets and the query expansion and ranks 11. Its statement metadata is misclassified, but this unfiltered query did not exclude it.",
+      "predicted_table_ids": [
+        "tbl_749c1cdabaaa5187ade0e89453c5fa7cd1d1613b718d69e815542be629584e7c",
+        "tbl_74e16f98694ee28e3ff766295a7e9e5abfd634330b4beae00f227f0adaf71471",
+        "tbl_b5d669baf182515beda7a898924015f9e9c1cca964f9fad732605626b7582a53",
+        "tbl_c7a3dc290e8710501c256e8b445c2c75812eaf920533f990063a97d5eecbca2a",
+        "tbl_200253b5c1efa6da56e621fba128d836e0013e650999d16be5a70fea681908fc",
+        "tbl_735f2d4c7268b319866584df812b54a727d23ee544120801e81b8fe0a4fb5203",
+        "tbl_3049ae87567cdc4dbbefa05fb2283ca1d08b8d0a220f9f34ed186b0ad43b19ba",
+        "tbl_08423242d8a97936d16b0f934b1be775f14956b4bd19a1f42c89a2386127ca8b",
+        "tbl_1bfc5d4ab2d27d38450371e1315b8ff833ae79ce4b8e4ee69bc1ecc10942ef36",
+        "tbl_88e63205de2b51d7e5588d6cebea6c40310588683ade51a8cd368a74e6022331"
+      ],
+      "question": "So sánh tổng tài sản của DBC giữa năm 2022 và năm 2023.",
+      "question_id": "retq_b241522bcdab166c95e5e24ad9fb63a9eede7baf7c8432392db31274c063c389",
+      "root_cause": "ranking_only",
+      "trace": {
+        "eligible_count": 268,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 1524,
+            "field": "company_codes",
+            "matched_count_before_intersection": 1524,
+            "requested_values": [
+              "DBC"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 268,
+            "field": "periods",
+            "matched_count_before_intersection": 33721,
+            "requested_values": [
+              "2022",
+              "2023"
+            ]
+          }
+        ],
+        "metric_expansions": [
+          {
+            "added_tokens": [
+              "total",
+              "assets"
+            ],
+            "alias_tokens": [
+              "tổng",
+              "tài",
+              "sản"
+            ],
+            "canonical_metric": "total_assets"
+          }
+        ],
+        "query": "So sánh tổng tài sản của DBC giữa năm 2022 và năm 2023.",
+        "query_tokens": [
+          "so",
+          "sánh",
+          "tổng",
+          "tài",
+          "sản",
+          "của",
+          "dbc",
+          "giữa",
+          "năm",
+          "2022",
+          "và",
+          "2023",
+          "total",
+          "assets"
+        ],
+        "question_id": "retq_b241522bcdab166c95e5e24ad9fb63a9eede7baf7c8432392db31274c063c389",
+        "results": [
+          {
+            "matched_tokens": [
+              "2022",
+              "assets",
+              "dbc",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "DBC",
+              "doc_id": "doc_0eeafa251d914d312959b74f8f18038b46a8c43d4da943887dc848a77b3fb84b",
+              "group_contexts": [
+                "Tổng tài sản"
+              ],
+              "line_end": 1741,
+              "line_start": 1741,
+              "periods": [
+                "2022"
+              ],
+              "source_path": "DBC/2022/DBC_financial_statements_2022_separate/DBC_financial_statements_2022_separate_extracted.txt",
+              "statement_type": "income_statement",
+              "table_id": "tbl_749c1cdabaaa5187ade0e89453c5fa7cd1d1613b718d69e815542be629584e7c",
+              "title": "Vào ngày 31 tháng 12 năm 2022 và cho năm tài chính kết thúc cùng ngày:"
+            },
+            "rank": 1,
+            "score": 10.295133590698242,
+            "snippet": "title: Vào ngày 31 tháng 12 năm 2022 và cho năm tài chính kết thúc cùng ngày:\nstatement: income statement\nmetrics: net revenue | profit before tax | total assets | total liabilities\nmetric aliases: Doanh thu thuần | Lợi nhuận trước thuế | Tổng nợ phải trả | Tổng tài sản\ngroup context: Tổng tài sản\ncompany: DBC\nperiods: 2022\nunits: VND",
+            "table_id": "tbl_749c1cdabaaa5187ade0e89453c5fa7cd1d1613b718d69e815542be629584e7c"
+          },
+          {
+            "matched_tokens": [
+              "2022",
+              "2023",
+              "assets",
+              "dbc",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "DBC",
+              "doc_id": "doc_e1a4c95b20c551c08b22eab9d26ac873fc3452c3fc70d7f46411106bad865cb9",
+              "group_contexts": [],
+              "line_end": 1712,
+              "line_start": 1712,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "DBC/2023/DBC_financial_statements_2023_separate/DBC_financial_statements_2023_separate_extracted.txt",
+              "statement_type": "income_statement",
+              "table_id": "tbl_74e16f98694ee28e3ff766295a7e9e5abfd634330b4beae00f227f0adaf71471",
+              "title": "Vào ngày 31 tháng 12 năm 2022 và cho năm tài chính kết thúc cùng ngày:"
+            },
+            "rank": 2,
+            "score": 10.177385330200195,
+            "snippet": "title: Vào ngày 31 tháng 12 năm 2022 và cho năm tài chính kết thúc cùng ngày:\nstatement: income statement\nmetrics: net revenue | profit before tax | total assets | total liabilities\nmetric aliases: Doanh thu thuần | Lợi nhuận trước thuế | Tổng nợ phải trả | Tổng tài sản\ncompany: DBC\nperiods: 2023",
+            "table_id": "tbl_74e16f98694ee28e3ff766295a7e9e5abfd634330b4beae00f227f0adaf71471"
+          },
+          {
+            "matched_tokens": [
+              "2022",
+              "assets",
+              "dbc",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "DBC",
+              "doc_id": "doc_b3f76d26600355bdba09edc38cfd38f27299bce9228496f29f40df3f3a09a23c",
+              "group_contexts": [],
+              "line_end": 1731,
+              "line_start": 1731,
+              "periods": [
+                "2022"
+              ],
+              "source_path": "DBC/2022/DBC_financial_statements_2022_consolidated/DBC_financial_statements_2022_consolidated_extracted.txt",
+              "statement_type": "income_statement",
+              "table_id": "tbl_b5d669baf182515beda7a898924015f9e9c1cca964f9fad732605626b7582a53",
+              "title": "Tại ngày 31 tháng 12 năm 2022 và cho năm tài chính kết thúc cùng ngày:"
+            },
+            "rank": 3,
+            "score": 9.821154594421387,
+            "snippet": "title: Tại ngày 31 tháng 12 năm 2022 và cho năm tài chính kết thúc cùng ngày:\nstatement: income statement\nmetrics: net revenue | profit before tax | total assets | total liabilities\nmetric aliases: Doanh thu thuần | Lợi nhuận trước thuế | Tổng nợ phải trả | Tổng tài sản\ncompany: DBC\nperiods: 2022",
+            "table_id": "tbl_b5d669baf182515beda7a898924015f9e9c1cca964f9fad732605626b7582a53"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "dbc",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "DBC",
+              "doc_id": "doc_e1a4c95b20c551c08b22eab9d26ac873fc3452c3fc70d7f46411106bad865cb9",
+              "group_contexts": [],
+              "line_end": 1689,
+              "line_start": 1689,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "DBC/2023/DBC_financial_statements_2023_separate/DBC_financial_statements_2023_separate_extracted.txt",
+              "statement_type": "income_statement",
+              "table_id": "tbl_c7a3dc290e8710501c256e8b445c2c75812eaf920533f990063a97d5eecbca2a",
+              "title": "Vào ngày 31 tháng 12 năm 2023 và cho năm tài chính kết thúc cùng ngày:"
+            },
+            "rank": 4,
+            "score": 9.740214347839355,
+            "snippet": "title: Vào ngày 31 tháng 12 năm 2023 và cho năm tài chính kết thúc cùng ngày:\nstatement: income statement\nmetrics: net revenue | profit before tax | total assets | total liabilities\nmetric aliases: Doanh thu thuần | Lợi nhuận trước thuế | Tổng nợ phải trả | Tổng tài sản\ncompany: DBC\nperiods: 2023\nunits: VND",
+            "table_id": "tbl_c7a3dc290e8710501c256e8b445c2c75812eaf920533f990063a97d5eecbca2a"
+          },
+          {
+            "matched_tokens": [
+              "2022",
+              "2023",
+              "assets",
+              "dbc",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "DBC",
+              "doc_id": "doc_144f81a5981088163bf27ffe22b7b0fc9fb39f0dc982b5f5b6b5e89f6219441f",
+              "group_contexts": [],
+              "line_end": 1634,
+              "line_start": 1634,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "DBC/2023/DBC_financial_statements_2023_consolidated/DBC_financial_statements_2023_consolidated_extracted.txt",
+              "statement_type": "income_statement",
+              "table_id": "tbl_200253b5c1efa6da56e621fba128d836e0013e650999d16be5a70fea681908fc",
+              "title": "Tại ngày 31 tháng 12 năm 2022 và cho năm tài chính kết thúc cùng ngày:"
+            },
+            "rank": 5,
+            "score": 9.713907241821289,
+            "snippet": "title: Tại ngày 31 tháng 12 năm 2022 và cho năm tài chính kết thúc cùng ngày:\nstatement: income statement\nmetrics: current income tax expense | net revenue | profit before tax | total assets | total liabilities\nmetric aliases: Chi phí thuế TNDN hiện hành | Doanh thu thuần | Lợi nhuận trước thuế | Tổng nợ phải trả | Tổng tài sản\ncompany: DBC\nperiods: 2023",
+            "table_id": "tbl_200253b5c1efa6da56e621fba128d836e0013e650999d16be5a70fea681908fc"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "dbc",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "DBC",
+              "doc_id": "doc_144f81a5981088163bf27ffe22b7b0fc9fb39f0dc982b5f5b6b5e89f6219441f",
+              "group_contexts": [],
+              "line_end": 1615,
+              "line_start": 1615,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "DBC/2023/DBC_financial_statements_2023_consolidated/DBC_financial_statements_2023_consolidated_extracted.txt",
+              "statement_type": "income_statement",
+              "table_id": "tbl_735f2d4c7268b319866584df812b54a727d23ee544120801e81b8fe0a4fb5203",
+              "title": "Tại ngày 31 tháng 12 năm 2023 và cho năm tài chính kết thúc cùng ngày:"
+            },
+            "rank": 6,
+            "score": 9.397391319274902,
+            "snippet": "title: Tại ngày 31 tháng 12 năm 2023 và cho năm tài chính kết thúc cùng ngày:\nstatement: income statement\nmetrics: current income tax expense | net revenue | profit before tax | total assets | total liabilities\nmetric aliases: Chi phí thuế TNDN hiện hành | Doanh thu thuần | Lợi nhuận trước thuế | Tổng nợ phải trả | Tổng tài sản\ncompany: DBC\nperiods: 2023",
+            "table_id": "tbl_735f2d4c7268b319866584df812b54a727d23ee544120801e81b8fe0a4fb5203"
+          },
+          {
+            "matched_tokens": [
+              "2022",
+              "assets",
+              "dbc",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "DBC",
+              "doc_id": "doc_0eeafa251d914d312959b74f8f18038b46a8c43d4da943887dc848a77b3fb84b",
+              "group_contexts": [],
+              "line_end": 1756,
+              "line_start": 1756,
+              "periods": [
+                "2022"
+              ],
+              "source_path": "DBC/2022/DBC_financial_statements_2022_separate/DBC_financial_statements_2022_separate_extracted.txt",
+              "statement_type": "income_statement",
+              "table_id": "tbl_3049ae87567cdc4dbbefa05fb2283ca1d08b8d0a220f9f34ed186b0ad43b19ba",
+              "title": "Vào ngày 31 tháng 12 năm 2021 và cho năm tài chính kết thúc cùng ngày:"
+            },
+            "rank": 7,
+            "score": 9.396540641784668,
+            "snippet": "title: Vào ngày 31 tháng 12 năm 2021 và cho năm tài chính kết thúc cùng ngày:\nstatement: income statement\nmetrics: net revenue | profit before tax | total assets | total liabilities\nmetric aliases: Doanh thu thuần | Lợi nhuận trước thuế | Tổng nợ phải trả | Tổng tài sản\ncompany: DBC\nperiods: 2022\nunits: VND",
+            "table_id": "tbl_3049ae87567cdc4dbbefa05fb2283ca1d08b8d0a220f9f34ed186b0ad43b19ba"
+          },
+          {
+            "matched_tokens": [
+              "2022",
+              "assets",
+              "dbc",
+              "năm",
+              "sản",
+              "total",
+              "tài",
+              "tổng",
+              "và"
+            ],
+            "metadata": {
+              "company_code": "DBC",
+              "doc_id": "doc_b3f76d26600355bdba09edc38cfd38f27299bce9228496f29f40df3f3a09a23c",
+              "group_contexts": [],
+              "line_end": 1750,
+              "line_start": 1750,
+              "periods": [
+                "2022"
+              ],
+              "source_path": "DBC/2022/DBC_financial_statements_2022_consolidated/DBC_financial_statements_2022_consolidated_extracted.txt",
+              "statement_type": "income_statement",
+              "table_id": "tbl_08423242d8a97936d16b0f934b1be775f14956b4bd19a1f42c89a2386127ca8b",
+              "title": "Tại ngày 31 tháng 12 năm 2021 và cho năm tài chính kết thúc cùng ngày:"
+            },
+            "rank": 8,
+            "score": 9.057541847229004,
+            "snippet": "title: Tại ngày 31 tháng 12 năm 2021 và cho năm tài chính kết thúc cùng ngày:\nstatement: income statement\nmetrics: current income tax expense | net revenue | profit before tax | total assets | total liabilities\nmetric aliases: Chi phí thuế TNDN hiện hành | Doanh thu thuần | Lợi nhuận trước thuế | Tổng nợ phải trả | Tổng tài sản\ncompany: DBC\nperiods: 2022",
+            "table_id": "tbl_08423242d8a97936d16b0f934b1be775f14956b4bd19a1f42c89a2386127ca8b"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "dbc",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "DBC",
+              "doc_id": "doc_e1a4c95b20c551c08b22eab9d26ac873fc3452c3fc70d7f46411106bad865cb9",
+              "group_contexts": [],
+              "line_end": 349,
+              "line_start": 349,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "DBC/2023/DBC_financial_statements_2023_separate/DBC_financial_statements_2023_separate_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_1bfc5d4ab2d27d38450371e1315b8ff833ae79ce4b8e4ee69bc1ecc10942ef36",
+              "title": "Đơn vị tính: VND"
+            },
+            "rank": 9,
+            "score": 7.847108364105225,
+            "snippet": "title: Đơn vị tính: VND\nstatement: cash flow statement\nmetrics: total assets\nmetric aliases: TỔNG CỘNG TÀI SẢN\ncompany: DBC\nperiods: 2023\nunits: VND",
+            "table_id": "tbl_1bfc5d4ab2d27d38450371e1315b8ff833ae79ce4b8e4ee69bc1ecc10942ef36"
+          },
+          {
+            "matched_tokens": [
+              "2023",
+              "assets",
+              "dbc",
+              "sản",
+              "total",
+              "tài",
+              "tổng"
+            ],
+            "metadata": {
+              "company_code": "DBC",
+              "doc_id": "doc_144f81a5981088163bf27ffe22b7b0fc9fb39f0dc982b5f5b6b5e89f6219441f",
+              "group_contexts": [],
+              "line_end": 334,
+              "line_start": 334,
+              "periods": [
+                "2023"
+              ],
+              "source_path": "DBC/2023/DBC_financial_statements_2023_consolidated/DBC_financial_statements_2023_consolidated_extracted.txt",
+              "statement_type": "cash_flow_statement",
+              "table_id": "tbl_88e63205de2b51d7e5588d6cebea6c40310588683ade51a8cd368a74e6022331",
+              "title": "Đơn vị tính: VND"
+            },
+            "rank": 10,
+            "score": 7.847108364105225,
+            "snippet": "title: Đơn vị tính: VND\nstatement: cash flow statement\nmetrics: total assets\nmetric aliases: TỔNG CỘNG TÀI SẢN\ncompany: DBC\nperiods: 2023\nunits: VND",
+            "table_id": "tbl_88e63205de2b51d7e5588d6cebea6c40310588683ade51a8cd368a74e6022331"
+          }
+        ]
+      }
+    },
+    {
+      "failure": "partial_gold_hits",
+      "filters": {
+        "company_codes": [
+          "MML"
+        ],
+        "periods": [
+          "2017"
+        ],
+        "statement_types": [
+          "notes"
+        ]
+      },
+      "gold_rank_beyond_10": {
+        "tbl_add6276f804803e43654a26340b64c08c31cb2a83b931af1819d8d94d41aebf1": 11
+      },
+      "gold_table_ids": [
+        "tbl_13f0470d32f60ce94d27dfb4b77c31d43aa79cd3d8611637a95a53692c70f4aa",
+        "tbl_43ba8c1f31b79107cbdf159db4f7759cc8df7bf3e7c5583dfa2dd22226566cb7",
+        "tbl_69019bfb20d65abbdb7fa27ec16ccc50e1e4029121baf200e326696bcdbede8b",
+        "tbl_add6276f804803e43654a26340b64c08c31cb2a83b931af1819d8d94d41aebf1"
+      ],
+      "intent": "lookup",
+      "missing_gold_table_ids": [
+        "tbl_add6276f804803e43654a26340b64c08c31cb2a83b931af1819d8d94d41aebf1"
+      ],
+      "note": "The reviewed source for the missed gold table explicitly says 'Công ty liên kết sở hữu gián tiếp', while the question requests 'công ty con'; this is a source/question label mismatch, independent of rankings.",
+      "predicted_table_ids": [
+        "tbl_44693fe2169ec4a6ec878a16b49020ea67db1e0ca5d74550f28f38800aced3c6",
+        "tbl_13f0470d32f60ce94d27dfb4b77c31d43aa79cd3d8611637a95a53692c70f4aa",
+        "tbl_43ba8c1f31b79107cbdf159db4f7759cc8df7bf3e7c5583dfa2dd22226566cb7",
+        "tbl_8d8d49f4b6105c225a3f1cacc34c467d1c6b5e1396fb2433340c6c37e10afa73",
+        "tbl_d2552a60408c5ff017c8edd044a062084f2b1177da56166d7606886d72934405",
+        "tbl_12a31093994bf2daec54a30bdba2701871cb3ae1d8c68440b5b4df19c7d0ffcd",
+        "tbl_2eb67f9545187a1fc7d09e33a49e4931e947495652fa1c44b9b0ec1e5bc444dc",
+        "tbl_35d46ff75faa777ad42d5d631eb9e8f0a8b0e36d7db597f60ca86474fb904197",
+        "tbl_69019bfb20d65abbdb7fa27ec16ccc50e1e4029121baf200e326696bcdbede8b",
+        "tbl_8ed2a2dab81ff19019090ff87a8d6ddd71bf5301f37ac46c3aa93f9d0d4294d9"
+      ],
+      "question": "Tra cứu bốn bảng thuyết minh về các công ty con sở hữu trực tiếp và gián tiếp của MML năm 2017.",
+      "question_id": "retq_b8f5f17c7fa19ee92df6e919eb20b531855fc9c9fc46294da23b13d9025070de",
+      "root_cause": "gold_label_error",
+      "trace": {
+        "eligible_count": 14,
+        "empty_reason": null,
+        "filter_decisions": [
+          {
+            "eligible_count_after_intersection": 1009,
+            "field": "company_codes",
+            "matched_count_before_intersection": 1009,
+            "requested_values": [
+              "MML"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 124,
+            "field": "periods",
+            "matched_count_before_intersection": 14081,
+            "requested_values": [
+              "2017"
+            ]
+          },
+          {
+            "eligible_count_after_intersection": 14,
+            "field": "statement_types",
+            "matched_count_before_intersection": 1479,
+            "requested_values": [
+              "notes"
+            ]
+          }
+        ],
+        "metric_expansions": [],
+        "query": "Tra cứu bốn bảng thuyết minh về các công ty con sở hữu trực tiếp và gián tiếp của MML năm 2017.",
+        "query_tokens": [
+          "tra",
+          "cứu",
+          "bốn",
+          "bảng",
+          "thuyết",
+          "minh",
+          "về",
+          "các",
+          "công",
+          "ty",
+          "con",
+          "sở",
+          "hữu",
+          "trực",
+          "tiếp",
+          "và",
+          "gián",
+          "của",
+          "mml",
+          "năm",
+          "2017"
+        ],
+        "question_id": "retq_b8f5f17c7fa19ee92df6e919eb20b531855fc9c9fc46294da23b13d9025070de",
+        "results": [
+          {
+            "matched_tokens": [
+              "2017",
+              "minh",
+              "mml",
+              "năm",
+              "thuyết",
+              "tiếp"
+            ],
+            "metadata": {
+              "company_code": "MML",
+              "doc_id": "doc_292eefda24079770bcb657d24331efa3bc915277e2ef957dfa730d615ba853d4",
+              "group_contexts": [],
+              "line_end": 521,
+              "line_start": 521,
+              "periods": [
+                "2017"
+              ],
+              "source_path": "MML/2017/MML_financial_statements_2017_separate/MML_financial_statements_2017_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_44693fe2169ec4a6ec878a16b49020ea67db1e0ca5d74550f28f38800aced3c6",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)"
+            },
+            "rank": 1,
+            "score": 8.396941184997559,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)\nstatement: notes\ncompany: MML\nperiods: 2017",
+            "table_id": "tbl_44693fe2169ec4a6ec878a16b49020ea67db1e0ca5d74550f28f38800aced3c6"
+          },
+          {
+            "matched_tokens": [
+              "2017",
+              "minh",
+              "mml",
+              "năm",
+              "thuyết",
+              "tiếp"
+            ],
+            "metadata": {
+              "company_code": "MML",
+              "doc_id": "doc_86956cf9e6d70cb6eaa0e0395a46facfe62e9d98a4d0f32354f91cc989e973a9",
+              "group_contexts": [],
+              "line_end": 347,
+              "line_start": 347,
+              "periods": [
+                "2017"
+              ],
+              "source_path": "MML/2017/MML_financial_statements_2017_consolidated/MML_financial_statements_2017_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_13f0470d32f60ce94d27dfb4b77c31d43aa79cd3d8611637a95a53692c70f4aa",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)"
+            },
+            "rank": 2,
+            "score": 8.348814010620117,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)\nstatement: notes\ncompany: MML\nperiods: 2017",
+            "table_id": "tbl_13f0470d32f60ce94d27dfb4b77c31d43aa79cd3d8611637a95a53692c70f4aa"
+          },
+          {
+            "matched_tokens": [
+              "2017",
+              "minh",
+              "mml",
+              "năm",
+              "thuyết",
+              "tiếp"
+            ],
+            "metadata": {
+              "company_code": "MML",
+              "doc_id": "doc_86956cf9e6d70cb6eaa0e0395a46facfe62e9d98a4d0f32354f91cc989e973a9",
+              "group_contexts": [],
+              "line_end": 355,
+              "line_start": 355,
+              "periods": [
+                "2017"
+              ],
+              "source_path": "MML/2017/MML_financial_statements_2017_consolidated/MML_financial_statements_2017_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_43ba8c1f31b79107cbdf159db4f7759cc8df7bf3e7c5583dfa2dd22226566cb7",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)"
+            },
+            "rank": 3,
+            "score": 8.348814010620117,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)\nstatement: notes\ncompany: MML\nperiods: 2017",
+            "table_id": "tbl_43ba8c1f31b79107cbdf159db4f7759cc8df7bf3e7c5583dfa2dd22226566cb7"
+          },
+          {
+            "matched_tokens": [
+              "2017",
+              "minh",
+              "mml",
+              "năm",
+              "thuyết",
+              "tiếp"
+            ],
+            "metadata": {
+              "company_code": "MML",
+              "doc_id": "doc_292eefda24079770bcb657d24331efa3bc915277e2ef957dfa730d615ba853d4",
+              "group_contexts": [],
+              "line_end": 576,
+              "line_start": 576,
+              "periods": [
+                "2017"
+              ],
+              "source_path": "MML/2017/MML_financial_statements_2017_separate/MML_financial_statements_2017_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_8d8d49f4b6105c225a3f1cacc34c467d1c6b5e1396fb2433340c6c37e10afa73",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)"
+            },
+            "rank": 4,
+            "score": 8.30124282836914,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)\nstatement: notes\ncompany: MML\nperiods: 2017\nunits: VND",
+            "table_id": "tbl_8d8d49f4b6105c225a3f1cacc34c467d1c6b5e1396fb2433340c6c37e10afa73"
+          },
+          {
+            "matched_tokens": [
+              "2017",
+              "minh",
+              "mml",
+              "năm",
+              "thuyết",
+              "tiếp"
+            ],
+            "metadata": {
+              "company_code": "MML",
+              "doc_id": "doc_292eefda24079770bcb657d24331efa3bc915277e2ef957dfa730d615ba853d4",
+              "group_contexts": [],
+              "line_end": 679,
+              "line_start": 679,
+              "periods": [
+                "2017"
+              ],
+              "source_path": "MML/2017/MML_financial_statements_2017_separate/MML_financial_statements_2017_separate_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_d2552a60408c5ff017c8edd044a062084f2b1177da56166d7606886d72934405",
+              "title": "Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)"
+            },
+            "rank": 5,
+            "score": 8.30124282836914,
+            "snippet": "title: Thuyết minh báo cáo tài chính riêng cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)\nstatement: notes\ncompany: MML\nperiods: 2017\nunits: VND",
+            "table_id": "tbl_d2552a60408c5ff017c8edd044a062084f2b1177da56166d7606886d72934405"
+          },
+          {
+            "matched_tokens": [
+              "2017",
+              "minh",
+              "mml",
+              "năm",
+              "thuyết",
+              "tiếp"
+            ],
+            "metadata": {
+              "company_code": "MML",
+              "doc_id": "doc_86956cf9e6d70cb6eaa0e0395a46facfe62e9d98a4d0f32354f91cc989e973a9",
+              "group_contexts": [],
+              "line_end": 942,
+              "line_start": 942,
+              "periods": [
+                "2017"
+              ],
+              "source_path": "MML/2017/MML_financial_statements_2017_consolidated/MML_financial_statements_2017_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_12a31093994bf2daec54a30bdba2701871cb3ae1d8c68440b5b4df19c7d0ffcd",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)"
+            },
+            "rank": 6,
+            "score": 8.25422191619873,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)\nstatement: notes\ncompany: MML\nperiods: 2017\nunits: VND",
+            "table_id": "tbl_12a31093994bf2daec54a30bdba2701871cb3ae1d8c68440b5b4df19c7d0ffcd"
+          },
+          {
+            "matched_tokens": [
+              "2017",
+              "minh",
+              "mml",
+              "năm",
+              "thuyết",
+              "tiếp"
+            ],
+            "metadata": {
+              "company_code": "MML",
+              "doc_id": "doc_86956cf9e6d70cb6eaa0e0395a46facfe62e9d98a4d0f32354f91cc989e973a9",
+              "group_contexts": [],
+              "line_end": 892,
+              "line_start": 892,
+              "periods": [
+                "2017"
+              ],
+              "source_path": "MML/2017/MML_financial_statements_2017_consolidated/MML_financial_statements_2017_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_2eb67f9545187a1fc7d09e33a49e4931e947495652fa1c44b9b0ec1e5bc444dc",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)"
+            },
+            "rank": 7,
+            "score": 8.25422191619873,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)\nstatement: notes\ncompany: MML\nperiods: 2017\nunits: VND",
+            "table_id": "tbl_2eb67f9545187a1fc7d09e33a49e4931e947495652fa1c44b9b0ec1e5bc444dc"
+          },
+          {
+            "matched_tokens": [
+              "2017",
+              "minh",
+              "mml",
+              "năm",
+              "thuyết",
+              "tiếp"
+            ],
+            "metadata": {
+              "company_code": "MML",
+              "doc_id": "doc_86956cf9e6d70cb6eaa0e0395a46facfe62e9d98a4d0f32354f91cc989e973a9",
+              "group_contexts": [],
+              "line_end": 1135,
+              "line_start": 1135,
+              "periods": [
+                "2017"
+              ],
+              "source_path": "MML/2017/MML_financial_statements_2017_consolidated/MML_financial_statements_2017_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_35d46ff75faa777ad42d5d631eb9e8f0a8b0e36d7db597f60ca86474fb904197",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)"
+            },
+            "rank": 8,
+            "score": 8.25422191619873,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)\nstatement: notes\ncompany: MML\nperiods: 2017\nunits: VND",
+            "table_id": "tbl_35d46ff75faa777ad42d5d631eb9e8f0a8b0e36d7db597f60ca86474fb904197"
+          },
+          {
+            "matched_tokens": [
+              "2017",
+              "minh",
+              "mml",
+              "năm",
+              "thuyết",
+              "tiếp"
+            ],
+            "metadata": {
+              "company_code": "MML",
+              "doc_id": "doc_86956cf9e6d70cb6eaa0e0395a46facfe62e9d98a4d0f32354f91cc989e973a9",
+              "group_contexts": [],
+              "line_end": 339,
+              "line_start": 339,
+              "periods": [
+                "2017"
+              ],
+              "source_path": "MML/2017/MML_financial_statements_2017_consolidated/MML_financial_statements_2017_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_69019bfb20d65abbdb7fa27ec16ccc50e1e4029121baf200e326696bcdbede8b",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)"
+            },
+            "rank": 9,
+            "score": 8.25422191619873,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)\nstatement: notes\ncompany: MML\nperiods: 2017\nunits: percent",
+            "table_id": "tbl_69019bfb20d65abbdb7fa27ec16ccc50e1e4029121baf200e326696bcdbede8b"
+          },
+          {
+            "matched_tokens": [
+              "2017",
+              "minh",
+              "mml",
+              "năm",
+              "thuyết",
+              "tiếp"
+            ],
+            "metadata": {
+              "company_code": "MML",
+              "doc_id": "doc_86956cf9e6d70cb6eaa0e0395a46facfe62e9d98a4d0f32354f91cc989e973a9",
+              "group_contexts": [],
+              "line_end": 805,
+              "line_start": 805,
+              "periods": [
+                "2017"
+              ],
+              "source_path": "MML/2017/MML_financial_statements_2017_consolidated/MML_financial_statements_2017_consolidated_extracted.txt",
+              "statement_type": "notes",
+              "table_id": "tbl_8ed2a2dab81ff19019090ff87a8d6ddd71bf5301f37ac46c3aa93f9d0d4294d9",
+              "title": "Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)"
+            },
+            "rank": 10,
+            "score": 8.25422191619873,
+            "snippet": "title: Thuyết minh báo cáo tài chính hợp nhất cho năm kết thúc ngày 31 tháng 12 năm 2017 (tiếp theo)\nstatement: notes\ncompany: MML\nperiods: 2017\nunits: VND",
+            "table_id": "tbl_8ed2a2dab81ff19019090ff87a8d6ddd71bf5301f37ac46c3aa93f9d0d4294d9"
+          }
+        ]
+      }
+    }
+  ],
+  "root_cause_counts": {
+    "filter_too_narrow": 0,
+    "filter_too_wide": 0,
+    "gold_label_error": 1,
+    "missing_alias": 6,
+    "ocr_corruption": 0,
+    "ranking_only": 4,
+    "unknown": 0
+  }
+}

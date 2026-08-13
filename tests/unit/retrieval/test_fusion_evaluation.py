@@ -67,17 +67,17 @@ class _FixedVectorEncoder:
 
 _FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
 _LOCKED_METRICS = RetrievalMetrics(
-    true_positive=44,
-    precision=0.14666666666666667,
-    recall=0.8833333333333333,
-    f2=0.4312169312169312,
+    true_positive=105,
+    precision=0.1499999999999999,
+    recall=0.880952380952381,
+    f2=0.4224545295973871,
 )
 
 
 def _bm25_reference_report() -> RetrievalEvaluationReport:
     return RetrievalEvaluationReport(
         dataset_fingerprint=_FINGERPRINT,
-        question_count=30,
+        question_count=70,
         macro=_LOCKED_METRICS,
         by_intent={"lookup": _LOCKED_METRICS},
         per_question=(),

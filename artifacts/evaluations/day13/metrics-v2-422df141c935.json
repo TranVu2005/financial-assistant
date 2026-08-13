@@ -1,0 +1,151 @@
+{
+    "schema_version":  "retrieval-evaluation-v2-summary",
+    "dataset_fingerprint":  "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a",
+    "question_count":  70,
+    "systems":  [
+                    {
+                        "name":  "bm25-v3",
+                        "source_path":  "artifacts/evaluations/day13/bm25/retrieval-day8-422df141c935.json",
+                        "source_sha256":  "71ea90dede2e3b6bb873f527ccbc8a6b3a80285d7d3d15d55439b566e2bdb639",
+                        "question_count":  70,
+                        "selection":  "legacy-report",
+                        "legacy_macro":  {
+                                             "true_positive":  105,
+                                             "precision_at_10":  0.1499999999999999,
+                                             "recall_at_10":  0.880952380952381,
+                                             "f2_at_10":  0.4224545295973871
+                                         },
+                        "extended_macro":  {
+                                               "true_positive":  105,
+                                               "precision_at_10":  0.14999999999999991,
+                                               "recall_at_3":  0.58333333333333337,
+                                               "recall_at_5":  0.725,
+                                               "recall_at_10":  0.880952380952381,
+                                               "f2_at_10":  0.42245452959738711,
+                                               "mrr":  0.62193877551020416,
+                                               "precision_at_r":  0.42261904761904762,
+                                               "f2_at_r":  0.49134585652442808
+                                           }
+                    },
+                    {
+                        "name":  "dense-bge-m3",
+                        "source_path":  "artifacts/evaluations/day13/dense-bge-m3.json",
+                        "source_sha256":  "1f1e1c9466bc7aea50a1b7b2cbf71a17c0e3cf555ae8229536ac05d497127937",
+                        "question_count":  70,
+                        "selection":  "cold-report",
+                        "legacy_macro":  {
+                                             "true_positive":  69,
+                                             "precision_at_10":  0.09857142857142853,
+                                             "recall_at_10":  0.5523809523809524,
+                                             "f2_at_10":  0.26592058734915885
+                                         },
+                        "extended_macro":  {
+                                               "true_positive":  69,
+                                               "precision_at_10":  0.098571428571428532,
+                                               "recall_at_3":  0.24642857142857144,
+                                               "recall_at_5":  0.41190476190476194,
+                                               "recall_at_10":  0.55238095238095242,
+                                               "f2_at_10":  0.26592058734915885,
+                                               "mrr":  0.29850340136054415,
+                                               "precision_at_r":  0.19642857142857142,
+                                               "f2_at_r":  0.2241741393527108
+                                           }
+                    },
+                    {
+                        "name":  "dense-e5-small",
+                        "source_path":  "artifacts/evaluations/day13/dense-e5-small.json",
+                        "source_sha256":  "da49e6c634b2c4e2b3c003c4a6c9c974764c77319aadb660f169da49e5c978f6",
+                        "question_count":  70,
+                        "selection":  "cold-report",
+                        "legacy_macro":  {
+                                             "true_positive":  71,
+                                             "precision_at_10":  0.10142857142857134,
+                                             "recall_at_10":  0.6011904761904762,
+                                             "f2_at_10":  0.280334744620459
+                                         },
+                        "extended_macro":  {
+                                               "true_positive":  71,
+                                               "precision_at_10":  0.10142857142857134,
+                                               "recall_at_3":  0.22023809523809526,
+                                               "recall_at_5":  0.42023809523809519,
+                                               "recall_at_10":  0.60119047619047616,
+                                               "f2_at_10":  0.280334744620459,
+                                               "mrr":  0.27487528344671197,
+                                               "precision_at_r":  0.15952380952380951,
+                                               "f2_at_r":  0.18460884353741497
+                                           }
+                    },
+                    {
+                        "name":  "fusion-bge",
+                        "source_path":  "artifacts/evaluations/day13/fusion-bge/retrieval-day10-fusion-422df141c935.json",
+                        "source_sha256":  "dd6d67168a4ba625e6fdd05f84ab1a4f19a5eef1f69f746af8760f36fb94f602",
+                        "question_count":  70,
+                        "selection":  "best-weights {\"bm25\":1.0,\"dense\":0.0,\"depth\":50,\"rrf_k\":60}",
+                        "legacy_macro":  {
+                                             "true_positive":  105,
+                                             "precision_at_10":  0.1499999999999999,
+                                             "recall_at_10":  0.880952380952381,
+                                             "f2_at_10":  0.4224545295973871
+                                         },
+                        "extended_macro":  {
+                                               "true_positive":  105,
+                                               "precision_at_10":  0.14999999999999991,
+                                               "recall_at_3":  0.58809523809523812,
+                                               "recall_at_5":  0.725,
+                                               "recall_at_10":  0.880952380952381,
+                                               "f2_at_10":  0.42245452959738711,
+                                               "mrr":  0.615748299319728,
+                                               "precision_at_r":  0.42738095238095242,
+                                               "f2_at_r":  0.49412878787878795
+                                           }
+                    },
+                    {
+                        "name":  "fusion-e5",
+                        "source_path":  "artifacts/evaluations/day13/fusion-e5/retrieval-day10-fusion-422df141c935.json",
+                        "source_sha256":  "2716f4a890dbc58b58514f7cd41b1fbaa6a0fb22c79028bc6526c82138c016ce",
+                        "question_count":  70,
+                        "selection":  "best-weights {\"bm25\":1.0,\"dense\":0.0,\"depth\":50,\"rrf_k\":60}",
+                        "legacy_macro":  {
+                                             "true_positive":  105,
+                                             "precision_at_10":  0.1499999999999999,
+                                             "recall_at_10":  0.880952380952381,
+                                             "f2_at_10":  0.4224545295973871
+                                         },
+                        "extended_macro":  {
+                                               "true_positive":  105,
+                                               "precision_at_10":  0.14999999999999991,
+                                               "recall_at_3":  0.58809523809523812,
+                                               "recall_at_5":  0.725,
+                                               "recall_at_10":  0.880952380952381,
+                                               "f2_at_10":  0.42245452959738711,
+                                               "mrr":  0.615748299319728,
+                                               "precision_at_r":  0.42738095238095242,
+                                               "f2_at_r":  0.49412878787878795
+                                           }
+                    },
+                    {
+                        "name":  "graph-expansion",
+                        "source_path":  "artifacts/evaluations/day13/expansion/retrieval-day12-expansion-422df141c935.json",
+                        "source_sha256":  "c6377699d8e5732d8fee6f76f79738a90b660011f82e8e9e25ac6d8b4fbad3b8",
+                        "question_count":  70,
+                        "selection":  "best-params {\"alpha\":0.0,\"expand_non_seeds\":false,\"fan_out\":25,\"relations\":[\"adjacent_period\",\"explained_by_note\",\"same_document\",\"same_statement_type\",\"shared_metric\"],\"rrf_k\":60,\"seed_depth\":50}",
+                        "legacy_macro":  {
+                                             "true_positive":  105,
+                                             "precision_at_10":  0.1499999999999999,
+                                             "recall_at_10":  0.880952380952381,
+                                             "f2_at_10":  0.4224545295973871
+                                         },
+                        "extended_macro":  {
+                                               "true_positive":  105,
+                                               "precision_at_10":  0.14999999999999991,
+                                               "recall_at_3":  0.58809523809523812,
+                                               "recall_at_5":  0.725,
+                                               "recall_at_10":  0.880952380952381,
+                                               "f2_at_10":  0.42245452959738711,
+                                               "mrr":  0.615748299319728,
+                                               "precision_at_r":  0.42738095238095242,
+                                               "f2_at_r":  0.49412878787878795
+                                           }
+                    }
+                ]
+}

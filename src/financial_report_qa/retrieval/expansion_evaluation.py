@@ -222,9 +222,9 @@ def evaluate_expansion_grid(
             "graph expansion is retained."
         ),
         evidence_caveat=(
-            "Only 4/30 questions have headroom; they involve only two distinct missing tables, "
-            "both already present in BM25 top-50. This evaluation does not establish "
-            "a default system."
+            "The 70-question Day 13 gold set supplies the current expansion evidence; "
+            "Day 14 uses the separately reviewed failure export for root-cause decisions. "
+            "This evaluation does not establish a default system."
         ),
     )
 

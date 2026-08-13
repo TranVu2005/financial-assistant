@@ -1,0 +1,79 @@
+{
+  "by_relation": {
+    "adjacent_period": {
+      "bucket_count": 1109,
+      "degree_max": 1565,
+      "degree_p50": 374,
+      "degree_p95": 841,
+      "directed_edge_count": 61967388,
+      "isolated_nodes": 0,
+      "membership_count": 185493,
+      "nodes_with_edges": 146011,
+      "weight_max": 1.0,
+      "weight_min": 1.0
+    },
+    "explained_by_note": {
+      "bucket_count": 1961,
+      "degree_max": 20,
+      "degree_p50": 0,
+      "degree_p95": 0,
+      "directed_edge_count": 24847,
+      "isolated_nodes": 140276,
+      "membership_count": 30891,
+      "nodes_with_edges": 5735,
+      "weight_max": 1.0,
+      "weight_min": 1.0
+    },
+    "same_document": {
+      "bucket_count": 1963,
+      "degree_max": 244,
+      "degree_p50": 75,
+      "degree_p95": 126,
+      "directed_edge_count": 12008152,
+      "isolated_nodes": 3,
+      "membership_count": 146011,
+      "nodes_with_edges": 146008,
+      "weight_max": 0.3333333333333333,
+      "weight_min": 0.00013027618551328816
+    },
+    "same_statement_type": {
+      "bucket_count": 372,
+      "degree_max": 282,
+      "degree_p50": 0,
+      "degree_p95": 156,
+      "directed_edge_count": 3730008,
+      "isolated_nodes": 115126,
+      "membership_count": 30891,
+      "nodes_with_edges": 30885,
+      "weight_max": 1.0,
+      "weight_min": 1.0
+    },
+    "shared_metric": {
+      "bucket_count": 3807,
+      "degree_max": 243,
+      "degree_p50": 0,
+      "degree_p95": 56,
+      "directed_edge_count": 1211850,
+      "isolated_nodes": 120954,
+      "membership_count": 62167,
+      "nodes_with_edges": 25057,
+      "weight_max": 1.0,
+      "weight_min": 0.03225806451612903
+    }
+  },
+  "dataset_fingerprint": "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a",
+  "document_count": 146011,
+  "excluded_relations": [
+    {
+      "measured_pair_count": 117156769,
+      "name": "same_company",
+      "reason": "every reviewed gold question already hard-filters company_codes before ranking (retrieval/filtering.py), so same_company edges would only connect tables already inside the eligible pool -- no new information"
+    },
+    {
+      "measured_pair_count": 18683741,
+      "name": "same_period",
+      "reason": "every reviewed gold question already hard-filters periods before ranking (retrieval/filtering.py), so same_period edges would only connect tables already inside the eligible pool -- no new information"
+    }
+  ],
+  "nodes_with_no_edge_in_any_relation": 0
+}

@@ -5,3 +5,4 @@
 *.jpeg binary
 *.pdf binary
 *.parquet binary
+artifacts/evaluations/day13/**/*.md binary

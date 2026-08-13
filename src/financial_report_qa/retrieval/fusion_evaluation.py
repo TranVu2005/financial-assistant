@@ -1,4 +1,4 @@
-"""Deterministic Day 10 fusion-grid evaluation against the fixed 30-question gold set.
+"""Deterministic Day 10 fusion-grid evaluation against the locked gold set.
 
 Every point in `financial_report_qa.retrieval.fusion_contracts.PRE_REGISTERED_WEIGHT_GRID`
 is scored and reported — none are cherry-picked. `default_system` becomes

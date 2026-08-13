@@ -157,14 +157,14 @@ def _run(name: EncoderName, *, cold_p95: float, cache_hit: bool = False) -> Dens
 
 def _bm25_reference() -> RetrievalEvaluationReport:
     metrics = RetrievalMetrics(
-        true_positive=44,
-        precision=0.14666666666666667,
-        recall=0.8833333333333333,
-        f2=0.4312169312169312,
+        true_positive=105,
+        precision=0.1499999999999999,
+        recall=0.880952380952381,
+        f2=0.4224545295973871,
     )
     return RetrievalEvaluationReport(
         dataset_fingerprint=_LOCKED_FINGERPRINT,
-        question_count=30,
+        question_count=70,
         macro=metrics,
         by_intent={"lookup": metrics},
         per_question=(),
@@ -208,14 +208,14 @@ def test_day9_comparison_reports_dense_minus_bm25_delta() -> None:
 
     comparison = build_day9_comparison(_bm25_reference(), bge, e5)
 
-    assert comparison.systems["bm25-v3"].macro.recall == pytest.approx(0.8833333333333333)
+    assert comparison.systems["bm25-v3"].macro.recall == pytest.approx(0.880952380952381)
     delta = comparison.systems["bge-m3"].delta_vs_bm25
     assert delta is not None
-    assert delta.recall == pytest.approx(bge.cold_report.macro.recall - 0.8833333333333333)
+    assert delta.recall == pytest.approx(bge.cold_report.macro.recall - 0.880952380952381)
     intent_deltas = comparison.systems["bge-m3"].delta_by_intent
     assert intent_deltas is not None
     assert intent_deltas["lookup"].recall == pytest.approx(
-        bge.cold_report.by_intent["lookup"].recall - 0.8833333333333333
+        bge.cold_report.by_intent["lookup"].recall - 0.880952380952381
     )
 
 

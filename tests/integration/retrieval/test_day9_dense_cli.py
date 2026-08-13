@@ -135,14 +135,14 @@ def _write_fixture_gold(path: Path) -> None:
 
 def _write_bm25_reference(path: Path) -> None:
     metrics = RetrievalMetrics(
-        true_positive=44,
-        precision=0.14666666666666667,
-        recall=0.8833333333333333,
-        f2=0.4312169312169312,
+        true_positive=105,
+        precision=0.1499999999999999,
+        recall=0.880952380952381,
+        f2=0.4224545295973871,
     )
     report = RetrievalEvaluationReport(
         dataset_fingerprint=_FINGERPRINT,
-        question_count=30,
+        question_count=70,
         macro=metrics,
         by_intent={"compare": metrics, "growth": metrics, "lookup": metrics},
         per_question=(),
