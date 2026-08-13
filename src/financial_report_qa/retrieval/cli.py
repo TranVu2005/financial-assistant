@@ -18,6 +18,8 @@ from financial_report_qa.core.errors import (
     DenseArtifactError,
     DenseInputError,
     DenseModelError,
+    ExpansionArtifactError,
+    ExpansionInputError,
     FusionArtifactError,
     FusionInputError,
     GraphArtifactError,
@@ -58,6 +60,10 @@ from financial_report_qa.retrieval.evaluation import (
     evaluate_retrieval,
     write_report,
 )
+from financial_report_qa.retrieval.expansion_evaluation import (
+    evaluate_expansion_grid,
+    write_day12_expansion,
+)
 from financial_report_qa.retrieval.fusion_evaluation import evaluate_fusion_grid, write_day10_fusion
 from financial_report_qa.retrieval.gold import load_gold_questions
 from financial_report_qa.retrieval.graph import build_graph, load_graph, save_graph
@@ -65,6 +71,7 @@ from financial_report_qa.retrieval.graph_evaluation import (
     evaluate_graph_coverage,
     write_day11_graph,
 )
+from financial_report_qa.retrieval.graph_service import TableGraphService
 from financial_report_qa.retrieval.index import build_bm25_index, load_bm25_index, save_bm25_index
 from financial_report_qa.retrieval.release import resolve_retrieval_release
 from financial_report_qa.retrieval.service import RetrievalService
@@ -146,6 +153,13 @@ def _parser() -> argparse.ArgumentParser:
     graph_evaluate.add_argument("--release-lock", type=Path, required=True)
     graph_evaluate.add_argument("--graph-dir", type=Path, required=True)
     graph_evaluate.add_argument("--output-dir", type=Path, required=True)
+    expansion_evaluate = commands.add_parser("evaluate-expansion")
+    expansion_evaluate.add_argument("--release-lock", type=Path, required=True)
+    expansion_evaluate.add_argument("--index-dir", type=Path, required=True)
+    expansion_evaluate.add_argument("--graph-dir", type=Path, required=True)
+    expansion_evaluate.add_argument("--gold-path", type=Path, required=True)
+    expansion_evaluate.add_argument("--bm25-report", type=Path, required=True)
+    expansion_evaluate.add_argument("--output-dir", type=Path, required=True)
     cleanup = commands.add_parser("cleanup-day9-data")
     cleanup.add_argument("--repo-root", type=Path, required=True)
     cleanup.add_argument("--quarantine-root", type=Path, required=True)
@@ -290,6 +304,34 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise GraphArtifactError("Graph fingerprint does not match release lock")
             coverage_report = evaluate_graph_coverage(graph, documents)
             json_path, markdown_path = write_day11_graph(coverage_report, args.output_dir)
+            print(json_path)
+            print(markdown_path)
+            return 0
+        if args.command == "evaluate-expansion":
+            gold = load_gold_questions(args.gold_path, release)
+            documents = build_table_documents(
+                release.release_dir / "documents.parquet",
+                release.release_dir / "tables.parquet",
+                release.release_dir / "cells.parquet",
+            )
+            try:
+                index = load_bm25_index(args.index_dir, release_lock_sha256=release.lock_sha256)
+                graph = load_graph(
+                    args.graph_dir, documents, release_lock_sha256=release.lock_sha256
+                )
+                bm25_report = RetrievalEvaluationReport.model_validate_json(
+                    args.bm25_report.read_text(encoding="utf-8")
+                )
+            except (ValueError, ValidationError) as exc:
+                raise ExpansionArtifactError("Expansion evaluation inputs are invalid") from exc
+            if index.manifest.dataset_fingerprint != release.dataset_fingerprint:
+                raise ExpansionArtifactError("BM25 index fingerprint does not match release lock")
+            if graph.manifest.dataset_fingerprint != release.dataset_fingerprint:
+                raise ExpansionArtifactError("Graph fingerprint does not match release lock")
+            expansion_report = evaluate_expansion_grid(
+                RetrievalService(index), TableGraphService(graph), gold, bm25_report
+            )
+            json_path, markdown_path = write_day12_expansion(expansion_report, args.output_dir)
             print(json_path)
             print(markdown_path)
             return 0
@@ -479,6 +521,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         FusionArtifactError,
         GraphInputError,
         GraphArtifactError,
+        ExpansionInputError,
+        ExpansionArtifactError,
         ValidationError,
         JSONDecodeError,
         RuntimeError,

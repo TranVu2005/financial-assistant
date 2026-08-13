@@ -8,6 +8,7 @@ job (`plan.md:777`); this module only guarantees that whatever `limit` Day
 
 from __future__ import annotations
 
+from financial_report_qa.retrieval.contracts import TableDocument
 from financial_report_qa.retrieval.graph import TableGraph
 from financial_report_qa.retrieval.graph_contracts import (
     GraphEdge,
@@ -36,6 +37,11 @@ class TableGraphService:
         self._position_by_table_id = {
             document.table_id: position for position, document in enumerate(graph.documents)
         }
+
+    @property
+    def documents(self) -> tuple[TableDocument, ...]:
+        """Locked table documents in the same identity domain as graph edges."""
+        return self._graph.documents
 
     def neighbors(
         self,

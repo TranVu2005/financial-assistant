@@ -113,6 +113,18 @@ class GraphArtifactError(GraphError):
     """A generated graph artifact is corrupt or mismatched."""
 
 
+class ExpansionError(RetrievalError):
+    """Base class for deterministic Day 12 graph expansion failures."""
+
+
+class ExpansionInputError(ExpansionError):
+    """Expansion inputs, grid, or CLI arguments are invalid."""
+
+
+class ExpansionArtifactError(ExpansionError):
+    """An expansion evaluation artifact is corrupt or mismatched."""
+
+
 class PlanningError(FinancialReportQAError):
     """Base class for deterministic query-planning failures."""
 

@@ -499,3 +499,34 @@ vẫn byte-identical và số liệu coverage khớp đúng số đo thủ công
 skipped`; full working-tree `pytest -q` → `695 passed, 4 skipped` (tăng đúng 50 test so với Day
 10); full `ruff check .` sạch trên toàn bộ file Day 11; full `mypy src tests` → 33 errors có sẵn, 0
 trong file Day 11 (không đổi so với Day 9/10); `git diff --check` sạch trên toàn bộ file Day 11.
+
+## Day 12 Graph Expansion and Rerank
+
+Day 12 evaluates a fixed 13-point graph rerank grid. Seeds are BM25 top-50; each retained graph
+edge contributes rank-only RRF evidence, with `fan_out=25` per `(seed, relation)`. Every expanded
+node is rechecked by the same hard metadata filters, then contradiction tiers are applied before
+`(contradiction_count, -score, table_id)` ordering. `alpha=0` is the locked BM25 control and must
+reproduce its ranking exactly.
+
+The report intentionally has no `default_system`: only 4/30 questions have headroom, involving two
+distinct missing tables, both already in BM25 top-50. The paired `expand_non_seeds` conditions
+separate one-hop expansion from reranking; Day 14 retains or rejects graph support.
+
+```bash
+uv run --frozen --no-sync financial-report-qa retrieval evaluate-expansion \
+  --release-lock data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json \
+  --index-dir data/indexes/bm25-v3/422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a \
+  --graph-dir data/indexes/graph-day11-a/422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a \
+  --gold-path data/qa/retrieval-gold-v1.jsonl \
+  --bm25-report artifacts/evaluations/day13/bm25/retrieval-day8-422df141c935.json \
+  --output-dir artifacts/evaluations/day12
+```
+
+### Re-run trên release `422df141c935` (2026-08-14)
+
+Sau khi release được rebuild để sửa `row_group_context_raw` và giới hạn header 3 dòng (xem mục
+sửa lỗi review ở trên), toàn bộ index (BM25/dense/graph) và 30 câu gold đã được rebuild/re-stamp
+lại trên fingerprint mới. Grid Day 12 chạy lại cho kết quả **giống hệt về mặt định tính**: điểm
+`alpha=0` tái lập đúng BM25 (F2=0.431217, Recall=0.883333, khớp số với baseline BM25 v3), không
+điểm nào trên grid vượt qua với `dense`/graph weight > 0 → `default_system` vẫn là BM25 v3, đúng
+kết luận Day 12 ban đầu.

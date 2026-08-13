@@ -796,10 +796,15 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 12 — Graph expansion và rerank
 
-- [ ] Mở rộng đúng một hop từ top candidates.
-- [ ] Giới hạn fan-out và loại node mâu thuẫn metadata.
-- [ ] Rerank bằng feature rõ ràng trước; cross-encoder chỉ là challenger.
+- [x] Mở rộng đúng một hop từ top candidates.
+- [x] Giới hạn fan-out và loại node mâu thuẫn metadata.
+- [x] Rerank bằng feature rõ ràng trước; cross-encoder chỉ là challenger.
 - **Đầu ra:** câu multi-period/multi-table tăng Recall@k mà latency không vượt ngân sách.
+
+> **✅ HOÀN TẤT ngày 2026-08-13:** triển khai grid 13 điểm cố định với BM25 top-50 seed,
+> fan-out 25 theo từng `(seed, relation)`, hard filter tái sử dụng và tier mâu thuẫn metadata.
+> Điểm `alpha=0` là control tái lập BM25. Report không chọn default: chỉ 4/30 câu còn headroom,
+> gồm hai bảng khác nhau đều đã ở BM25 top-50; quyết định giữ/bỏ graph được hoãn sang Ngày 14.
 
 #### Ngày 13 — Retrieval evaluation
 
