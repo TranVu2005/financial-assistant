@@ -813,11 +813,11 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 13 — Retrieval evaluation
 
-- [ ] Chốt định nghĩa metric bằng ADR trước khi mở rộng gold (xem chốt chặn bên dưới).
-- [ ] Nâng gold QA lên 70 câu, phủ thêm niên độ 2015–2019/2024–2025, bảng `notes` và `|gold| ≥ 3`.
-- [ ] Tính Precision, Recall, F2, MRR, Recall@3/5/10 theo intent, cardinality và loại báo cáo.
-- [ ] Xuất failure cases với question, gold, predicted, scores, reason và `root_cause` gán tay.
-- [ ] Re-baseline `_validate_bm25_reference` rồi chạy lại BM25/dense/fusion/graph/expansion.
+- [x] Chốt định nghĩa metric bằng ADR trước khi mở rộng gold (xem chốt chặn bên dưới).
+- [x] Nâng gold QA lên 70 câu, phủ thêm niên độ 2015–2019/2024–2025, bảng `notes` và `|gold| ≥ 3`.
+- [x] Tính Precision, Recall, F2, MRR, Recall@3/5/10 theo intent, cardinality và loại báo cáo.
+- [x] Xuất failure cases với question, gold, predicted, scores, reason và `root_cause` gán tay.
+- [x] Re-baseline `_validate_bm25_reference` rồi chạy lại BM25/dense/fusion/graph/expansion.
 - **Đầu ra:** `artifacts/evaluations/retrieval-*.json` và `.md`.
 
 > **⚠️ Chốt chặn phát hiện ngày 2026-08-14:** `score_at_10` dùng mẫu số cố định 10 cho precision,
@@ -826,6 +826,12 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 > mục 3 và Ngày 14 là bất khả thi về mặt toán học, không phải do retrieval kém. Quyết định
 > [ADR 0002](docs/decisions/0002-retrieval-metric-definition.md) thêm `Precision@R`/`F2@R`
 > song song và giữ nguyên `score_at_10`.
+
+> **✅ HOÀN TẤT đánh giá ngày 2026-08-14:** gold70 có 24 lookup / 23 compare / 23 growth và
+> 34 câu multi-table. BM25 v3 đạt F2@R `0,491346`, Recall@10 `0,880952`; điểm tốt nhất trong
+> bảng re-baseline đạt F2@R `0,494129`, Recall@10 `0,880952` nhưng đều là control không có đóng
+> góp dense/graph. Failure report có 11 câu: 6 `missing_alias`, 4 `ranking_only`, 1
+> `gold_label_error`. Day 13 hoàn tất phạm vi đánh giá; **cổng Day 14 chưa đạt**.
 
 #### Ngày 14 — Review cổng tuần 2
 

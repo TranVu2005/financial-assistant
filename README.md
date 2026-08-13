@@ -530,3 +530,57 @@ lại trên fingerprint mới. Grid Day 12 chạy lại cho kết quả **giốn
 `alpha=0` tái lập đúng BM25 (F2=0.431217, Recall=0.883333, khớp số với baseline BM25 v3), không
 điểm nào trên grid vượt qua với `dense`/graph weight > 0 → `default_system` vẫn là BM25 v3, đúng
 kết luận Day 12 ban đầu.
+
+## Day 13 Retrieval Evaluation
+
+Đánh giá hiện hành dùng 70 câu gold đã review, khóa vào dataset fingerprint
+`422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a`. SHA-256 của
+`data/qa/retrieval-gold-v1.jsonl` là
+`0AAEEC29325596BF8E56FA91FE330D57C6B731E42842AB3096D04D9CAE43678F`; 30 record gốc được giữ
+nguyên byte và 40 record mới được chọn/gán nhãn từ source trước khi mở ranked output.
+
+### Phân bố gold70
+
+| Chiều phân bố | Số câu |
+|---|---:|
+| Intent | lookup 24; compare 23; growth 23 |
+| Số bảng gold | 1 bảng: 36; 2 bảng: 22; 3 bảng: 8; 4 bảng: 4 |
+| Số period filter | 1 period: 37; nhiều period: 33 |
+| Era theo period mới nhất | 2015–2019: 21; 2020–2023: 41; 2024–2025: 8 |
+| Statement filter | balance sheet 10; cash flow 9; income statement 14; notes 12; không filter 25 |
+
+Tập này phủ 40 công ty, 10 năm filter từ 2016 đến 2025 và có 34 câu multi-table. Chi tiết
+provenance và quota nằm tại [`data/qa/retrieval-gold-v1.provenance.md`](data/qa/retrieval-gold-v1.provenance.md).
+
+### Kết quả mở rộng trên 70 câu
+
+Tất cả metric dưới đây được đọc từ
+[`metrics-v2-422df141c935.json`](artifacts/evaluations/day13/metrics-v2-422df141c935.json). Metric
+chỉ dùng top 10; truy hồi chẩn đoán đến hạng 100 không tham gia tính điểm.
+
+| System | TP | P@10 | R@3 | R@5 | R@10 | F2@10 | MRR | P@R | F2@R |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BM25 v3 | 105 | 0.150000 | 0.583333 | 0.725000 | 0.880952 | 0.422455 | 0.621939 | 0.422619 | 0.491346 |
+| dense BGE-M3 | 69 | 0.098571 | 0.246429 | 0.411905 | 0.552381 | 0.265921 | 0.298503 | 0.196429 | 0.224174 |
+| dense E5-small | 71 | 0.101429 | 0.220238 | 0.420238 | 0.601190 | 0.280335 | 0.274875 | 0.159524 | 0.184609 |
+| fusion BGE | 105 | 0.150000 | 0.588095 | 0.725000 | 0.880952 | 0.422455 | 0.615748 | 0.427381 | 0.494129 |
+| fusion E5 | 105 | 0.150000 | 0.588095 | 0.725000 | 0.880952 | 0.422455 | 0.615748 | 0.427381 | 0.494129 |
+| graph expansion | 105 | 0.150000 | 0.588095 | 0.725000 | 0.880952 | 0.422455 | 0.615748 | 0.427381 | 0.494129 |
+
+Hai fusion cùng chọn `bm25=1.0, dense=0.0`; graph expansion chọn anchor `alpha=0.0`. Vì dense và
+graph không đóng góp tại các điểm thắng, default trung thực vẫn là BM25 v3. Báo cáo graph độc lập
+[`retrieval-day11-graph-422df141c935.json`](artifacts/evaluations/day13/graph/retrieval-day11-graph-422df141c935.json)
+xác nhận đủ 146.011 document và 0 node cô lập trên toàn bộ quan hệ giữ lại.
+
+### Failure analysis và cổng Day 14
+
+[`failures-422df141c935.json`](artifacts/evaluations/day13/failures-422df141c935.json) ghi nhận
+11/70 câu lỗi top-10: 7 `zero_gold_hits`, 4 `partial_gold_hits`, 0 `no_eligible_documents`, 0
+`no_index_tokens`. Root cause gán tay có evidence: 6 `missing_alias`, 4 `ranking_only`, 1
+`gold_label_error`; các nhóm `filter_too_narrow`, `filter_too_wide`, `ocr_corruption` và `unknown`
+đều bằng 0. Gold bị thiếu đều xuất hiện ở hạng chẩn đoán 11–44.
+
+Day 13 hoàn tất phạm vi **đánh giá**, nhưng chưa đạt cổng Day 14 theo ADR 0002: kết quả tốt nhất
+quan sát được là F2@R `0.494129` và Recall@10 `0.880952`, thấp hơn hai ngưỡng tương ứng `0.80` và
+`0.90`. Ưu tiên tiếp theo là sửa gold label đã xác nhận và cải thiện normalization/alias; không
+đổi công thức metric hoặc tuyên bố gate pass.
