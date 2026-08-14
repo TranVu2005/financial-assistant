@@ -940,11 +940,37 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 17 — LLM planner
 
-- [ ] Tạo OpenAI-compatible client tới llama.cpp với timeout/retry giới hạn.
-- [ ] Prompt chỉ chứa schema rút gọn, candidate tables và 6–10 few-shot tốt.
-- [ ] Bật grammar/JSON schema; temperature 0.
-- [ ] Một lần repair JSON tối đa; sau đó abstain.
-- **Đầu ra:** plan accuracy và invalid JSON rate trên QA dev.
+- [x] Tạo OpenAI-compatible client tới llama.cpp với timeout/retry giới hạn.
+- [x] Prompt chỉ chứa schema rút gọn (viết tay, không dump `model_json_schema()`) và 9 few-shot
+  (`candidate_table_ids` bị loại khỏi cả prompt lẫn output LLM — ADR 0006 quyết định A/§1.5, caller
+  tiêm sau).
+- [x] Bật `response_format` json_schema khi `json_schema_constrained=true`; `temperature` đọc từ
+  `configs/*.yaml` (trước đây là code chết, nay đã nối dây qua `LLMSettings`).
+- [x] Một lần repair JSON tối đa (gộp cả 3 loại lỗi: JSON hỏng, schema `LLMPlanOutput` sai,
+  `validate_plan_semantics` từ chối — ADR 0006 quyết định D); sau đó abstain có mã
+  (`llm_invalid_json` / `llm_plan_invalid` / `llm_unavailable`).
+- **Đầu ra:** **Không có mô hình llama.cpp sống trong môi trường này** (`models/` rỗng,
+  `127.0.0.1:8080` `ConnectTimeout`) nên plan accuracy/invalid-JSON-rate trên mô hình thật **chưa đo
+  được** — đây là nợ đã biết, không phải nợ ẩn. Đã đo được điều quan trọng hơn cho an toàn hệ thống:
+  chạy CLI `evaluate-llm-plans` với cache rỗng, không mô hình sống — router (rule planner + LLM
+  fallback) vẫn giữ **false_plan_rate = 0,0**, tức là dù LLM hoàn toàn không khả dụng, hệ thống
+  không bao giờ trả bừa một plan. Xem [ADR 0006](docs/decisions/0006-llm-planner-role.md) và
+  [README.md § Day 17](README.md).
+
+> **⚠️ Chẩn đoán ngày 2026-08-15 (trước khi bắt đầu):** đo lại 19 câu gold70 bị rule planner
+> abstain cho thấy **không câu nào cần đến LLM**: 7 câu khớp đúng arity `compare` (lỗ hổng định
+> tuyến xác định), 2 câu thiếu từ điển, 8 câu liệt kê/bộ phận **không có đáp án số**, 2 câu vượt
+> arity schema. Vì vậy DoD Ngày 17 **không** được đặt là "tăng plannable rate trên gold70" —
+> headroom đo được bằng 0. Lý do thật để vẫn xây: rule planner chỉ phát ra **4/9 operation**
+> (`compare`/`ratio`/`average`/`sum`/`rank` không bao giờ xuất hiện với bất kỳ đầu vào nào), và
+> `data/official/test_questions.json` vẫn chưa tồn tại — LLM là bảo hiểm phủ sóng cho ngữ pháp chưa
+> từng thấy. Ba ràng buộc đã đo: `models/` rỗng và `127.0.0.1:8080` `ConnectTimeout` (mọi test phải
+> chạy offline); `model_json_schema()` ăn 23,5 % cửa sổ 4.096 nên schema phải rút gọn viết tay; 12
+> `candidate_table_ids` tốn 192–400 token > `max_output_tokens=160` nên **caller tiêm table id, LLM
+> không sinh**. Ngoài ra khối `llm:` trong `configs/*.yaml` hiện là **code chết** (0 tham chiếu
+> Python) và `execution.allow_operations` còn thiếu `compare_companies`.
+>
+> **Kế hoạch chi tiết:** [docs/plans/day17-llm-planner.md](docs/plans/day17-llm-planner.md).
 
 #### Ngày 18 — Deterministic compiler
 

@@ -32,16 +32,26 @@ PlanAbstainCode = Literal[
     "multi_metric_unsupported",
     "period_grammar_unsupported",
     "entity_ambiguous",
+    "llm_unavailable",
+    "llm_invalid_json",
+    "llm_plan_invalid",
 ]
 
 _GROWTH_KEYWORDS = ("tăng trưởng", "biến động", "tốc độ")
 
 
 class RulePlanResult(_FrozenModel):
-    """Exactly one of `plan` (fully valid) or `abstain_codes` (non-empty) is set."""
+    """Exactly one of `plan` (fully valid) or `abstain_codes` (non-empty) is set.
+
+    `repaired` is always `False` here (the rule planner never retries); the
+    Day 17 LLM planner sets it `True` when a result required its one repair
+    round trip, so `llm_evaluation.py` can report `repair_success_rate`
+    without a parallel result type.
+    """
 
     plan: FinancialQueryPlan | None = None
     abstain_codes: tuple[PlanAbstainCode, ...] = ()
+    repaired: bool = False
 
     @model_validator(mode="after")
     def validate_exactly_one(self) -> Self:

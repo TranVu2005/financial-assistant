@@ -139,3 +139,19 @@ class PlanningArtifactError(PlanningError):
 
 class TableFrameError(FinancialReportQAError):
     """A table cannot be reconstructed as a pandas DataFrame from a release."""
+
+
+class LLMError(FinancialReportQAError):
+    """Base class for Day 17 LLM-planner client failures."""
+
+
+class LLMUnavailableError(LLMError):
+    """The LLM endpoint could not be reached after bounded retries."""
+
+
+class LLMRequestError(LLMError):
+    """The LLM endpoint rejected the request (4xx); retrying would not help."""
+
+
+class LLMResponseError(LLMError):
+    """The LLM endpoint returned 200 with a malformed OpenAI-style envelope."""

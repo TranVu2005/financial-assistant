@@ -1,11 +1,48 @@
-"""Typed application settings loaded from environment variables."""
+"""Typed application settings loaded from environment variables and YAML."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, Self
 
+import yaml  # type: ignore[import-untyped]
+from pydantic import BaseModel, ConfigDict
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class LLMSettings(BaseModel):
+    """Day 17 LLM-planner client settings, layered from `configs/*.yaml`.
+
+    Deliberately strict (`extra="forbid"`): the `llm:` block in
+    `configs/base.yaml`/`configs/local_rtx3050.yaml` previously had zero
+    Python readers, so a stray or misspelled key would have gone unnoticed
+    forever (Day 17 plan §1.3).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_url: str
+    model: str
+    timeout_seconds: float
+    max_output_tokens: int
+    temperature: float
+    context_length: int
+    json_schema_constrained: bool
+
+
+def load_llm_settings(paths: Sequence[str | Path]) -> LLMSettings:
+    """Merge the `llm:` block of one or more YAML files, later files winning.
+
+    Mirrors the `configs/base.yaml` + `configs/local_rtx3050.yaml` layering
+    already used to run this project locally; a later path overrides keys an
+    earlier path also sets, and keys unique to either path pass through.
+    """
+    merged: dict[str, object] = {}
+    for path in paths:
+        document = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+        merged.update(document.get("llm", {}))
+    return LLMSettings.model_validate(merged)
 
 
 class Settings(BaseSettings):

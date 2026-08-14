@@ -339,3 +339,89 @@ def test_plan_cli_fails_closed_on_missing_case_file(
         ]
     )
     assert exit_code == 2
+
+
+def _write_fixture_llm_config(path: Path) -> None:
+    path.write_text(
+        "llm:\n"
+        "  base_url: http://127.0.0.1:8080/v1\n"
+        "  model: qwen3-4b-instruct-2507-q4_k_m\n"
+        "  timeout_seconds: 5\n"
+        "  max_output_tokens: 160\n"
+        "  temperature: 0.0\n"
+        "  context_length: 4096\n"
+        "  json_schema_constrained: true\n",
+        encoding="utf-8",
+    )
+
+
+def test_llm_plan_cli_runs_offline_with_empty_cache_and_never_fabricates_a_plan(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    """No `--live`, no pre-populated cache: every case must abstain
+    (`llm_unavailable`) rather than crash or fabricate a plan — the router's
+    false-plan-rate safety property must hold even with zero LLM coverage."""
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    plan_cases_path = tmp_path / "plan-cases.jsonl"
+    _write_fixture_plan_cases(release, plan_cases_path)
+    llm_config_path = tmp_path / "llm.yaml"
+    _write_fixture_llm_config(llm_config_path)
+    cache_path = tmp_path / "cache.jsonl"
+    output_dir = tmp_path / "artifacts"
+
+    assert (
+        main(
+            [
+                "planning",
+                "evaluate-llm-plans",
+                "--release-lock",
+                "fixture-lock",
+                "--case-path",
+                str(plan_cases_path),
+                "--output-dir",
+                str(output_dir),
+                "--cache-path",
+                str(cache_path),
+                "--llm-config",
+                str(llm_config_path),
+            ]
+        )
+        == 0
+    )
+
+    llm_reports = list(output_dir.glob("llm-plan-cases-*.json"))
+    router_reports = list(output_dir.glob("router-abstain-*.json"))
+    assert len(llm_reports) == 1
+    assert len(router_reports) == 1
+    llm_report = json.loads(llm_reports[0].read_text(encoding="utf-8"))
+    router_report = json.loads(router_reports[0].read_text(encoding="utf-8"))
+    assert llm_report["operation_accuracy"] == 0.0
+    assert llm_report["invalid_json_rate"] == 0.0
+    assert router_report["false_plan_rate"] == 0.0
+
+
+def test_llm_plan_cli_live_without_llm_config_fails_closed(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    plan_cases_path = tmp_path / "plan-cases.jsonl"
+    _write_fixture_plan_cases(release, plan_cases_path)
+
+    exit_code = main(
+        [
+            "planning",
+            "evaluate-llm-plans",
+            "--release-lock",
+            "fixture-lock",
+            "--case-path",
+            str(plan_cases_path),
+            "--output-dir",
+            str(tmp_path / "artifacts"),
+            "--cache-path",
+            str(tmp_path / "cache.jsonl"),
+            "--live",
+        ]
+    )
+    assert exit_code == 2

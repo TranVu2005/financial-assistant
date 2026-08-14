@@ -17,6 +17,7 @@ execution:
   allow_operations:
     - lookup
     - compare
+    - compare_companies
     - difference
     - growth_rate
     - ratio

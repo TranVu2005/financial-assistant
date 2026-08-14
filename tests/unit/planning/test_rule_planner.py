@@ -9,14 +9,16 @@ from __future__ import annotations
 
 from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.plan_validator import validate_plan_semantics
-from financial_report_qa.planning.rule_planner import build_plan
+from financial_report_qa.planning.rule_planner import RulePlanResult, build_plan
 
 _TABLE_A = "tbl_" + "a" * 64
 _TABLE_B = "tbl_" + "b" * 64
 _KNOWN_TABLES = frozenset({_TABLE_A, _TABLE_B})
 
 
-def _plan_for(question: str, *, candidate_table_ids: tuple[str, ...] = (_TABLE_A,)):
+def _plan_for(
+    question: str, *, candidate_table_ids: tuple[str, ...] = (_TABLE_A,)
+) -> RulePlanResult:
     entities = parse_query_entities(question)
     return build_plan(
         entities, candidate_table_ids=candidate_table_ids, known_table_ids=_KNOWN_TABLES

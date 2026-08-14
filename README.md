@@ -827,3 +827,72 @@ tiêu đề Markdown của báo cáo. So với ước tính sơ bộ 43/70 (61,4
 từ điển, con số đo thật 51/70 cao hơn — phần lớn nhờ 14 câu được cứu khỏi bug năm trần trụi.
 
 `pytest -q`: 871 passed, 4 skipped. `ruff check .`: sạch. `mypy`: 0 lỗi (89 file).
+
+## Day 17 LLM Planner
+
+**Chẩn đoán trước khi viết code:** đo lại 19 câu gold70 bị rule planner Ngày 16 abstain cho thấy
+**không câu nào thật sự cần LLM** — 7 câu khớp đúng arity `compare` (lỗ hổng định tuyến xác định,
+không phải lỗ hổng ngôn ngữ), 8 câu liệt kê/bộ phận không có đáp án số, 2 câu thiếu từ điển, 2 câu
+vượt arity schema. Vì vậy DoD Ngày 17 **không** đặt là "tăng plannable rate trên gold70" — headroom
+đo được bằng 0. Lý do thật để vẫn xây: rule planner chỉ phát ra 4/9 operation trên 1.400 plan case
+(`compare`/`ratio`/`average`/`sum`/`rank` chưa từng được phát ra), và
+`data/official/test_questions.json` vẫn chưa tồn tại — LLM là bảo hiểm phủ sóng cho ngữ pháp chưa
+từng thấy, không phải cải thiện một con số đã đo. Xem
+[docs/plans/day17-llm-planner.md](docs/plans/day17-llm-planner.md) và
+[ADR 0006](docs/decisions/0006-llm-planner-role.md) (quyết định A1 router / B1 không có row label
+trong prompt / C1 chấm trên plan case / D một lượt repair duy nhất cho cả 3 loại lỗi).
+
+### Kiến trúc: router → LLM planner → client
+
+```
+plan_router.route_plan          # ADR 0006 A1: luật chạy trước, LLM chỉ chạy khi luật abstain
+  ├─ rule_planner.build_plan     # Ngày 16, không đổi
+  └─ llm_planner.build_plan      # question -> FinancialQueryPlan | abstain, tối đa 1 lần repair
+       ├─ llm_prompt.py          # schema rút gọn viết tay + 9 few-shot, không dump model_json_schema()
+       ├─ llm_contracts.py       # LLMPlanOutput = FinancialQueryPlan trừ candidate_table_ids
+       └─ llm_client.py          # httpx OpenAI-compatible, bounded retry, không retry 4xx
+```
+
+`llm_planner.build_plan` không bao giờ trả một plan chưa qua `validate_plan_semantics` — cùng bất
+biến rule planner đã giữ từ Ngày 16 (ADR 0005 §Hệ quả). Ba loại lỗi (JSON hỏng, `LLMPlanOutput` sai
+schema, `validate_plan_semantics` từ chối) đi chung đúng một lượt repair rồi abstain có mã
+(`llm_invalid_json` / `llm_plan_invalid` / `llm_unavailable`) — không có lượt thứ hai.
+
+### Ba ràng buộc đã đo trước khi thiết kế prompt
+
+| Ràng buộc | Số đo | Hệ quả thiết kế |
+|---|---:|---|
+| `FinancialQueryPlan.model_json_schema()` | 963 token (bge-m3) = 23,5 % cửa sổ 4.096 | Prompt dùng bảng arity viết tay (`_OPERATION_GUIDE`), không dump schema |
+| Row label 6 bảng ứng viên, p90 | ~1.300 token | Loại khỏi prompt (quyết định B1); mọi field metric chấp nhận `raw_text` dự phòng |
+| 12 `candidate_table_ids` vs `max_output_tokens=160` | 192–400 token > 160 | LLM không sinh table id; caller tiêm sau khi parse (`LLMPlanOutput` không có field này) |
+
+Prompt hệ thống thật đo được **3.188 chars ≈ 1.594 token ước lượng** (tỷ lệ 2,0 chars/token bi quan
+có chủ đích so với 2,16–4,79 đo bằng bge-m3), nằm trong ngân sách nửa cửa sổ 2.048 token.
+
+### `configs/*.yaml` — từ code chết thành có kiểu
+
+Khối `llm:` trong `configs/base.yaml`/`configs/local_rtx3050.yaml` trước Ngày 17 có **0 tham chiếu
+Python**. `core/config.py::LLMSettings` (`extra="forbid"`) và `load_llm_settings()` nối dây thật,
+lớp sau đè lớp trước — bắt được ngay một khóa lạ thay vì âm thầm bỏ qua. Đã sửa luôn
+`execution.allow_operations` thiếu `compare_companies` (sót lại từ Ngày 16/ADR 0005).
+
+### Đo được: an toàn khi 0 mô hình sống, chưa đo được: độ chính xác LLM thật
+
+**Không có mô hình llama.cpp trong môi trường này** (`models/` rỗng, `127.0.0.1:8080`
+`ConnectTimeout`) — nợ đã biết, ghi rõ trong kế hoạch Ngày 17 trước khi bắt đầu, không phải phát
+hiện sau. `planning evaluate-llm-plans` (CLI mới) chạy được **hoàn toàn offline** qua
+`ReplayCacheClient`: cache rỗng → mọi câu hỏi abstain `llm_unavailable` thay vì crash hay bịa plan.
+
+| Báo cáo | Cases | Kết quả (cache rỗng, không mô hình) |
+|---|---:|---|
+| `llm-plan-cases-*.md` — LLM planner đứng một mình | 600 (`expected_operation`) | operation accuracy 0,0; invalid-JSON rate 0,0 (mọi case là `llm_unavailable`, không phải JSON hỏng) |
+| `router-abstain-*.md` — router đầy đủ | 800 (`expected_abstain_code`) | **abstain recall 1,000000; false-plan rate 0,000000** |
+
+Con số quan trọng nhất là dòng thứ hai: **dù LLM hoàn toàn không khả dụng, router không bao giờ trả
+bừa một plan** — đúng chỉ tiêu cứng ADR 0006 đặt ra. `operation_accuracy`/`invalid_json_rate` của
+LLM planner trên mô hình thật để lại cho lần chạy `--live` khi có server, ghi cache lại để tái lập
+(`sha256(model identity + prompt)`, cùng tiền lệ cache truy vấn dense Ngày 9) — không đặt ngưỡng
+cứng vì chưa có số đo thật nào để đặt ngưỡng dựa trên đó.
+
+`pytest -q`: 916 passed, 4 skipped (chỉ symlink/ACL Windows). `ruff check .`: sạch. `mypy`: 0 lỗi
+(186 file, `src` + `tests`).
