@@ -174,7 +174,8 @@ class ExpectedTable(BaseModel):
     def validate_unit_normalized(cls, v: str) -> str:
         if v not in {"", "VND", "VND_thousand", "VND_million", "VND_billion", "percent", "ratio"}:
             raise ValueError(
-                f"unit_normalized must be one of empty, VND, VND_thousand, VND_million, VND_billion, percent, ratio"
+                "unit_normalized must be one of empty, VND, VND_thousand, VND_million, "
+                "VND_billion, percent, ratio"
             )
         return v
 

@@ -7,18 +7,12 @@ from typing import Any
 from financial_report_qa.core.errors import Week1GateInputError
 from financial_report_qa.evaluation.week1_annotations import load_annotation_bundle
 from financial_report_qa.evaluation.week1_contracts import (
-    ANNOTATION_SCHEMA_VERSION,
     CELL_AUDIT_COLUMNS,
-    EXPECTED_TABLE_COLUMNS,
     PARETO_CSV_COLUMNS,
-    PILOT_DOCUMENT_COLUMNS,
     SAMPLING_VERSION,
     CellAudit,
-    ExpectedTable,
     GateCheck,
     GateResult,
-    PilotDocument,
-    PilotMetadata,
     TableAssessment,
     percentage_passes,
     read_csv_rows,

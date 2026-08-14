@@ -151,9 +151,7 @@ def _patch_release_resolver(monkeypatch: MonkeyPatch, release: ResolvedRetrieval
 def _patch_fake_encoder_loader(monkeypatch: MonkeyPatch) -> None:
     import financial_report_qa.retrieval.cli as retrieval_cli
 
-    def load(
-        name: EncoderName, *, local_files_only: bool, device: str = "cpu"
-    ) -> _FakeEncoder:
+    def load(name: EncoderName, *, local_files_only: bool, device: str = "cpu") -> _FakeEncoder:
         return _FakeEncoder(
             approved_encoder_spec(name).model_copy(update={"dimension": 2, "device": device})
         )

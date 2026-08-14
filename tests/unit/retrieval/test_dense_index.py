@@ -63,6 +63,7 @@ def _encoder() -> FakeEncoder:
         )
     )
 
+
 def test_dense_index_batches_and_persists_vectors(tmp_path: Path) -> None:
     encoder = FakeEncoder(
         approved_encoder_spec("multilingual-e5-small").model_copy(
@@ -157,9 +158,7 @@ def test_cuda_build_uses_gpu_then_returns_cpu_index(monkeypatch: MonkeyPatch) ->
         assert cpu_index is not None
         return cpu_index
 
-    monkeypatch.setattr(
-        faiss, "StandardGpuResources", make_resources, raising=False
-    )
+    monkeypatch.setattr(faiss, "StandardGpuResources", make_resources, raising=False)
     monkeypatch.setattr(
         faiss,
         "index_cpu_to_gpu",

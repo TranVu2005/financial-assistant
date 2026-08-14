@@ -112,9 +112,7 @@ def test_csv_reader_rejects_contract_drift(tmp_path: Path, raw: bytes) -> None:
         ("2023|2024", ("2023", "2024")),
     ],
 )
-def test_parse_expected_periods_uses_pipe_contract(
-    raw: str, expected: tuple[str, ...]
-) -> None:
+def test_parse_expected_periods_uses_pipe_contract(raw: str, expected: tuple[str, ...]) -> None:
     assert parse_expected_periods(raw) == expected
 
 

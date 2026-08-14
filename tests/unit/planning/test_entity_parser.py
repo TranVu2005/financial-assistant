@@ -21,9 +21,7 @@ def test_bare_uppercase_word_that_is_not_a_registered_ticker_is_ignored() -> Non
 
 
 def test_full_legal_name_resolves_to_ticker() -> None:
-    entities = parse_query_entities(
-        "Tra cứu tổng tài sản của Ngân hàng TMCP Á Châu năm 2023."
-    )
+    entities = parse_query_entities("Tra cứu tổng tài sản của Ngân hàng TMCP Á Châu năm 2023.")
     assert entities.company_codes == ("ACB",)
 
 
@@ -44,11 +42,9 @@ def test_explicit_ticker_contradicting_a_different_company_name_is_a_conflict() 
 
 
 def test_ticker_embedded_in_another_companys_name_is_not_a_spurious_match() -> None:
-    """"FPT" is a registered ticker but is also a substring of FTS's display
+    """ "FPT" is a registered ticker but is also a substring of FTS's display
     name ("CTCP Chứng khoán FPT"); only FTS should be extracted here."""
-    entities = parse_query_entities(
-        "Tra cứu lợi nhuận sau thuế của CTCP Chứng khoán FPT năm 2023."
-    )
+    entities = parse_query_entities("Tra cứu lợi nhuận sau thuế của CTCP Chứng khoán FPT năm 2023.")
     assert entities.company_codes == ("FTS",)
 
 
@@ -65,18 +61,16 @@ def test_year_and_quarter_and_date_periods() -> None:
     assert parse_query_entities(
         "Doanh thu thuần của DBC quý IV năm 2023 là bao nhiêu?"
     ).periods == ("2023-Q4",)
-    assert parse_query_entities(
-        "Doanh thu thuần của DBC quý I năm 2023 là bao nhiêu?"
-    ).periods == ("2023-Q1",)
-    assert parse_query_entities(
-        "Tra cứu doanh thu thuần của DBC tại ngày 31/12/2023."
-    ).periods == ("2023-12-31",)
+    assert parse_query_entities("Doanh thu thuần của DBC quý I năm 2023 là bao nhiêu?").periods == (
+        "2023-Q1",
+    )
+    assert parse_query_entities("Tra cứu doanh thu thuần của DBC tại ngày 31/12/2023.").periods == (
+        "2023-12-31",
+    )
 
 
 def test_compare_years_yields_both_periods() -> None:
-    entities = parse_query_entities(
-        "So sánh tổng tài sản của DBC giữa năm 2022 và năm 2023."
-    )
+    entities = parse_query_entities("So sánh tổng tài sản của DBC giữa năm 2022 và năm 2023.")
     assert entities.periods == ("2022", "2023")
 
 

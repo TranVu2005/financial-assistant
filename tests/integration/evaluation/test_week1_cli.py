@@ -494,11 +494,12 @@ def test_week1_gate_cli_full_review_lifecycle(tmp_path: Path) -> None:
 
     # Read review CSV
     import csv
+
     with review_path.open("r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         review_rows = list(reader)
 
-    # Pre-populate human inputs: mark include=true for at least 90 tables to satisfy count validation
+    # Pre-populate human inputs: include=true for at least 90 tables to satisfy count validation
     for r in review_rows:
         r["include"] = "true"
         r["unit_normalized"] = "VND"

@@ -38,9 +38,7 @@ class SystemQuestionEvaluationV2(BaseModel):
 class RetrievalSystemReportV2(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["retrieval-system-evaluation-v2"] = (
-        "retrieval-system-evaluation-v2"
-    )
+    schema_version: Literal["retrieval-system-evaluation-v2"] = "retrieval-system-evaluation-v2"
     system_name: str
     source_kind: SystemSourceKind
     source_path: str
@@ -272,9 +270,7 @@ def _render_markdown(report: RetrievalSystemReportV2) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_system_report_v2(
-    report: RetrievalSystemReportV2, output_dir: Path
-) -> tuple[Path, Path]:
+def write_system_report_v2(report: RetrievalSystemReportV2, output_dir: Path) -> tuple[Path, Path]:
     """Write deterministic per-system V2 JSON and Markdown."""
     safe_name = report.system_name.replace("/", "-").replace(" ", "-")
     prefix = report.dataset_fingerprint[:12]

@@ -34,7 +34,6 @@ class ReleaseLock(BaseModel):
         return v
 
 
-
 def publish_release_lock(
     release_path: Path,
     gate_result_path: Path,
@@ -49,9 +48,7 @@ def publish_release_lock(
     # Read release manifest
     manifest_path = release_path / "manifest.json"
     if not manifest_path.is_file():
-        raise Week1GateInputError(
-            f"Release manifest not found: {manifest_path}"
-        )
+        raise Week1GateInputError(f"Release manifest not found: {manifest_path}")
     with manifest_path.open("r", encoding="utf-8") as f:
         manifest = json.load(f)
 
@@ -68,9 +65,7 @@ def publish_release_lock(
         gate_result = json.load(f)
 
     if not gate_result.get("passed", False):
-        raise Week1GateInputError(
-            "Cannot create release lock: the gate result did not pass"
-        )
+        raise Week1GateInputError("Cannot create release lock: the gate result did not pass")
 
     gate_fingerprint: str = gate_result.get("dataset_fingerprint", "")
     if gate_fingerprint != release_fingerprint:

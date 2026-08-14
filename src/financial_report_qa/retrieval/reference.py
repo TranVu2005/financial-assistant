@@ -17,9 +17,7 @@ from financial_report_qa.retrieval.evaluation import (
 )
 
 ReferenceVersion = Literal["gold30", "gold70"]
-_LOCKED_DATASET_FINGERPRINT = (
-    "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
-)
+_LOCKED_DATASET_FINGERPRINT = "422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a"
 
 _GOLD30_QUESTION_IDS: tuple[str, ...] = (
     "retq_00888e79366b91100dacb03137b33c72c620c121dbf3e5fab1db36a23b41733e",
@@ -174,12 +172,14 @@ def validate_bm25_reference_report(
         raise ValueError("BM25 reference does not match a locked gold30/gold70 identity")
 
     rescored = tuple(
-        score_at_10(item.predicted_table_ids, item.gold_table_ids)
-        for item in report.per_question
+        score_at_10(item.predicted_table_ids, item.gold_table_ids) for item in report.per_question
     )
-    if any(not _metrics_match(observed, expected) for observed, expected in zip(
-        (item.metrics for item in report.per_question), rescored, strict=True
-    )):
+    if any(
+        not _metrics_match(observed, expected)
+        for observed, expected in zip(
+            (item.metrics for item in report.per_question), rescored, strict=True
+        )
+    ):
         raise ValueError("BM25 reference per-question metrics do not match its rankings")
     recomputed_macro = _average_metrics(rescored)
     if not _metrics_match(report.macro, recomputed_macro):

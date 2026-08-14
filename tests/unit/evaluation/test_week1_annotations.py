@@ -1,6 +1,8 @@
 import hashlib
 import json
 from pathlib import Path
+from typing import Any, cast
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -14,27 +16,28 @@ from financial_report_qa.data.dataset_builder import (
     TABLE_SCHEMA,
 )
 from financial_report_qa.evaluation.week1_annotations import (
-    load_annotation_bundle,
-    generate_review_worksheet,
     finalize_review_worksheet,
+    generate_review_worksheet,
+    load_annotation_bundle,
 )
 from financial_report_qa.evaluation.week1_contracts import (
     EXPECTED_TABLE_COLUMNS,
     PILOT_DOCUMENT_COLUMNS,
+    StatementType,
     read_csv_rows,
     stable_annotation_id,
     write_csv_rows,
 )
-from financial_report_qa.evaluation.week1_dataset import load_gate_dataset
-from financial_report_qa.schemas import stable_document_id, stable_table_id
+from financial_report_qa.evaluation.week1_dataset import GateDataset, load_gate_dataset
 from financial_report_qa.ingestion.provenance import stable_cell_id
+from financial_report_qa.schemas import stable_document_id, stable_table_id
 
 
 def _sha(index: int) -> str:
     return f"{index + 1:064x}"
 
 
-def complete_annotation_fixture(tmp_path: Path) -> tuple[any, Path]:
+def complete_annotation_fixture(tmp_path: Path) -> tuple[GateDataset, Path]:
     manifest_dir = tmp_path / "manifests"
     manifest_dir.mkdir(exist_ok=True, parents=True)
     manifest_path = manifest_dir / "documents.jsonl"
@@ -182,7 +185,7 @@ def complete_annotation_fixture(tmp_path: Path) -> tuple[any, Path]:
     )
 
     # Write release parquet files
-    write_table = pq.write_table
+    write_table = cast(Any, pq.write_table)
     write_table(
         pa.Table.from_pylist(document_rows, schema=DOCUMENT_SCHEMA),
         release_path / "documents.parquet",
@@ -234,9 +237,7 @@ def mutate_annotation_fixture(annotation_dir: Path, mutation: str) -> None:
         doc_rows.append(doc_rows[-1])
         write_csv_rows(docs_csv_path, PILOT_DOCUMENT_COLUMNS, doc_rows, allow_identical=True)
         # Update metadata sha
-        metadata["pilot_documents_sha256"] = hashlib.sha256(
-            docs_csv_path.read_bytes()
-        ).hexdigest()
+        metadata["pilot_documents_sha256"] = hashlib.sha256(docs_csv_path.read_bytes()).hexdigest()
         metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
     elif mutation == "wrong_company_count":
@@ -245,35 +246,35 @@ def mutate_annotation_fixture(annotation_dir: Path, mutation: str) -> None:
         for row in doc_rows[-3:]:
             row["company_code"] = comp_to_use
         write_csv_rows(docs_csv_path, PILOT_DOCUMENT_COLUMNS, doc_rows, allow_identical=True)
-        metadata["pilot_documents_sha256"] = hashlib.sha256(
-            docs_csv_path.read_bytes()
-        ).hexdigest()
+        metadata["pilot_documents_sha256"] = hashlib.sha256(docs_csv_path.read_bytes()).hexdigest()
         metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
     elif mutation == "wrong_documents_per_company":
         # Change one company code of a document, causing unequal distribution
         doc_rows[-1]["company_code"] = "COMP_EXTRA"
         write_csv_rows(docs_csv_path, PILOT_DOCUMENT_COLUMNS, doc_rows, allow_identical=True)
-        metadata["pilot_documents_sha256"] = hashlib.sha256(
-            docs_csv_path.read_bytes()
-        ).hexdigest()
+        metadata["pilot_documents_sha256"] = hashlib.sha256(docs_csv_path.read_bytes()).hexdigest()
         metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
     elif mutation == "expected_doc_outside_pilot":
         # Reference a doc_id that is not in the pilot
         expected_rows[0]["doc_id"] = "doc_outside_pilot"
-        write_csv_rows(expected_csv_path, EXPECTED_TABLE_COLUMNS, expected_rows, allow_identical=True)
+        write_csv_rows(
+            expected_csv_path, EXPECTED_TABLE_COLUMNS, expected_rows, allow_identical=True
+        )
 
     elif mutation == "expected_path_mismatch":
         # Mismatch the relative path for a document
         expected_rows[0]["relative_path"] = "different/path/report.txt"
-        write_csv_rows(expected_csv_path, EXPECTED_TABLE_COLUMNS, expected_rows, allow_identical=True)
+        write_csv_rows(
+            expected_csv_path, EXPECTED_TABLE_COLUMNS, expected_rows, allow_identical=True
+        )
 
     elif mutation == "overlapping_same_statement_annotations":
         # Create an overlapping statement in the first doc
         doc_id = expected_rows[0]["doc_id"]
         rel_path = expected_rows[0]["relative_path"]
-        statement_type = expected_rows[0]["statement_type"]
+        statement_type = cast(StatementType, expected_rows[0]["statement_type"])
         new_id = stable_annotation_id(doc_id, 15, 25, statement_type)
         expected_rows.append(
             {
@@ -291,7 +292,9 @@ def mutate_annotation_fixture(annotation_dir: Path, mutation: str) -> None:
                 "notes": "",
             }
         )
-        write_csv_rows(expected_csv_path, EXPECTED_TABLE_COLUMNS, expected_rows, allow_identical=True)
+        write_csv_rows(
+            expected_csv_path, EXPECTED_TABLE_COLUMNS, expected_rows, allow_identical=True
+        )
 
     elif mutation == "fewer_than_30_balance_sheets":
         # Filter out all balance sheet annotations
@@ -323,9 +326,7 @@ def mutate_annotation_fixture(annotation_dir: Path, mutation: str) -> None:
         "fewer_than_30_cash_flows",
     ],
 )
-def test_load_annotation_bundle_rejects_invalid_gate_input(
-    tmp_path: Path, mutation: str
-) -> None:
+def test_load_annotation_bundle_rejects_invalid_gate_input(tmp_path: Path, mutation: str) -> None:
     dataset, annotation_dir = complete_annotation_fixture(tmp_path)
     mutate_annotation_fixture(annotation_dir, mutation)
     with pytest.raises(Week1GateInputError):
@@ -356,54 +357,63 @@ def test_review_worksheet_generation_and_finalization(tmp_path: Path) -> None:
 
     # 2. Write mock tables and cells to the release parquet files
     from decimal import Decimal
+
     table_rows = []
     cell_rows = []
     placement_rows = []
     for doc_index, doc in enumerate(dataset.documents_by_id.values()):
-        for stmt_idx, stmt in enumerate(["balance_sheet", "income_statement", "cash_flow_statement"]):
+        for stmt_idx, stmt in enumerate(
+            ["balance_sheet", "income_statement", "cash_flow_statement"]
+        ):
             table_id = stable_table_id(doc.doc_id, 10, 20, stmt_idx)
-            table_rows.append({
-                "table_id": table_id,
-                "doc_id": doc.doc_id,
-                "source_ordinal": stmt_idx,
-                "title_raw": stmt.replace("_", " ").title(),
-                "statement_type": stmt,
-                "unit_raw": "VND",
-                "unit_normalized": "VND",
-                "line_start": 10,
-                "line_end": 20,
-                "row_count": 2,
-                "column_count": 2,
-                "quality_score": 1.0,
-                "csv_path": None,
-            })
+            table_rows.append(
+                {
+                    "table_id": table_id,
+                    "doc_id": doc.doc_id,
+                    "source_ordinal": stmt_idx,
+                    "title_raw": stmt.replace("_", " ").title(),
+                    "statement_type": stmt,
+                    "unit_raw": "VND",
+                    "unit_normalized": "VND",
+                    "line_start": 10,
+                    "line_end": 20,
+                    "row_count": 2,
+                    "column_count": 2,
+                    "quality_score": 1.0,
+                    "csv_path": None,
+                }
+            )
             cell_id = stable_cell_id(table_id, 0, 0)
-            cell_rows.append({
-                "cell_id": cell_id,
-                "table_id": table_id,
-                "row_idx": 0,
-                "col_idx": 0,
-                "row_label_raw": "Asset",
-                "row_label_canonical": "Asset",
-                "column_label_raw": "2024",
-                "column_label_canonical": "2024",
-                "value_raw": "100",
-                "value_numeric": Decimal("100"),
-                "period": "2024",
-                "unit": "VND",
-                "source_line_start": 11,
-                "source_line_end": 11,
-                "extraction_confidence": 1.0,
-            })
-            placement_rows.append({
-                "table_id": table_id,
-                "row_idx": 0,
-                "col_idx": 0,
-                "cell_id": cell_id,
-            })
+            cell_rows.append(
+                {
+                    "cell_id": cell_id,
+                    "table_id": table_id,
+                    "row_idx": 0,
+                    "col_idx": 0,
+                    "row_label_raw": "Asset",
+                    "row_label_canonical": "Asset",
+                    "column_label_raw": "2024",
+                    "column_label_canonical": "2024",
+                    "value_raw": "100",
+                    "value_numeric": Decimal("100"),
+                    "period": "2024",
+                    "unit": "VND",
+                    "source_line_start": 11,
+                    "source_line_end": 11,
+                    "extraction_confidence": 1.0,
+                }
+            )
+            placement_rows.append(
+                {
+                    "table_id": table_id,
+                    "row_idx": 0,
+                    "col_idx": 0,
+                    "cell_id": cell_id,
+                }
+            )
 
     # Write release parquet files
-    write_table = pq.write_table
+    write_table = cast(Any, pq.write_table)
     write_table(
         pa.Table.from_pylist(table_rows, schema=TABLE_SCHEMA),
         release_path / "tables.parquet",
@@ -443,6 +453,7 @@ def test_review_worksheet_generation_and_finalization(tmp_path: Path) -> None:
 
     # Read review worksheet
     import csv
+
     with review_path.open("r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         review_rows = list(reader)
@@ -451,22 +462,39 @@ def test_review_worksheet_generation_and_finalization(tmp_path: Path) -> None:
     assert len(review_rows) > 0
     # verify columns
     expected_cols = {
-        "include", "doc_id", "relative_path", "company_code", "report_year",
-        "table_id", "line_start", "line_end", "title_raw", "source_excerpt",
-        "statement_type", "row_count", "column_count", "unit_normalized",
-        "expected_periods", "notes"
+        "include",
+        "doc_id",
+        "relative_path",
+        "company_code",
+        "report_year",
+        "table_id",
+        "line_start",
+        "line_end",
+        "title_raw",
+        "source_excerpt",
+        "statement_type",
+        "row_count",
+        "column_count",
+        "unit_normalized",
+        "expected_periods",
+        "notes",
     }
     assert set(review_rows[0].keys()) == expected_cols
 
     # Verify sort order
     for idx in range(len(review_rows) - 1):
         r1, r2 = review_rows[idx], review_rows[idx + 1]
-        assert (r1["doc_id"], int(r1["line_start"]), int(r1["line_end"])) <= \
-               (r2["doc_id"], int(r2["line_start"]), int(r2["line_end"]))
+        assert (r1["doc_id"], int(r1["line_start"]), int(r1["line_end"])) <= (
+            r2["doc_id"],
+            int(r2["line_start"]),
+            int(r2["line_end"]),
+        )
 
     # 2. Finalize review worksheet
     # If the target file expected-tables.csv is non-empty, it should fail
-    with pytest.raises(Week1GateInputError, match="expected-tables.csv already contains annotated data"):
+    with pytest.raises(
+        Week1GateInputError, match="expected-tables.csv already contains annotated data"
+    ):
         finalize_review_worksheet(dataset, annotation_dir, review_path)
 
     # Empty expected-tables.csv to simulate template
@@ -500,8 +528,12 @@ def test_review_worksheet_generation_and_finalization(tmp_path: Path) -> None:
     # Sort order in expected-tables.csv
     for idx in range(len(final_rows) - 1):
         r1, r2 = final_rows[idx], final_rows[idx + 1]
-        assert (r1["doc_id"], int(r1["line_start"]), int(r1["line_end"]), r1["statement_type"]) <= \
-               (r2["doc_id"], int(r2["line_start"]), int(r2["line_end"]), r2["statement_type"])
+        assert (r1["doc_id"], int(r1["line_start"]), int(r1["line_end"]), r1["statement_type"]) <= (
+            r2["doc_id"],
+            int(r2["line_start"]),
+            int(r2["line_end"]),
+            r2["statement_type"],
+        )
 
     # Test invalid values fail
     for bad_val, field in [
@@ -509,7 +541,7 @@ def test_review_worksheet_generation_and_finalization(tmp_path: Path) -> None:
         ("0", "line_start"),
         ("invalid_type", "statement_type"),
         ("invalid_unit", "unit_normalized"),
-        ("2024|2023", "expected_periods")
+        ("2024|2023", "expected_periods"),
     ]:
         bad_rows = [dict(r) for r in review_rows[:90]]
         for r in bad_rows:
@@ -525,4 +557,3 @@ def test_review_worksheet_generation_and_finalization(tmp_path: Path) -> None:
         expected_tables_csv.write_bytes(",".join(EXPECTED_TABLE_COLUMNS).encode("utf-8") + b"\n")
         with pytest.raises(Week1GateInputError):
             finalize_review_worksheet(dataset, annotation_dir, bad_review_path)
-

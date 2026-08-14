@@ -207,9 +207,7 @@ def evaluate_entity_parser_on_gold(
         expected_periods = question.filters.periods
         company_pairs.append((expected_company, entities.company_codes))
         period_pairs.append((expected_periods, entities.periods))
-        exact = (
-            entities.company_codes == expected_company and entities.periods == expected_periods
-        )
+        exact = entities.company_codes == expected_company and entities.periods == expected_periods
         exact_flags.append(exact)
         if not exact:
             failures.append(

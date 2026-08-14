@@ -1,6 +1,8 @@
 import csv
 import hashlib
 from pathlib import Path
+from typing import cast, get_args
+
 from pydantic import BaseModel, ConfigDict
 
 from financial_report_qa.core.errors import Week1GateInputError
@@ -12,6 +14,7 @@ from financial_report_qa.evaluation.week1_contracts import (
     ExpectedTable,
     PilotDocument,
     PilotMetadata,
+    StatementType,
     parse_expected_periods,
     read_csv_rows,
     stable_annotation_id,
@@ -47,7 +50,9 @@ def load_annotation_bundle(
     if metadata.sampling_version != SAMPLING_VERSION:
         raise Week1GateInputError(f"Unsupported sampling version: {metadata.sampling_version}")
     if metadata.annotation_schema_version != ANNOTATION_SCHEMA_VERSION:
-        raise Week1GateInputError(f"Unsupported schema version: {metadata.annotation_schema_version}")
+        raise Week1GateInputError(
+            f"Unsupported schema version: {metadata.annotation_schema_version}"
+        )
     if metadata.dataset_fingerprint != dataset.dataset_fingerprint:
         raise Week1GateInputError("dataset fingerprint mismatch")
     if metadata.source_manifest_sha256 != dataset.source_manifest_sha256:
@@ -73,7 +78,9 @@ def load_annotation_bundle(
 
     if is_real_corpus:
         if len(pilot_docs) != 60:
-            raise Week1GateInputError(f"Expected exactly 60 pilot documents, found {len(pilot_docs)}")
+            raise Week1GateInputError(
+                f"Expected exactly 60 pilot documents, found {len(pilot_docs)}"
+            )
 
     pilot_doc_ids = set()
     pilot_doc_by_id = {}
@@ -106,7 +113,9 @@ def load_annotation_bundle(
             or dataset_doc.report_year != doc.report_year
             or dataset_doc.statement_scope != doc.statement_scope
         ):
-            raise Week1GateInputError(f"Pilot document {doc.doc_id} mismatch with released metadata")
+            raise Week1GateInputError(
+                f"Pilot document {doc.doc_id} mismatch with released metadata"
+            )
 
     # 3. Load expected tables
     exp_csv_path = annotation_dir / "expected-tables.csv"
@@ -155,7 +164,8 @@ def load_annotation_bundle(
         if pilot_doc.relative_path != expected.relative_path:
             raise Week1GateInputError(
                 f"Expected table annotation {expected.annotation_id} relative path "
-                f"'{expected.relative_path}' does not match pilot document path '{pilot_doc.relative_path}'"
+                f"'{expected.relative_path}' does not match pilot document path "
+                f"'{pilot_doc.relative_path}'"
             )
 
         # Reject overlapping annotations of the same statement type in one document
@@ -210,7 +220,8 @@ def generate_review_worksheet(
 
     # Find advisory tables
     advisory_tables = [
-        tbl for tbl in dataset.tables_by_id.values()
+        tbl
+        for tbl in dataset.tables_by_id.values()
         if tbl.doc_id in pilot_doc_ids and tbl.statement_type in MAIN_STATEMENTS
     ]
 
@@ -225,6 +236,7 @@ def generate_review_worksheet(
         doc = dataset.documents_by_id[tbl.doc_id]
         if tbl.doc_id not in decoded_cache:
             from financial_report_qa.ingestion.txt_reader import read_document
+
             decoded_cache[tbl.doc_id] = read_document(corpus_dir, doc)
         decoded = decoded_cache[tbl.doc_id]
 
@@ -237,32 +249,46 @@ def generate_review_worksheet(
         periods = sorted(list({c.period for c in cells if c.period}))
         expected_periods = "|".join(periods)
 
-        rows.append({
-            "include": "",
-            "doc_id": tbl.doc_id,
-            "relative_path": doc.relative_path,
-            "company_code": doc.company_code,
-            "report_year": str(doc.report_year),
-            "table_id": tbl.table_id,
-            "line_start": str(tbl.line_start),
-            "line_end": str(tbl.line_end),
-            "title_raw": tbl.title_raw or "",
-            "source_excerpt": source_excerpt,
-            "statement_type": tbl.statement_type,
-            "row_count": str(tbl.row_count),
-            "column_count": str(tbl.column_count),
-            "unit_normalized": tbl.unit_normalized or "",
-            "expected_periods": expected_periods,
-            "notes": "",
-        })
+        rows.append(
+            {
+                "include": "",
+                "doc_id": tbl.doc_id,
+                "relative_path": doc.relative_path,
+                "company_code": doc.company_code,
+                "report_year": str(doc.report_year),
+                "table_id": tbl.table_id,
+                "line_start": str(tbl.line_start),
+                "line_end": str(tbl.line_end),
+                "title_raw": tbl.title_raw or "",
+                "source_excerpt": source_excerpt,
+                "statement_type": tbl.statement_type,
+                "row_count": str(tbl.row_count),
+                "column_count": str(tbl.column_count),
+                "unit_normalized": tbl.unit_normalized or "",
+                "expected_periods": expected_periods,
+                "notes": "",
+            }
+        )
 
     # Write CSV
     output_path.parent.mkdir(parents=True, exist_ok=True)
     columns = [
-        "include", "doc_id", "relative_path", "company_code", "report_year",
-        "table_id", "line_start", "line_end", "title_raw", "source_excerpt",
-        "statement_type", "row_count", "column_count", "unit_normalized",
-        "expected_periods", "notes"
+        "include",
+        "doc_id",
+        "relative_path",
+        "company_code",
+        "report_year",
+        "table_id",
+        "line_start",
+        "line_end",
+        "title_raw",
+        "source_excerpt",
+        "statement_type",
+        "row_count",
+        "column_count",
+        "unit_normalized",
+        "expected_periods",
+        "notes",
     ]
     with output_path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=columns, lineterminator="\n")
@@ -318,7 +344,12 @@ def finalize_review_worksheet(
             except Exception as e:
                 raise Week1GateInputError(f"invalid periods: {e}") from e
 
-            stmt_type = r.get("statement_type", "")
+            stmt_type_raw = r.get("statement_type", "")
+            if stmt_type_raw not in get_args(StatementType):
+                raise Week1GateInputError(
+                    f"Invalid statement_type in review row: {stmt_type_raw!r}"
+                )
+            stmt_type = cast(StatementType, stmt_type_raw)
             ann_id = stable_annotation_id(doc_id, line_start, line_end, stmt_type)
 
             try:
@@ -327,7 +358,7 @@ def finalize_review_worksheet(
                     annotation_id=ann_id,
                     doc_id=doc_id,
                     relative_path=doc.relative_path,
-                    statement_type=stmt_type,  # type: ignore[arg-type]
+                    statement_type=stmt_type,
                     line_start=line_start,
                     line_end=line_end,
                     row_count=row_count,
@@ -342,9 +373,7 @@ def finalize_review_worksheet(
             included_tables.append(expected)
 
     # Sort by (doc_id, line_start, line_end, statement_type)
-    included_tables.sort(
-        key=lambda t: (t.doc_id, t.line_start, t.line_end, t.statement_type)
-    )
+    included_tables.sort(key=lambda t: (t.doc_id, t.line_start, t.line_end, t.statement_type))
 
     # Write to a temporary file in annotation_dir to validate through load_annotation_bundle first
     temp_path = annotation_dir / "expected-tables-temp.csv"
@@ -375,4 +404,3 @@ def finalize_review_worksheet(
     finally:
         if backup_exists and backup_path.is_file():
             backup_path.unlink()
-

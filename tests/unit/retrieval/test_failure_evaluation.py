@@ -105,9 +105,7 @@ def _evaluation(*, diagnostic_k: int = 100) -> RetrievalEvaluationReportV2:
         _question("2", (_table_id("b"), _table_id("c"))),
         _question("3", (_table_id("d"),)),
     )
-    return evaluate_retrieval_v2(
-        _FailureRetriever(), questions, diagnostic_k=diagnostic_k
-    )
+    return evaluate_retrieval_v2(_FailureRetriever(), questions, diagnostic_k=diagnostic_k)
 
 
 def _annotations() -> tuple[FailureRootCauseAnnotation, ...]:
@@ -178,15 +176,13 @@ def test_build_failure_report_rejects_a_shallow_diagnostic_evaluation() -> None:
 def test_unknown_root_cause_requires_an_explanatory_note() -> None:
     """An unexplained unknown would make the Day 14 taxonomy unauditable."""
     with pytest.raises(ValidationError):
-        FailureRootCauseAnnotation(
-            question_id=_question_id("3"), root_cause="unknown", note=""
-        )
+        FailureRootCauseAnnotation(question_id=_question_id("3"), root_cause="unknown", note="")
 
 
 def test_failure_case_rejects_a_diagnostic_rank_outside_100() -> None:
     """A rank beyond diagnostic_k=100 must be represented as null, never as 101+."""
-    case_payload = build_failure_report(_evaluation(), _annotations()).failures[0].model_dump(
-        mode="json"
+    case_payload = (
+        build_failure_report(_evaluation(), _annotations()).failures[0].model_dump(mode="json")
     )
     missing_id = case_payload["missing_gold_table_ids"][0]
     case_payload["gold_rank_beyond_10"] = {missing_id: 101}
@@ -223,9 +219,9 @@ def test_tracked_failure_annotations_cover_the_committed_failure_artifact() -> N
         repo_root / "data/qa/retrieval-failure-annotations-v1.jsonl"
     )
     committed = json.loads(
-        (
-            repo_root / "artifacts/evaluations/day13/failures-422df141c935.json"
-        ).read_text(encoding="utf-8")
+        (repo_root / "artifacts/evaluations/day13/failures-422df141c935.json").read_text(
+            encoding="utf-8"
+        )
     )
 
     assert [item.question_id for item in annotations] == [

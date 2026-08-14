@@ -79,6 +79,7 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
             raise Week1GateInputError(f"Missing required release file: {filename}")
 
     import sys
+
     is_prepare = "prepare" in sys.argv
 
     # Read and check Arrow schemas
@@ -92,6 +93,7 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
         raise Week1GateInputError("tables.parquet Arrow schema mismatch")
 
     import pyarrow as pa
+
     if is_prepare:
         cell_table = pa.Table.from_pylist([], schema=CELL_SCHEMA)
         placement_table = pa.Table.from_pylist([], schema=PLACEMENT_SCHEMA)
@@ -120,7 +122,9 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
         )
     if not is_prepare:
         if cell_table.num_rows != release_manifest_data.get("cell_count"):
-            raise Week1GateInputError("Cell count mismatch between release manifest and cells.parquet")
+            raise Week1GateInputError(
+                "Cell count mismatch between release manifest and cells.parquet"
+            )
         if placement_table.num_rows != release_manifest_data.get("placement_count"):
             raise Week1GateInputError(
                 "Placement count mismatch between release manifest and placements.parquet"
@@ -133,7 +137,12 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
     # Detect pilot documents to filter release loading for speed
     import csv
     import sys
+
     import pyarrow.compute as pc
+
+    # pyarrow ships no type information, so its compute helpers read as untyped.
+    pc_field = cast(Any, pc.field)
+
     pilot_doc_ids = None
     ann_dir = None
     for arg in sys.argv:
@@ -167,21 +176,21 @@ def load_gate_dataset(manifest_path: Path, release_path: Path) -> GateDataset:
                 pass
 
     if pilot_doc_ids:
-        doc_filter = pc.field("doc_id").isin(list(pilot_doc_ids))
+        doc_filter = pc_field("doc_id").isin(list(pilot_doc_ids))
         doc_rows = doc_table.filter(doc_filter).to_pylist()
 
-        tbl_filter = pc.field("doc_id").isin(list(pilot_doc_ids))
+        tbl_filter = pc_field("doc_id").isin(list(pilot_doc_ids))
         tbl_table_filtered = tbl_table.filter(tbl_filter)
         tbl_rows = tbl_table_filtered.to_pylist()
         filtered_table_ids = {r["table_id"] for r in tbl_rows}
 
-        cell_filter = pc.field("table_id").isin(list(filtered_table_ids))
+        cell_filter = pc_field("table_id").isin(list(filtered_table_ids))
         cell_rows = cell_table.filter(cell_filter).to_pylist()
 
-        placement_filter = pc.field("table_id").isin(list(filtered_table_ids))
+        placement_filter = pc_field("table_id").isin(list(filtered_table_ids))
         placement_rows = placement_table.filter(placement_filter).to_pylist()
 
-        iss_filter = pc.field("doc_id").isin(list(pilot_doc_ids))
+        iss_filter = pc_field("doc_id").isin(list(pilot_doc_ids))
         iss_rows = iss_table.filter(iss_filter).to_pylist()
     else:
         doc_rows = doc_table.to_pylist()

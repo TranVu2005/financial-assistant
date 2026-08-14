@@ -14,8 +14,7 @@ import numpy as np
 def canonical_json_bytes(value: object) -> bytes:
     """Encode JSON with deterministic UTF-8 ordering and a terminal newline."""
     return (
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n"
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode("utf-8")
 
 

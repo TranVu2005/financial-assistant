@@ -83,8 +83,7 @@ def expand_metric_query(
             (
                 rule
                 for rule in ordered_rules
-                if query_tokens[offset : offset + len(rule.alias_tokens)]
-                == rule.alias_tokens
+                if query_tokens[offset : offset + len(rule.alias_tokens)] == rule.alias_tokens
             ),
             None,
         )
@@ -93,9 +92,7 @@ def expand_metric_query(
             continue
         added_tokens = tuple(
             dict.fromkeys(
-                token
-                for token in matched_rule.canonical_tokens
-                if token not in seen_tokens
+                token for token in matched_rule.canonical_tokens if token not in seen_tokens
             )
         )
         if added_tokens:

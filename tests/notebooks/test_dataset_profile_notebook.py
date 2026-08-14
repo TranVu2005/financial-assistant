@@ -36,13 +36,7 @@ def _load_helpers() -> dict[str, Any]:
 
 def test_parse_report_path_extracts_vifinqa_hierarchy(tmp_path: Path) -> None:
     root = tmp_path / "financial_statements"
-    path = (
-        root
-        / "AAA"
-        / "2015"
-        / "AAA_financial_statements_2015_consolidated"
-        / "report.txt"
-    )
+    path = root / "AAA" / "2015" / "AAA_financial_statements_2015_consolidated" / "report.txt"
     path.parent.mkdir(parents=True)
     path.write_text("sample", encoding="utf-8")
 
@@ -79,9 +73,7 @@ def test_load_company_map_normalizes_and_flags_rows(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    load_company_map = cast(
-        Callable[[Path], pd.DataFrame], _load_helpers()["load_company_map"]
-    )
+    load_company_map = cast(Callable[[Path], pd.DataFrame], _load_helpers()["load_company_map"])
     frame = load_company_map(source)
 
     assert frame.loc[0, "ticker"] == "AAA"
@@ -92,9 +84,7 @@ def test_load_company_map_normalizes_and_flags_rows(tmp_path: Path) -> None:
 def test_load_company_map_rejects_missing_columns(tmp_path: Path) -> None:
     source = tmp_path / "code_stock.csv"
     source.write_text("ticker,name\nAAA,Công ty AAA\n", encoding="utf-8")
-    load_company_map = cast(
-        Callable[[Path], pd.DataFrame], _load_helpers()["load_company_map"]
-    )
+    load_company_map = cast(Callable[[Path], pd.DataFrame], _load_helpers()["load_company_map"])
 
     try:
         load_company_map(source)
@@ -107,9 +97,7 @@ def test_load_company_map_rejects_missing_columns(tmp_path: Path) -> None:
 def test_load_questions_preserves_malformed_and_invalid_rows(tmp_path: Path) -> None:
     source = tmp_path / "questions.jsonl"
     source.write_text(
-        '{"id": 1, "question": "Doanh thu HPG năm 2022?"}\n'
-        "{bad json}\n"
-        '{"id": 2, "question": ""}\n',
+        '{"id": 1, "question": "Doanh thu HPG năm 2022?"}\n{bad json}\n{"id": 2, "question": ""}\n',
         encoding="utf-8",
     )
 
@@ -124,13 +112,7 @@ def test_load_questions_preserves_malformed_and_invalid_rows(tmp_path: Path) -> 
 
 def test_build_report_inventory_is_sorted_and_keeps_malformed_paths(tmp_path: Path) -> None:
     root = tmp_path / "financial_statements"
-    valid = (
-        root
-        / "VCB"
-        / "2022"
-        / "VCB_financial_statements_2022_separate"
-        / "report.txt"
-    )
+    valid = root / "VCB" / "2022" / "VCB_financial_statements_2022_separate" / "report.txt"
     malformed = root / "loose.txt"
     valid.parent.mkdir(parents=True)
     valid.write_text("<table>100</table>", encoding="utf-8")

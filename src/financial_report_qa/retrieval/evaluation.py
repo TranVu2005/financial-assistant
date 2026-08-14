@@ -178,9 +178,7 @@ def score_extended_at_10(
         mrr=0.0 if first_gold_rank is None else 1 / first_gold_rank,
         precision_at_r=precision_at_r,
         f2_at_r=(
-            0.0
-            if f2_r_denominator == 0
-            else 5 * precision_at_r * legacy.recall / f2_r_denominator
+            0.0 if f2_r_denominator == 0 else 5 * precision_at_r * legacy.recall / f2_r_denominator
         ),
     )
 
@@ -314,10 +312,7 @@ def _diagnostic_gold_ranks(
     predicted: tuple[str, ...], missing_gold: tuple[str, ...]
 ) -> dict[str, int | None]:
     ranks = {table_id: rank for rank, table_id in enumerate(predicted, start=1)}
-    return {
-        table_id: ranks.get(table_id)
-        for table_id in missing_gold
-    }
+    return {table_id: ranks.get(table_id) for table_id in missing_gold}
 
 
 def evaluate_retrieval_v2(
@@ -350,9 +345,7 @@ def evaluate_retrieval_v2(
         predicted = tuple(candidate.table_id for candidate in retrieved_at_10.results[:10])
         metrics = score_extended_at_10(predicted, question.gold_table_ids)
         missing_gold = tuple(sorted(set(question.gold_table_ids).difference(predicted)))
-        metric_trace = retrieved_at_10.model_copy(
-            update={"results": retrieved_at_10.results[:10]}
-        )
+        metric_trace = retrieved_at_10.model_copy(update={"results": retrieved_at_10.results[:10]})
         diagnostic_trace = metric_trace
         if missing_gold and diagnostic_k > 10:
             diagnostic_trace = retriever.retrieve(
@@ -361,13 +354,9 @@ def evaluate_retrieval_v2(
                 k=diagnostic_k,
                 question_id=question.question_id,
             )
-        diagnostic_predicted = tuple(
-            candidate.table_id for candidate in diagnostic_trace.results
-        )
+        diagnostic_predicted = tuple(candidate.table_id for candidate in diagnostic_trace.results)
         if diagnostic_predicted[:10] != predicted:
-            raise ValueError(
-                "diagnostic ranking must preserve the metric top-10 prefix"
-            )
+            raise ValueError("diagnostic ranking must preserve the metric top-10 prefix")
         failure = _failure_for(
             metric_trace,
             RetrievalMetrics(
@@ -387,9 +376,7 @@ def evaluate_retrieval_v2(
                 predicted_table_ids=predicted,
                 gold_table_ids=question.gold_table_ids,
                 missing_gold_table_ids=missing_gold,
-                gold_rank_beyond_10=_diagnostic_gold_ranks(
-                    diagnostic_predicted, missing_gold
-                ),
+                gold_rank_beyond_10=_diagnostic_gold_ranks(diagnostic_predicted, missing_gold),
                 metrics=metrics,
                 failure=failure,
                 trace=metric_trace,
@@ -524,9 +511,7 @@ def _render_markdown_v2(report: RetrievalEvaluationReportV2) -> str:
         f"- F2@R: {macro.f2_at_r:.6f}",
     ]
 
-    def append_breakdown(
-        title: str, values: dict[str, RetrievalMetricsExtended]
-    ) -> None:
+    def append_breakdown(title: str, values: dict[str, RetrievalMetricsExtended]) -> None:
         lines.extend(
             (
                 "",
@@ -560,9 +545,7 @@ def _render_markdown_v2(report: RetrievalEvaluationReportV2) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_report_v2(
-    report: RetrievalEvaluationReportV2, output_dir: Path
-) -> tuple[Path, Path]:
+def write_report_v2(report: RetrievalEvaluationReportV2, output_dir: Path) -> tuple[Path, Path]:
     """Publish a complete byte-stable V2 JSON/Markdown report pair."""
     output_dir.mkdir(parents=True, exist_ok=True)
     prefix = report.dataset_fingerprint[:12]

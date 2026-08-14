@@ -24,9 +24,7 @@ def _write_release(tmp_path: Path, fingerprint: str = FINGERPRINT) -> Path:
         "dataset_fingerprint": fingerprint,
         "source_manifest_sha256": MANIFEST_SHA,
     }
-    (release_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (release_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return release_dir
 
 

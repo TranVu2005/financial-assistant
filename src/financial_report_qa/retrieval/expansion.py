@@ -130,9 +130,7 @@ class GraphExpansionService:
         for table_id in eligible:
             seed_candidate = by_id.get(table_id)
             seed_rrf = (
-                0.0
-                if seed_candidate is None
-                else 1 / (self._params.rrf_k + seed_candidate.rank)
+                0.0 if seed_candidate is None else 1 / (self._params.rrf_k + seed_candidate.rank)
             )
             support = supports.get(table_id, [])
             neighbor_rrf = sum(1 / (self._params.rrf_k + rank) for rank, _ in support)

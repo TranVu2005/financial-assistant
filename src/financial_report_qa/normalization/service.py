@@ -298,19 +298,42 @@ def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> 
         stmt_val = stmt_dec.value
         if stmt_val is None:
             import unicodedata
-            def clean_label(s):
+
+            def clean_label(s: str | None) -> str:
                 if not s:
                     return ""
-                s = unicodedata.normalize("NFKC", s)
-                return " ".join(s.lower().split())
+                return " ".join(unicodedata.normalize("NFKC", s).lower().split())
 
             labels = {clean_label(c.row_label_raw) for c in normalized_cells if c.row_label_raw}
 
-            if any("lưu chuyển tiền" in lbl or "net cash flows" in lbl or "khấu hao" in lbl or "depreciation" in lbl for lbl in labels):
+            if any(
+                "lưu chuyển tiền" in lbl
+                or "net cash flows" in lbl
+                or "khấu hao" in lbl
+                or "depreciation" in lbl
+                for lbl in labels
+            ):
                 stmt_val = "cash_flow_statement"
-            elif any("lợi nhuận gộp" in lbl or "lợi nhuận trước thuế" in lbl or "lợi nhuận sau thuế" in lbl or "doanh thu thuần" in lbl or "thu nhập lãi thuần" in lbl or "doanh thu bán hàng" in lbl for lbl in labels):
+            elif any(
+                "lợi nhuận gộp" in lbl
+                or "lợi nhuận trước thuế" in lbl
+                or "lợi nhuận sau thuế" in lbl
+                or "doanh thu thuần" in lbl
+                or "thu nhập lãi thuần" in lbl
+                or "doanh thu bán hàng" in lbl
+                for lbl in labels
+            ):
                 stmt_val = "income_statement"
-            elif any("tài sản ngắn hạn" in lbl or "tài sản dài hạn" in lbl or "nợ phải trả" in lbl or "vốn chủ sở hữu" in lbl or "tổng cộng tài sản" in lbl or "tổng tài sản" in lbl or "total assets" in lbl for lbl in labels):
+            elif any(
+                "tài sản ngắn hạn" in lbl
+                or "tài sản dài hạn" in lbl
+                or "nợ phải trả" in lbl
+                or "vốn chủ sở hữu" in lbl
+                or "tổng cộng tài sản" in lbl
+                or "tổng tài sản" in lbl
+                or "total assets" in lbl
+                for lbl in labels
+            ):
                 stmt_val = "balance_sheet"
 
         updated_table_rec = table_rec.model_copy(
@@ -326,7 +349,6 @@ def normalize_extraction(document: DocumentRecord, result: ExtractionResult) -> 
             evidence=extracted.evidence,
         )
         normalized_tables.append(updated_extracted)
-
 
     # De-duplicate issues and sort
     unique_issues_dict: dict[tuple[Any, ...], NormalizationIssue] = {}

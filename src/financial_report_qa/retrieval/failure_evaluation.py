@@ -101,8 +101,7 @@ class RetrievalFailureCase(_FrozenModel):
         if set(self.gold_rank_beyond_10) != set(self.missing_gold_table_ids):
             raise ValueError("diagnostic ranks must cover every missing gold table exactly")
         if any(
-            rank is not None and not 11 <= rank <= 100
-            for rank in self.gold_rank_beyond_10.values()
+            rank is not None and not 11 <= rank <= 100 for rank in self.gold_rank_beyond_10.values()
         ):
             raise ValueError("diagnostic gold ranks must be between 11 and 100")
         return self
@@ -145,9 +144,7 @@ def load_failure_annotations(path: Path) -> tuple[FailureRootCauseAnnotation, ..
         raise ValueError(f"Failure annotation file not found: {path}")
     annotations: list[FailureRootCauseAnnotation] = []
     previous_id: str | None = None
-    for line_number, line in enumerate(
-        path.read_text(encoding="utf-8").splitlines(), start=1
-    ):
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             raise ValueError(f"Failure annotations contain blank line {line_number}")
         try:
@@ -173,9 +170,7 @@ def build_failure_report(
     if len(annotation_by_id) != len(annotation_values):
         raise ValueError("root-cause annotations must have unique question IDs")
 
-    failed_results = tuple(
-        result for result in evaluation.per_question if result.failure != "none"
-    )
+    failed_results = tuple(result for result in evaluation.per_question if result.failure != "none")
     failure_ids = {result.question_id for result in failed_results}
     if set(annotation_by_id) != failure_ids:
         raise ValueError("root-cause annotations must exactly match failure question IDs")
@@ -208,9 +203,7 @@ def build_failure_report(
         diagnostic_k=cast(Literal[100], evaluation.diagnostic_k),
         evaluated_question_count=evaluation.question_count,
         failure_count=len(failures),
-        failure_counts={
-            category: failure_counter[category] for category in _FAILURE_CATEGORIES
-        },
+        failure_counts={category: failure_counter[category] for category in _FAILURE_CATEGORIES},
         root_cause_counts={category: root_counter[category] for category in _ROOT_CAUSES},
         failures=tuple(failures),
     )
@@ -241,13 +234,11 @@ def _render_markdown(report: RetrievalFailureReport) -> str:
         "| --- | ---: |",
     ]
     lines.extend(
-        f"| {category} | {report.failure_counts[category]} |"
-        for category in _FAILURE_CATEGORIES
+        f"| {category} | {report.failure_counts[category]} |" for category in _FAILURE_CATEGORIES
     )
     lines.extend(("", "## Root-cause counts", "", "| Root cause | Count |", "| --- | ---: |"))
     lines.extend(
-        f"| {category} | {report.root_cause_counts[category]} |"
-        for category in _ROOT_CAUSES
+        f"| {category} | {report.root_cause_counts[category]} |" for category in _ROOT_CAUSES
     )
     lines.extend(("", "## Failure evidence", ""))
     for item in report.failures:
@@ -263,17 +254,13 @@ def _render_markdown(report: RetrievalFailureReport) -> str:
                 f"- Evidence note: {item.note}",
                 f"- Gold table IDs: {', '.join(item.gold_table_ids)}",
                 f"- Missing gold table IDs: {', '.join(item.missing_gold_table_ids)}",
-                "- Gold ranks beyond 10: "
-                f"`{_json_inline(item.gold_rank_beyond_10)}`",
+                f"- Gold ranks beyond 10: `{_json_inline(item.gold_rank_beyond_10)}`",
                 f"- Query tokens: {', '.join(item.trace.query_tokens) or '(none)'}",
                 f"- Eligible documents: {item.trace.eligible_count}",
                 f"- Empty reason: {item.trace.empty_reason or '(none)'}",
                 "- Filter decisions: `"
                 + _json_inline(
-                    [
-                        decision.model_dump(mode="json")
-                        for decision in item.trace.filter_decisions
-                    ]
+                    [decision.model_dump(mode="json") for decision in item.trace.filter_decisions]
                 )
                 + "`",
                 "",
@@ -297,9 +284,7 @@ def _render_markdown(report: RetrievalFailureReport) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_failure_report(
-    report: RetrievalFailureReport, output_dir: Path
-) -> tuple[Path, Path]:
+def write_failure_report(report: RetrievalFailureReport, output_dir: Path) -> tuple[Path, Path]:
     """Publish byte-stable JSON and Markdown failure artifacts atomically."""
     prefix = report.dataset_fingerprint[:12]
     json_path = output_dir / f"failures-{prefix}.json"

@@ -1,12 +1,24 @@
 """Unit tests for cell provenance auditing and table usability evaluation."""
 
-from decimal import Decimal
 import hashlib
+import json
+from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
+
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
-from test_week1_dataset import _write_release
-
+from financial_report_qa.core.errors import Week1GateSourceError
+from financial_report_qa.data.dataset_builder import (
+    CELL_SCHEMA,
+    DOCUMENT_SCHEMA,
+    ISSUE_SCHEMA,
+    PLACEMENT_SCHEMA,
+    TABLE_SCHEMA,
+)
 from financial_report_qa.evaluation.week1_contracts import (
     SAMPLING_VERSION,
     CellAudit,
@@ -14,14 +26,24 @@ from financial_report_qa.evaluation.week1_contracts import (
     TableAssessment,
     stable_annotation_id,
 )
-from financial_report_qa.evaluation.week1_dataset import load_gate_dataset
+from financial_report_qa.evaluation.week1_dataset import GateDataset, load_gate_dataset
 from financial_report_qa.evaluation.week1_provenance import (
     audit_cell_provenance,
     evaluate_table_usability,
     generate_cell_audits,
 )
-from financial_report_qa.schemas import CellRecord, DocumentRecord, TableRecord, stable_document_id, stable_table_id
 from financial_report_qa.ingestion.provenance import stable_cell_id
+from financial_report_qa.ingestion.txt_reader import read_document
+from financial_report_qa.schemas import (
+    CellRecord,
+    DocumentRecord,
+    TableRecord,
+    stable_document_id,
+    stable_table_id,
+)
+
+# pyarrow ships no type information, so its writer reads as an untyped call.
+_write_table = cast(Any, pq.write_table)
 
 
 def test_audit_cell_provenance_success() -> None:
@@ -294,7 +316,7 @@ def test_generate_cell_audits_rejects_noncanonical_cell_id(tmp_path: Path) -> No
         ],
         schema=DOCUMENT_SCHEMA,
     )
-    pq.write_table(doc_table, release_path / "documents.parquet")
+    _write_table(doc_table, release_path / "documents.parquet")
 
     # Parquet tables
     tbl_table = pa.Table.from_pylist(
@@ -317,10 +339,11 @@ def test_generate_cell_audits_rejects_noncanonical_cell_id(tmp_path: Path) -> No
         ],
         schema=TABLE_SCHEMA,
     )
-    pq.write_table(tbl_table, release_path / "tables.parquet")
+    _write_table(tbl_table, release_path / "tables.parquet")
 
     # Parquet cells
     from decimal import Decimal
+
     cell_table = pa.Table.from_pylist(
         [
             {
@@ -343,18 +366,18 @@ def test_generate_cell_audits_rejects_noncanonical_cell_id(tmp_path: Path) -> No
         ],
         schema=CELL_SCHEMA,
     )
-    pq.write_table(cell_table, release_path / "cells.parquet")
+    _write_table(cell_table, release_path / "cells.parquet")
 
     # Parquet placements
     placement_table = pa.Table.from_pylist(
         [{"table_id": table_id, "row_idx": 1, "col_idx": 1, "cell_id": cell_id}],
         schema=PLACEMENT_SCHEMA,
     )
-    pq.write_table(placement_table, release_path / "placements.parquet")
+    _write_table(placement_table, release_path / "placements.parquet")
 
     # Parquet issues
     issue_table = pa.Table.from_pylist([], schema=ISSUE_SCHEMA)
-    pq.write_table(issue_table, release_path / "issues.parquet")
+    _write_table(issue_table, release_path / "issues.parquet")
 
     # Rewrite manifest.json
     release_manifest = {
@@ -512,19 +535,13 @@ def test_sample_is_deterministic_stratified_and_table_capped() -> None:
     assert max(Counter(item.table_id for item in selected).values()) <= 2
 
 
-import json
-import pyarrow as pa
-import pyarrow.parquet as pq
-from financial_report_qa.core.errors import Week1GateSourceError
-from financial_report_qa.data.dataset_builder import DOCUMENT_SCHEMA, CELL_SCHEMA, PLACEMENT_SCHEMA, TABLE_SCHEMA, ISSUE_SCHEMA
-
+@dataclass(frozen=True)
 class _ProvenanceCase:
-    def __init__(self, dataset, corpus_dir, expected_tables, matched_tables, document):
-        self.dataset = dataset
-        self.corpus_dir = corpus_dir
-        self.expected_tables = expected_tables
-        self.matched_tables = matched_tables
-        self.document = document
+    dataset: GateDataset
+    corpus_dir: Path
+    expected_tables: tuple[ExpectedTable, ...]
+    matched_tables: dict[str, TableRecord]
+    document: DocumentRecord
 
 
 def _write_provenance_case(
@@ -591,20 +608,6 @@ def _write_provenance_case(
     release_path = tmp_path / "release"
     release_path.mkdir(exist_ok=True, parents=True)
 
-    document = DocumentRecord(
-        doc_id=doc_id,
-        repo_id="test_repo",
-        revision="main",
-        relative_path=relative_path,
-        company_code="VCB",
-        report_year=2024,
-        statement_scope="consolidated",
-        sha256=actual_hash,
-        file_size_bytes=actual_size,
-        encoding=encoding,
-        inventory_status="ready",
-    )
-
     table_id = stable_table_id(doc_id, 10, 12)
     table = TableRecord(
         table_id=table_id,
@@ -622,24 +625,6 @@ def _write_provenance_case(
     )
 
     cell_id = stable_cell_id(table_id, 1, 1)
-    from decimal import Decimal
-    cell = CellRecord(
-        cell_id=cell_id,
-        table_id=table_id,
-        row_idx=1,
-        col_idx=1,
-        row_label_raw="Total assets",
-        row_label_canonical="total_assets",
-        column_label_raw="2024",
-        column_label_canonical="2024",
-        value_raw=released_value_raw,
-        value_numeric=Decimal("100"),
-        period="2024",
-        unit="VND",
-        source_line_start=11,
-        source_line_end=11,
-        extraction_confidence=1.0,
-    )
 
     doc_table = pa.Table.from_pylist(
         [
@@ -661,7 +646,7 @@ def _write_provenance_case(
         ],
         schema=DOCUMENT_SCHEMA,
     )
-    pq.write_table(doc_table, release_path / "documents.parquet")
+    _write_table(doc_table, release_path / "documents.parquet")
 
     tbl_table = pa.Table.from_pylist(
         [
@@ -683,7 +668,7 @@ def _write_provenance_case(
         ],
         schema=TABLE_SCHEMA,
     )
-    pq.write_table(tbl_table, release_path / "tables.parquet")
+    _write_table(tbl_table, release_path / "tables.parquet")
 
     cell_table = pa.Table.from_pylist(
         [
@@ -707,16 +692,16 @@ def _write_provenance_case(
         ],
         schema=CELL_SCHEMA,
     )
-    pq.write_table(cell_table, release_path / "cells.parquet")
+    _write_table(cell_table, release_path / "cells.parquet")
 
     placement_table = pa.Table.from_pylist(
         [{"table_id": table_id, "row_idx": 1, "col_idx": 1, "cell_id": cell_id}],
         schema=PLACEMENT_SCHEMA,
     )
-    pq.write_table(placement_table, release_path / "placements.parquet")
+    _write_table(placement_table, release_path / "placements.parquet")
 
     issue_table = pa.Table.from_pylist([], schema=ISSUE_SCHEMA)
-    pq.write_table(issue_table, release_path / "issues.parquet")
+    _write_table(issue_table, release_path / "issues.parquet")
 
     release_manifest = {
         "dataset_fingerprint": "f" * 64,
@@ -773,9 +758,7 @@ def test_generate_cell_audits_fails_on_invalid_utf8_instead_of_replacing(
 
 
 def test_generate_cell_audits_marks_canonical_cell_drift_invalid(tmp_path: Path) -> None:
-    case = _write_provenance_case(
-        tmp_path, source_value_raw="100", released_value_raw="999"
-    )
+    case = _write_provenance_case(tmp_path, source_value_raw="100", released_value_raw="999")
     audits = generate_cell_audits(
         case.dataset, case.corpus_dir, case.expected_tables, case.matched_tables
     )
@@ -794,19 +777,27 @@ def test_generate_cell_audits_accepts_exact_reextraction(tmp_path: Path) -> None
 
 def test_generate_cell_audits_caching_only_reads_once(tmp_path: Path) -> None:
     from unittest.mock import patch
+
     import financial_report_qa.evaluation.week1_provenance as prov_mod
 
     case = _write_provenance_case(tmp_path)
     second_ann = case.expected_tables[0].model_copy(
-        update={"annotation_id": stable_annotation_id(case.document.doc_id, 10, 12, "income_statement"), "statement_type": "income_statement"}
+        update={
+            "annotation_id": stable_annotation_id(case.document.doc_id, 10, 12, "income_statement"),
+            "statement_type": "income_statement",
+        }
     )
     expected_tables = (case.expected_tables[0], second_ann)
     matched_tables = {
-        case.expected_tables[0].annotation_id: case.matched_tables[case.expected_tables[0].annotation_id],
-        second_ann.annotation_id: case.matched_tables[case.expected_tables[0].annotation_id].model_copy(update={"statement_type": "income_statement"})
+        case.expected_tables[0].annotation_id: case.matched_tables[
+            case.expected_tables[0].annotation_id
+        ],
+        second_ann.annotation_id: case.matched_tables[
+            case.expected_tables[0].annotation_id
+        ].model_copy(update={"statement_type": "income_statement"}),
     }
 
-    with patch.object(prov_mod, "read_document", wraps=prov_mod.read_document) as mock_read:
+    with patch.object(prov_mod, "read_document", wraps=read_document) as mock_read:
         audits = generate_cell_audits(
             case.dataset, case.corpus_dir, expected_tables, matched_tables
         )

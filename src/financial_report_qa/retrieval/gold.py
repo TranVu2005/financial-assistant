@@ -91,9 +91,7 @@ def load_gold_questions(
     question_ids: frozenset[str] | None = None,
 ) -> tuple[GoldRetrievalQuestion, ...]:
     """Load gold only when every label matches the locked release provenance."""
-    all_questions = load_reviewed_gold(
-        path, expected_fingerprint=release.dataset_fingerprint
-    )
+    all_questions = load_reviewed_gold(path, expected_fingerprint=release.dataset_fingerprint)
     questions = tuple(
         question
         for question in all_questions

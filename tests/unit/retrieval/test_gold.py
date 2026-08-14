@@ -199,9 +199,7 @@ def test_gold_period_filter_accepts_cell_period_not_only_report_year(tmp_path: P
     )
     records = sorted((record, second), key=lambda item: str(item["question_id"]))
     gold_path = tmp_path / "gold.jsonl"
-    gold_path.write_text(
-        "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
-    )
+    gold_path.write_text("\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8")
 
     questions = load_gold_questions(
         gold_path,

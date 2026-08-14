@@ -268,9 +268,7 @@ def test_no_eligible_documents_short_circuits_without_calling_either_branch(tmp_
     bm25, dense = _services(tmp_path, documents, vectors)
     service = FusionService(bm25, dense, FusionWeights(bm25=1, dense=1))
 
-    trace = service.retrieve(
-        "doanh thu", filters=RetrievalFilters(company_codes=("ZZZ",)), k=10
-    )
+    trace = service.retrieve("doanh thu", filters=RetrievalFilters(company_codes=("ZZZ",)), k=10)
     assert trace.empty_reason == "no_eligible_documents"
     assert trace.results == ()
     assert trace.eligible_count == 0

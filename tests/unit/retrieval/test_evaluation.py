@@ -233,9 +233,7 @@ class _KSensitiveRetriever(_DiagnosticRetriever):
             self.table_ids = (_table_id("b"),)
         else:
             self.table_ids = (_table_id("a"),)
-        return super().retrieve(
-            query, filters=filters, k=k, question_id=question_id
-        )
+        return super().retrieve(query, filters=filters, k=k, question_id=question_id)
 
 
 def _question_with_dimensions(
@@ -411,6 +409,4 @@ def test_evaluate_retrieval_v2_rejects_diagnostics_shallower_than_metrics(
 def test_evaluate_retrieval_v2_rejects_non_fixed_metric_cutoff() -> None:
     """Allowing a configurable metric cutoff would make report labels misleading."""
     with pytest.raises(ValueError, match="fixed at 10"):
-        evaluate_retrieval_v2(
-            _DiagnosticRetriever((_table_id("a"),)), (_question(),), k=5
-        )
+        evaluate_retrieval_v2(_DiagnosticRetriever((_table_id("a"),)), (_question(),), k=5)

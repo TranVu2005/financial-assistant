@@ -72,9 +72,7 @@ def test_filter_first_never_returns_ineligible_document() -> None:
 def test_period_filter_ors_all_canonical_table_periods() -> None:
     service = RetrievalService(build_bm25_index(_documents(), dataset_fingerprint="f" * 64))
 
-    trace = service.retrieve(
-        "doanh thu", filters=RetrievalFilters(periods=("2023", "2025")), k=10
-    )
+    trace = service.retrieve("doanh thu", filters=RetrievalFilters(periods=("2023", "2025")), k=10)
 
     assert [item.table_id for item in trace.results] == ["tbl_" + "a" * 64]
     assert trace.filter_decisions[0].matched_count_before_intersection == 1
@@ -121,9 +119,7 @@ def test_retrieval_expands_metric_aliases_without_duplicate_query_tokens() -> No
                 line_start=1,
                 line_end=1,
             ),
-            metric_labels=(
-                MetricLabelObservation(canonical="net_revenue", raw="Doanh thu thuần"),
-            ),
+            metric_labels=(MetricLabelObservation(canonical="net_revenue", raw="Doanh thu thuần"),),
         ),
         TableDocument(
             table_id=distractor_id,
@@ -322,9 +318,7 @@ def test_loader_rejects_non_object_manifest_before_reading_artifacts(
     index = build_bm25_index(_documents(), dataset_fingerprint="f" * 64)
     output_dir = tmp_path / "index"
     save_bm25_index(index, output_dir)
-    (output_dir / "manifest.json").write_text(
-        json.dumps(manifest_payload), encoding="utf-8"
-    )
+    (output_dir / "manifest.json").write_text(json.dumps(manifest_payload), encoding="utf-8")
 
     with pytest.raises(ValueError, match="BM25 index manifest must be a JSON object"):
         load_bm25_index(output_dir)

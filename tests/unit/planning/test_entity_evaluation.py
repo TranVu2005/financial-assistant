@@ -163,9 +163,7 @@ def _gold_question(
 
 
 def test_held_out_evaluation_scores_company_and_period_only() -> None:
-    questions = (
-        _gold_question("1", "Tra cứu tổng tài sản của DBC năm 2023.", "DBC", ("2023",)),
-    )
+    questions = (_gold_question("1", "Tra cứu tổng tài sản của DBC năm 2023.", "DBC", ("2023",)),)
     report = evaluate_entity_parser_on_gold(questions)
     assert report.exact_match_rate == 1.0
     assert report.company_metrics.true_positive == 1
@@ -189,9 +187,7 @@ def test_held_out_evaluation_records_a_failure_when_parser_misses_the_gold_compa
 
 
 def test_write_held_out_report_round_trips_through_json(tmp_path: Path) -> None:
-    questions = (
-        _gold_question("1", "Tra cứu tổng tài sản của DBC năm 2023.", "DBC", ("2023",)),
-    )
+    questions = (_gold_question("1", "Tra cứu tổng tài sản của DBC năm 2023.", "DBC", ("2023",)),)
     report = evaluate_entity_parser_on_gold(questions)
     json_path, markdown_path = write_held_out_report(report, tmp_path)
     assert json_path.is_file()

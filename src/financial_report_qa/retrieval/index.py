@@ -156,9 +156,7 @@ def save_bm25_index(index: BM25Index, output_dir: Path) -> None:
         raise
 
 
-def load_bm25_index(
-    index_dir: Path, *, release_lock_sha256: str | None = None
-) -> BM25Index:
+def load_bm25_index(index_dir: Path, *, release_lock_sha256: str | None = None) -> BM25Index:
     """Verify every persisted artifact before loading executable BM25 state."""
     manifest_payload = json.loads((index_dir / "manifest.json").read_text(encoding="utf-8"))
     if not isinstance(manifest_payload, dict):
@@ -176,10 +174,7 @@ def load_bm25_index(
         manifest = BM25IndexManifest.model_validate(manifest_payload)
     except ValidationError as exc:
         raise ValueError(f"BM25 index manifest is invalid; rebuild the index: {exc}") from exc
-    if (
-        release_lock_sha256 is not None
-        and manifest.release_lock_sha256 != release_lock_sha256
-    ):
+    if release_lock_sha256 is not None and manifest.release_lock_sha256 != release_lock_sha256:
         raise ValueError("Persisted BM25 index release lock hash does not match")
     actual_hashes = _artifact_hashes(index_dir)
     if set(actual_hashes) != set(manifest.artifact_sha256):

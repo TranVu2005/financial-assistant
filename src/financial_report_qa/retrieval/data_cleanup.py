@@ -200,9 +200,7 @@ def plan_day9_cleanup(repo_root: Path) -> CleanupPlan:
                 )
             )
         except (OSError, UnicodeDecodeError) as exc:
-            entries.append(
-                CleanupEntry(candidate, "unreadable candidate", "blocked", 0, str(exc))
-            )
+            entries.append(CleanupEntry(candidate, "unreadable candidate", "blocked", 0, str(exc)))
     return CleanupPlan(
         entries=entries,
         generated_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -251,9 +249,9 @@ def quarantine_day9_cleanup(plan: CleanupPlan, quarantine_root: Path) -> list[Pa
         destinations.append(destination)
 
     timestamp_root.mkdir(parents=True, exist_ok=False)
-    for (
-        source, _data_root, _relative_destination
-    ), destination in zip(validated, destinations, strict=True):
+    for (source, _data_root, _relative_destination), destination in zip(
+        validated, destinations, strict=True
+    ):
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(source), str(destination))
     return destinations

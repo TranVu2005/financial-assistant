@@ -125,9 +125,7 @@ def _high_recall_services(tmp_path: Path) -> tuple[RetrievalService, DenseRetrie
     """Ten identical, all-gold documents: every top-10 prediction is a perfect
     precision=recall=1.0 hit regardless of internal ranking order, so every
     grid point trivially beats the locked BM25 v3 reference."""
-    documents = tuple(
-        _document(str(index), text="doanh thu", company="VCB") for index in range(10)
-    )
+    documents = tuple(_document(str(index), text="doanh thu", company="VCB") for index in range(10))
     bm25 = RetrievalService(build_bm25_index(documents, dataset_fingerprint=_FINGERPRINT))
     corpus = build_dense_corpus(
         documents, dataset_fingerprint=_FINGERPRINT, release_lock_sha256="e" * 64

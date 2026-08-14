@@ -40,7 +40,8 @@ _DATE_RE = re.compile(
 )
 _QUARTER_RE = re.compile(
     # "iv" must be tried before "i{1,3}" so "quý IV" is not truncated to "quý I".
-    r"quý\s*(iv|i{1,3}|[1-4])(?:\s*(?:năm|/|-)?\s*((?:19|20)\d{2}))?", re.IGNORECASE
+    r"quý\s*(iv|i{1,3}|[1-4])(?:\s*(?:năm|/|-)?\s*((?:19|20)\d{2}))?",
+    re.IGNORECASE,
 )
 _YEAR_RE = re.compile(r"năm\s+((?:19|20)\d{2})", re.IGNORECASE)
 _RELATIVE_PERIOD_RE = re.compile(

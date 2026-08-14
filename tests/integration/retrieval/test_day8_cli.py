@@ -138,26 +138,32 @@ def test_retrieval_cli_fixture_lifecycle_is_replayable_and_fails_closed_when_cor
     _write_fixture_gold(gold_path)
     index_root = tmp_path / "indexes"
 
-    assert main(
-        [
-            "retrieval",
-            "build-index",
-            "--release-lock",
-            "fixture-lock",
-            "--output-root",
-            str(index_root),
-        ]
-    ) == 0
-    assert main(
-        [
-            "retrieval",
-            "validate-gold",
-            "--release-lock",
-            "fixture-lock",
-            "--gold-path",
-            str(gold_path),
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "retrieval",
+                "build-index",
+                "--release-lock",
+                "fixture-lock",
+                "--output-root",
+                str(index_root),
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "retrieval",
+                "validate-gold",
+                "--release-lock",
+                "fixture-lock",
+                "--gold-path",
+                str(gold_path),
+            ]
+        )
+        == 0
+    )
 
     index_dir = index_root / _FINGERPRINT
     manifest = json.loads((index_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -203,16 +209,19 @@ def test_retrieval_cli_evaluate_v2_and_failure_export_are_offline_and_replayable
     gold_path = tmp_path / "retrieval-gold-v1.jsonl"
     _write_fixture_gold(gold_path, include_failure=True)
     index_root = tmp_path / "indexes"
-    assert main(
-        [
-            "retrieval",
-            "build-index",
-            "--release-lock",
-            "fixture-lock",
-            "--output-root",
-            str(index_root),
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "retrieval",
+                "build-index",
+                "--release-lock",
+                "fixture-lock",
+                "--output-root",
+                str(index_root),
+            ]
+        )
+        == 0
+    )
 
     index_dir = index_root / _FINGERPRINT
     first_output = tmp_path / "v2-a"
@@ -231,47 +240,54 @@ def test_retrieval_cli_evaluate_v2_and_failure_export_are_offline_and_replayable
     assert main([*evaluate_v2_args, "--output-dir", str(second_output)]) == 0
 
     v2_json = first_output / f"retrieval-v2-{_FINGERPRINT[:12]}.json"
-    assert v2_json.read_bytes() == (
-        second_output / f"retrieval-v2-{_FINGERPRINT[:12]}.json"
-    ).read_bytes()
+    assert (
+        v2_json.read_bytes()
+        == (second_output / f"retrieval-v2-{_FINGERPRINT[:12]}.json").read_bytes()
+    )
     v2_payload = json.loads(v2_json.read_text(encoding="utf-8"))
     assert v2_payload["question_count"] == len(v2_payload["per_question"]) == 70
     assert "by_statement_filter" in v2_payload
 
     legacy_output = tmp_path / "legacy"
-    assert main(
-        [
-            "retrieval",
-            "evaluate",
-            "--release-lock",
-            "fixture-lock",
-            "--index-dir",
-            str(index_dir),
-            "--gold-path",
-            str(gold_path),
-            "--output-dir",
-            str(legacy_output),
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "retrieval",
+                "evaluate",
+                "--release-lock",
+                "fixture-lock",
+                "--index-dir",
+                str(index_dir),
+                "--gold-path",
+                str(gold_path),
+                "--output-dir",
+                str(legacy_output),
+            ]
+        )
+        == 0
+    )
     system_output = tmp_path / "system-v2"
-    assert main(
-        [
-            "retrieval",
-            "derive-v2",
-            "--release-lock",
-            "fixture-lock",
-            "--gold-path",
-            str(gold_path),
-            "--source-report",
-            str(legacy_output / f"retrieval-day8-{_FINGERPRINT[:12]}.json"),
-            "--source-kind",
-            "legacy",
-            "--system-name",
-            "fixture-bm25",
-            "--output-dir",
-            str(system_output),
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "retrieval",
+                "derive-v2",
+                "--release-lock",
+                "fixture-lock",
+                "--gold-path",
+                str(gold_path),
+                "--source-report",
+                str(legacy_output / f"retrieval-day8-{_FINGERPRINT[:12]}.json"),
+                "--source-kind",
+                "legacy",
+                "--system-name",
+                "fixture-bm25",
+                "--output-dir",
+                str(system_output),
+            ]
+        )
+        == 0
+    )
     system_payload = json.loads(
         (system_output / f"retrieval-v2-fixture-bm25-{_FINGERPRINT[:12]}.json").read_text(
             encoding="utf-8"
@@ -295,37 +311,41 @@ def test_retrieval_cli_evaluate_v2_and_failure_export_are_offline_and_replayable
         encoding="utf-8",
     )
     failure_output = tmp_path / "failures"
-    assert main(
-        [
-            "retrieval",
-            "export-failures",
-            "--evaluation-report",
-            str(v2_json),
-            "--annotations",
-            str(annotations),
-            "--output-dir",
-            str(failure_output),
-        ]
-    ) == 0
-    failure_payload = json.loads(
-        (failure_output / f"failures-{_FINGERPRINT[:12]}.json").read_text(
-            encoding="utf-8"
+    assert (
+        main(
+            [
+                "retrieval",
+                "export-failures",
+                "--evaluation-report",
+                str(v2_json),
+                "--annotations",
+                str(annotations),
+                "--output-dir",
+                str(failure_output),
+            ]
         )
+        == 0
+    )
+    failure_payload = json.loads(
+        (failure_output / f"failures-{_FINGERPRINT[:12]}.json").read_text(encoding="utf-8")
     )
     assert failure_payload["failure_count"] == len(failure_rows)
     assert failure_payload["evaluated_question_count"] == 70
 
     annotations.write_text("\n", encoding="utf-8")
-    assert main(
-        [
-            "retrieval",
-            "export-failures",
-            "--evaluation-report",
-            str(v2_json),
-            "--annotations",
-            str(annotations),
-            "--output-dir",
-            str(tmp_path / "invalid-failures"),
-        ]
-    ) == 2
+    assert (
+        main(
+            [
+                "retrieval",
+                "export-failures",
+                "--evaluation-report",
+                str(v2_json),
+                "--annotations",
+                str(annotations),
+                "--output-dir",
+                str(tmp_path / "invalid-failures"),
+            ]
+        )
+        == 2
+    )
     assert "retrieval error:" in capsys.readouterr().err

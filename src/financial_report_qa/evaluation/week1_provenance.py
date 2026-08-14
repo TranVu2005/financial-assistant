@@ -1,6 +1,5 @@
 """Provenance audit and cell verification logic for Week 1 Quality Gate."""
 
-import hashlib
 import html
 import re
 from pathlib import Path
@@ -109,11 +108,7 @@ def generate_cell_audits(
             extraction = extract_candidates(decoded, detection)
             normalized = normalize_extraction(doc, extraction)
 
-            fresh_cells = {
-                c.cell_id: c
-                for t in normalized.extraction.tables
-                for c in t.cells
-            }
+            fresh_cells = {c.cell_id: c for t in normalized.extraction.tables for c in t.cells}
             fresh_cells_cache[exp.doc_id] = fresh_cells
 
         lines = doc_lines_cache[exp.doc_id]

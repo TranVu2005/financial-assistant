@@ -63,6 +63,10 @@ cache_dir = ".cache/pytest"
 target-version = "py311"
 line-length = 100
 src = ["src"]
+# Exploratory notebooks and historical planning documents are not production
+# sources: ruff formats Python code blocks inside Markdown, which would churn
+# already-published design docs for no benefit.
+extend-exclude = ["*.ipynb", "docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

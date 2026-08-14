@@ -213,8 +213,7 @@ def _growth_years(pools: ValuePools, index: int) -> RenderedCase:
     year_a, year_b = _pick(pools.year_pairs, index)
     return RenderedCase(
         question=(
-            f"Tính tốc độ tăng trưởng {raw_metric} của {ticker} từ năm {year_a} "
-            f"đến năm {year_b}."
+            f"Tính tốc độ tăng trưởng {raw_metric} của {ticker} từ năm {year_a} đến năm {year_b}."
         ),
         expected_company_codes=(ticker,),
         expected_periods=tuple(sorted({year_a, year_b})),
