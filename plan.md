@@ -835,11 +835,44 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 14 — Review cổng tuần 2
 
-- [ ] Hoàn thành dataset Representative khoảng 60 báo cáo nếu collector ổn.
-- [ ] Ablation: BM25; dense; fusion; fusion + graph.
-- [ ] Giữ graph chỉ khi tăng F2@R hoặc multi-table Recall@10 có ý nghĩa và chi phí chấp nhận được.
+- [x] ~~Hoàn thành dataset Representative khoảng 60 báo cáo nếu collector ổn.~~ Lỗi thời: release
+      khóa đã có 1.971 tài liệu / 100 công ty.
+- [x] Sửa nhãn gold sai của câu MML 2017 (`gold_label_error`) trước khi chạy đánh giá mới.
+- [x] Giữ `row_label_raw` trong document BM25 khi canonical hoá thất bại (đòn bẩy chính).
+- [x] Rebuild BM25/dense/graph trên corpus mới rồi re-baseline toàn bộ.
+- [x] Ablation: BM25 v3; BM25 v4; dense; fusion; fusion + graph — có cột delta so với BM25 v3.
+- [x] Giữ graph chỉ khi tăng F2@R hoặc multi-table Recall@10 có ý nghĩa và chi phí chấp nhận được.
 - **Cổng:** retrieval F2@R ≥ 0,80 và Recall@10 ≥ 0,90. Precision@10/F2@10 vẫn báo cáo để so sánh
   lịch sử. Nếu không đạt, ưu tiên normalization/aliases hơn đổi model.
+
+> **✅ HOÀN TẤT ngày 2026-08-14:** giữ `row_label_raw` khi canonical hoá thất bại
+> (dòng `unconfirmed labels:` mới trong document text, [documents.py](src/financial_report_qa/retrieval/documents.py))
+> đưa **120.920 → còn rất ít** bảng thiếu nhãn dòng trong document BM25. Rebuild BM25 v4/dense/graph
+> trên corpus mới (gold 70 câu, release `422df141c935…`):
+>
+> | | F2@10 | F2@R | Precision@R | Recall@10 | MRR |
+> |---|---:|---:|---:|---:|---:|
+> | BM25 v3 (cũ) | 0,4225 | 0,4913 | 0,4226 | 0,8810 | 0,6219 |
+> | **BM25 v4 (mới)** | **0,4377** | **0,4836** | 0,4107 | **0,9143** | 0,6228 |
+> | dense bge-m3 | 0,2882 | 0,2681 | 0,2381 | 0,6310 | 0,3598 |
+> | dense e5-small | 0,2866 | 0,2708 | 0,2345 | 0,6095 | 0,3212 |
+> | fusion / graph-expansion | = BM25 v4 (control thắng ở mọi cấu hình) | | | | |
+>
+> **Recall@10 đạt cổng** (0,9143 ≥ 0,90, TP 105→109/122). **F2@R chưa đạt** (0,4836 < 0,80) và
+> giảm nhẹ so với v3 (-0,0078): thêm từ vựng giúp Recall nhưng làm nhiễu thứ hạng của các câu vốn
+> đã dễ, giảm Precision@R (0,4226→0,4107) — đánh đổi thật, không phải hồi quy. Khoảng cách era
+> 2015–2019 (nghi ngờ ở Ngày 13) **biến mất sau khi sửa**: tỷ lệ Precision@R so với 2024–2025 đổi
+> từ 2,35× xuống 0,95× — xác nhận đó là hệ quả của lỗi vứt nhãn, không phải chất lượng báo cáo cũ.
+> Graph expansion: **mọi điểm `alpha > 0` đều tệ hơn control** ở cả F2 và Recall (chênh 0,13–0,20
+> tuyệt đối) — dứt khoát hơn Ngày 12/13. Quyết định: [ADR 0003](docs/decisions/0003-graph-expansion-decision.md)
+> bỏ graph khỏi hệ thống mặc định, giữ code/index làm phụ lục.
+>
+> **Nhánh xử lý cổng đã áp dụng** (Recall đạt, F2@R chưa đạt): sang Tuần 3 với nợ kỹ thuật ghi ở
+> mục Ngày 27 bên dưới — planner/compiler phải chịu được top-10 còn nhiễu; mở task reranker trước
+> khi tối ưu hiệu năng.
+>
+> Chi tiết đầy đủ: [docs/plans/day14-week2-gate-review.md](docs/plans/day14-week2-gate-review.md),
+> [artifacts/evaluations/day14/](artifacts/evaluations/day14/).
 
 ### Tuần 3 — TableRAG-lite, compiler và kiểm chứng
 
@@ -953,6 +986,13 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 - [ ] Đo cold/warm latency và VRAM trên RTX 3050.
 - [ ] Kiểm thử OOM, LLM timeout và restart server; fallback không làm hỏng app.
 - **Đầu ra:** P95 đạt ngưỡng hoặc có thông báo chờ/fallback rõ ràng.
+
+> **Nợ kỹ thuật từ Ngày 14:** cổng retrieval F2@R (0,4836) chưa đạt 0,80 dù Recall@10 đã đạt
+> (0,9143). Trước khi tối ưu latency, đánh giá thêm một reranker nhẹ trên top-50 BM25 v4 (feature
+> rõ ràng hoặc cross-encoder nhỏ) để nâng Precision@R mà không đổi Recall — xem
+> [docs/plans/day14-week2-gate-review.md](docs/plans/day14-week2-gate-review.md) và
+> [ADR 0003](docs/decisions/0003-graph-expansion-decision.md) (graph expansion đã loại, không
+> phải hướng để thử lại ở đây).
 
 #### Ngày 28 — Adversarial và regression
 

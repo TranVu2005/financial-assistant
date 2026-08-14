@@ -135,7 +135,7 @@ def _write_fixture_gold(path: Path) -> None:
 def _write_bm25_reference(path: Path) -> None:
     source = (
         Path(__file__).parents[3]
-        / "artifacts/evaluations/day13/bm25/retrieval-day8-422df141c935.json"
+        / "artifacts/evaluations/day14/bm25/retrieval-day8-422df141c935.json"
     )
     path.write_bytes(source.read_bytes())
 

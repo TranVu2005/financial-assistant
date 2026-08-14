@@ -87,14 +87,14 @@ CURRENT_BM25_REFERENCE = Bm25ReferenceDescriptor(
     version="gold70",
     dataset_fingerprint=_LOCKED_DATASET_FINGERPRINT,
     question_count=70,
-    gold_sha256="0aaeec29325596bf8e56fa91fe330d57c6b731e42842ab3096d04d9cae43678f",
-    question_ids_sha256="1fc7ccad441ff7cd52beee07364da0572c21c31d2120ff94a80827503dc8ac40",
-    report_sha256="71ea90dede2e3b6bb873f527ccbc8a6b3a80285d7d3d15d55439b566e2bdb639",
+    gold_sha256="5ed12e6abfe03009a4792d45c2e437bbe615257fc2eeb20d8feb32ac9dbd8b9e",
+    question_ids_sha256="d70de63b36af9af1017c14b87dcabd86c60ec186943eca772d540a0a5a66972a",
+    report_sha256="75ebbc6ff68e4ad3d3ed104f2427f1e54489b7e7916941d06531a1c2da8877ad",
     macro=RetrievalMetrics(
-        true_positive=105,
-        precision=0.1499999999999999,
-        recall=0.880952380952381,
-        f2=0.4224545295973871,
+        true_positive=109,
+        precision=0.1557142857142856,
+        recall=0.9142857142857143,
+        f2=0.4377091162805452,
     ),
 )
 

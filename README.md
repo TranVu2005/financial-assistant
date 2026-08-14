@@ -619,3 +619,63 @@ Day 13 hoàn tất phạm vi **đánh giá**, nhưng chưa đạt cổng Day 14 
 quan sát được là F2@R `0.494129` và Recall@10 `0.880952`, thấp hơn hai ngưỡng tương ứng `0.80` và
 `0.90`. Ưu tiên tiếp theo là sửa gold label đã xác nhận và cải thiện normalization/alias; không
 đổi công thức metric hoặc tuyên bố gate pass.
+
+## Day 14 Week 2 Gate Review
+
+Chẩn đoán: cả 15 bảng gold bị trượt khỏi top-10 (11 câu lỗi ở Day 13) đều nằm trong top-100,
+hạng 11–44 — không có bảng nào ngoài tầm với. Đây là bài toán **xếp hạng**, không phải thu hồi,
+nên đổi embedding model không giải quyết được gì (khớp với việc dense thua BM25 ở mọi cấu hình
+suốt Day 9/10/13).
+
+Nguyên nhân gốc: [`documents.py`](src/financial_report_qa/retrieval/documents.py) trước đây lọc
+`FILTER (WHERE c.row_label_canonical IS NOT NULL)` khi gom nhãn dòng vào document BM25 — khi
+normalization không canonical hoá được nhãn thì **cả `raw` cũng bị vứt**. Đo trên release khóa:
+chỉ 5,93% nhãn được canonical hoá, khiến 120.920/146.011 bảng (82,8%) không có nhãn dòng nào
+trong document, trong đó 109.499 bảng có sẵn nhãn raw bị bỏ đi.
+
+### Sửa lỗi và rebuild (`documents.py`, BM25 v4)
+
+Thêm dòng `unconfirmed labels:` vào document text, giữ nhãn `row_label_raw` khi canonical hoá thất
+bại, tách riêng khỏi dòng `metrics`/`metric aliases` (đã canonical hoá) để không lẫn tín hiệu đã
+xác thực với tín hiệu chưa xác thực. Sửa một nhãn gold sai kèm theo (`gold_label_error` từ Day 13):
+câu hỏi MML 2017 dùng nhầm bảng "Công ty liên kết sở hữu gián tiếp" thay vì bảng "Các công ty con
+sở hữu trực tiếp" — đã thay đúng bảng và nới filter `statement_types` (bảng đúng không được phân
+loại `notes` dù nằm trong phần thuyết minh, một lỗ hổng phân loại riêng ngoài phạm vi sửa lần này).
+Rebuild BM25 v4/dense/graph trên release `422df141c935…` không đổi (chỉ nội dung document đổi),
+gold 70 câu.
+
+| | F2@10 | F2@R | Precision@R | Recall@10 | MRR |
+|---|---:|---:|---:|---:|---:|
+| BM25 v3 (cũ) | 0.422455 | 0.491346 | 0.422619 | 0.880952 | 0.621939 |
+| **BM25 v4 (mới)** | **0.437709** | **0.483581** | 0.410714 | **0.914286** | 0.622778 |
+| dense bge-m3 | 0.288204 | 0.268108 | 0.238095 | 0.630952 | 0.359836 |
+| dense e5-small | 0.286606 | 0.270792 | 0.234524 | 0.609524 | 0.321247 |
+| fusion bge / e5, graph expansion | = BM25 v4 (control thắng ở mọi cấu hình lưới) | | | | |
+
+**Recall@10 đạt cổng** (`0.914286 ≥ 0.90`, TP 105→109/122). **F2@R chưa đạt** (`0.483581 < 0.80`)
+và giảm nhẹ so với v3 (`-0.007765`): thêm từ vựng giúp nhiều câu khó tìm đúng bảng hơn (Recall@3
+`+0.063`, Recall@5 `+0.089`) nhưng làm nhiễu thứ hạng của các câu vốn đã dễ, giảm Precision@R —
+đánh đổi thật, không phải hồi quy.
+
+Khoảng cách era 2015–2019 (nghi ngờ ở Day 13 nhưng chưa xác định nguyên nhân — tỷ lệ canonical hoá
+đo được phẳng ~5.5–6.4% ở mọi năm) **biến mất sau khi sửa**: Precision@R của 2015–2019 so với
+2024–2025 đổi từ tỷ lệ `2.35×` xuống `0.95×`. Xác nhận đây là hệ quả của lỗi vứt nhãn dòng, không
+phải chất lượng OCR/normalization của báo cáo cũ.
+
+### Quyết định graph expansion (ADR 0003)
+
+Lưới 13 điểm chạy lại trên corpus đã sửa: **mọi điểm `alpha > 0` đều tệ hơn control `alpha=0`** ở
+cả F2 và Recall@10, chênh 0.13–0.20 tuyệt đối — dứt khoát hơn nhiều so với Day 12 (4/70 câu còn
+headroom) và Day 13 (chênh 0.003 giữa best và control). Cơ chế: với ngân sách top-10 cố định, mọi
+bảng lân cận graph chèn thêm đều đẩy một bảng BM25-xếp-hạng-cao ra ngoài top-10, và BM25 v4 đã
+mạnh hơn nhiều sau khi sửa nhãn. Quyết định:
+[ADR 0003](docs/decisions/0003-graph-expansion-decision.md) — bỏ graph expansion khỏi hệ thống
+mặc định, giữ code/index/báo cáo làm phụ lục có thể bật lại nếu gold sau này bổ sung câu cần bảng
+`notes` (hiện 0/70 câu, quan hệ `explained_by_note` chưa từng được đánh giá thật).
+
+### Cổng Day 14
+
+Recall@10 đạt (`0.914286 ≥ 0.90`); F2@R chưa đạt (`0.483581 < 0.80`). Theo nhánh xử lý đã chốt
+trước ở [docs/plans/day14-week2-gate-review.md](docs/plans/day14-week2-gate-review.md): sang
+Tuần 3 với nợ kỹ thuật ghi ở Ngày 27 (đánh giá reranker nhẹ trên top-50 trước khi tối ưu latency);
+planner/compiler Tuần 3 phải chịu được top-10 còn nhiễu.

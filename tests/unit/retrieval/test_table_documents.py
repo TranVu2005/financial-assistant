@@ -89,12 +89,66 @@ def test_build_table_documents_normalizes_display_fields_and_omits_numbers(tmp_p
         "statement: income statement\n"
         "metrics: net revenue | total assets\n"
         "metric aliases: Doanh thu thuần\n"
+        "unconfirmed labels: Dòng trình bày không phải metric\n"
         "company: ACB\n"
         "periods: 2023 | 2024\n"
         "units: VND | VND million"
     )
     assert "100" not in documents[0].text
-    assert "Dòng trình bày không phải metric" not in documents[0].text
+
+
+def test_build_table_documents_keeps_uncanonicalized_row_labels(tmp_path: Path) -> None:
+    """Real release: 94% of row labels fail canonicalization; dropping raw text made 83% of
+    tables unretrievable by any row-label token. Guards against re-introducing that filter."""
+    table_id = "tbl_" + "c" * 64
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.table(
+            {
+                "table_id": [table_id],
+                "doc_id": ["doc_c"],
+                "title_raw": ["Thuyết minh"],
+                "statement_type": ["balance_sheet"],
+                "unit_normalized": ["VND_million"],
+                "line_start": [1],
+                "line_end": [1],
+            }
+        ),
+        tmp_path / "tables.parquet",
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.table(
+            {
+                "doc_id": ["doc_c"],
+                "company_code": ["STB"],
+                "report_year": [2024],
+                "relative_path": ["c.txt"],
+            }
+        ),
+        tmp_path / "documents.parquet",
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.table(
+            {
+                "table_id": [table_id, table_id],
+                "row_idx": [0, 1],
+                "col_idx": [0, 0],
+                "row_label_canonical": [None, None],
+                "row_label_raw": ["Cho vay khách hàng", "Chứng khoán đầu tư"],
+                "column_label_canonical": ["2024", "2024"],
+                "value_raw": ["100", "200"],
+                "period": ["2024", "2024"],
+                "unit": ["VND_million", "VND_million"],
+            }
+        ),
+        tmp_path / "cells.parquet",
+    )
+
+    documents = build_table_documents(
+        tmp_path / "documents.parquet", tmp_path / "tables.parquet", tmp_path / "cells.parquet"
+    )
+
+    assert documents[0].metric_labels == ()
+    assert "unconfirmed labels: Cho vay khách hàng | Chứng khoán đầu tư" in documents[0].text
 
 
 def _write_release_fixture_with_group_context(tmp_path: Path) -> str:

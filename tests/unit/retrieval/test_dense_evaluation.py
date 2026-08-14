@@ -158,7 +158,7 @@ def _run(name: EncoderName, *, cold_p95: float, cache_hit: bool = False) -> Dens
 def _bm25_reference() -> RetrievalEvaluationReport:
     path = (
         Path(__file__).parents[3]
-        / "artifacts/evaluations/day13/bm25/retrieval-day8-422df141c935.json"
+        / "artifacts/evaluations/day14/bm25/retrieval-day8-422df141c935.json"
     )
     return load_bm25_reference_report(path).report
 
@@ -200,10 +200,10 @@ def test_day9_comparison_reports_dense_minus_bm25_delta() -> None:
 
     comparison = build_day9_comparison(_bm25_reference(), bge, e5)
 
-    assert comparison.systems["bm25-v3"].macro.recall == pytest.approx(0.880952380952381)
+    assert comparison.systems["bm25-v3"].macro.recall == pytest.approx(0.9142857142857143)
     delta = comparison.systems["bge-m3"].delta_vs_bm25
     assert delta is not None
-    assert delta.recall == pytest.approx(bge.cold_report.macro.recall - 0.880952380952381)
+    assert delta.recall == pytest.approx(bge.cold_report.macro.recall - 0.9142857142857143)
     intent_deltas = comparison.systems["bge-m3"].delta_by_intent
     assert intent_deltas is not None
     reference_lookup_recall = _bm25_reference().by_intent["lookup"].recall

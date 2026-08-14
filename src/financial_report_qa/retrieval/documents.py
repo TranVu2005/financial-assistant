@@ -87,6 +87,8 @@ def build_table_documents(
                     canonical := c.row_label_canonical,
                     raw := c.row_label_raw
                 )) FILTER (WHERE c.row_label_canonical IS NOT NULL),
+                list(DISTINCT c.row_label_raw)
+                    FILTER (WHERE c.row_label_canonical IS NULL AND c.row_label_raw IS NOT NULL),
                 list(DISTINCT c.period) FILTER (WHERE c.period IS NOT NULL),
                 list(DISTINCT c.unit) FILTER (WHERE c.unit IS NOT NULL),
                 list(DISTINCT {group_context_expression})
@@ -116,6 +118,7 @@ def build_table_documents(
             line_start,
             line_end,
             metric_label_values,
+            uncanonicalized_raw_labels,
             cell_periods,
             cell_units,
             group_context_values,
@@ -146,6 +149,7 @@ def build_table_documents(
                 "metric aliases",
                 _tokens([label.raw for label in metric_labels]),
             ),
+            _line("unconfirmed labels", _tokens(uncanonicalized_raw_labels or [])),
             _line("group context", group_contexts),
             _line("company", _normalize(company_code)),
             _line("periods", periods),

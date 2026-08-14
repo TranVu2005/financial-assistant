@@ -14,7 +14,7 @@ from financial_report_qa.retrieval.reference import (
 )
 
 _REPO_ROOT = Path(__file__).parents[3]
-_CURRENT_REPORT = _REPO_ROOT / "artifacts/evaluations/day13/bm25/retrieval-day8-422df141c935.json"
+_CURRENT_REPORT = _REPO_ROOT / "artifacts/evaluations/day14/bm25/retrieval-day8-422df141c935.json"
 _GOLD30_REPORT = (
     _REPO_ROOT / "artifacts/evaluations/day13/gold30/bm25/retrieval-day8-422df141c935.json"
 )

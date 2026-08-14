@@ -115,7 +115,7 @@ def _question(
 def _bm25_report() -> RetrievalEvaluationReport:
     path = (
         Path(__file__).parents[3]
-        / "artifacts/evaluations/day13/bm25/retrieval-day8-422df141c935.json"
+        / "artifacts/evaluations/day14/bm25/retrieval-day8-422df141c935.json"
     )
     return load_bm25_reference_report(path).report
 
