@@ -1,0 +1,11 @@
+{
+  "operation": "ratio",
+  "companies": ["PNJ"],
+  "periods": ["2015"],
+  "numerator_metric": {"canonical": "net_revenue"},
+  "denominator_metric": {"canonical": "total_assets"},
+  "candidate_table_ids": [
+    "tbl_2b6ab7c60933ba73d15222b8f5d4ad3469c2b63c7fd2cbdd19eee26cd1b4cf96"
+  ],
+  "expected_unit": "ratio"
+}

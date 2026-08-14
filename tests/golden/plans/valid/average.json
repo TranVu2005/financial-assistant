@@ -1,0 +1,11 @@
+{
+  "operation": "average",
+  "companies": ["VIB"],
+  "periods": ["2021", "2022", "2023"],
+  "metric": {"canonical": "total_assets"},
+  "candidate_table_ids": [
+    "tbl_b7326c1309b5bfebbb7682751738b88d0c780acc638004d15093efec244a3453",
+    "tbl_975d4ebec85e497d4b6151f9f6f7480ccc9e8e41699ce89db48340df43725956",
+    "tbl_f6ec79460e4096a59ad231bb5d0442892b0065b3d9d471ae66b0ccfed52f52a9"
+  ]
+}

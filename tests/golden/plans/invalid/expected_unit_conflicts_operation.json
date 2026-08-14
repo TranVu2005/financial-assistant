@@ -1,0 +1,10 @@
+{
+  "operation": "growth_rate",
+  "companies": ["NVL"],
+  "periods": ["2022", "2023"],
+  "metric": {"canonical": "net_revenue"},
+  "candidate_table_ids": [
+    "tbl_6e9abf4aa6e5d9ed997cdeaccb996e31a6fef14603f1482d94689fcacfe6a3e4"
+  ],
+  "expected_unit": "VND"
+}

@@ -1,0 +1,9 @@
+{
+  "operation": "lookup",
+  "companies": ["NVL"],
+  "periods": ["2023"],
+  "metric": {"canonical": "net_revenue"},
+  "candidate_table_ids": [
+    "tbl_9999999999999999999999999999999999999999999999999999999999999999"
+  ]
+}

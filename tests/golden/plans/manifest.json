@@ -1,0 +1,86 @@
+{
+  "valid": {
+    "lookup.json": {
+      "question_id": "retq_0a32a6d94a6e7bad8479d11ebbc10495710bc76f86ee2b0bde7d77462fa29d99",
+      "question": "Tra cứu doanh thu thuần của NVL năm 2023."
+    },
+    "compare.json": {
+      "question_id": null,
+      "note": "No gold70 question has this shape (two metrics, one company, one period); the fact (MSN 2025 current_assets and non_current_assets on the same table) is real, taken directly from the release."
+    },
+    "difference.json": {
+      "question_id": null,
+      "note": "No gold70 question has this shape (one metric, two periods, subtraction). Facts (VIB total_assets 2023/2024) are real, taken directly from the release."
+    },
+    "growth_rate.json": {
+      "question_id": "retq_5a293140dab6370835bb93b17bb0503467626e4386d5e5ca5264afd3d2cff41b",
+      "question": "Tính tốc độ tăng trưởng doanh thu thuần của NVL từ năm 2022 đến năm 2023."
+    },
+    "ratio.json": {
+      "question_id": null,
+      "note": "No gold70 question asks for a ratio. Facts (PNJ 2015 net_revenue and total_assets, same table) are real, taken directly from the release."
+    },
+    "average.json": {
+      "question_id": null,
+      "note": "No gold70 question asks for a multi-period average. Facts (VIB total_assets 2021-2023) are real, taken directly from the release."
+    },
+    "sum.json": {
+      "question_id": null,
+      "note": "No gold70 question asks for a cross-company sum. Facts (GEX/PNJ net_revenue 2021) are real, taken directly from the release."
+    },
+    "rank.json": {
+      "question_id": null,
+      "note": "No gold70 question asks for a ranking. Facts (GEX/PNJ/KHG net_revenue 2021) are real, taken directly from the release."
+    }
+  },
+  "invalid": {
+    "operation_outside_whitelist.json": {
+      "layer": "schema",
+      "match": "Input should be"
+    },
+    "metric_unknown_canonical.json": {
+      "layer": "schema",
+      "match": "not a canonical metric"
+    },
+    "expected_unit_invalid_enum.json": {
+      "layer": "schema",
+      "match": "Input should be"
+    },
+    "period_bad_grammar.json": {
+      "layer": "schema",
+      "match": "periods must be canonical"
+    },
+    "candidate_table_ids_empty.json": {
+      "layer": "schema",
+      "match": "between 1 and 12"
+    },
+    "candidate_table_ids_too_many.json": {
+      "layer": "schema",
+      "match": "between 1 and 12"
+    },
+    "wrong_arity_companies.json": {
+      "layer": "semantic",
+      "code": "companies_arity_invalid"
+    },
+    "metric_a_forbidden_for_lookup.json": {
+      "layer": "semantic",
+      "code": "metric_pair_arity_invalid"
+    },
+    "top_k_on_lookup.json": {
+      "layer": "semantic",
+      "code": "top_k_arity_invalid"
+    },
+    "numerator_on_lookup.json": {
+      "layer": "semantic",
+      "code": "numerator_denominator_arity_invalid"
+    },
+    "candidate_table_ids_unknown.json": {
+      "layer": "semantic",
+      "code": "candidate_table_ids_unknown"
+    },
+    "expected_unit_conflicts_operation.json": {
+      "layer": "semantic",
+      "code": "expected_unit_mismatch"
+    }
+  }
+}

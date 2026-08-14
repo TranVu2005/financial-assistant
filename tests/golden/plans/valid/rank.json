@@ -1,0 +1,12 @@
+{
+  "operation": "rank",
+  "companies": ["GEX", "PNJ", "KHG"],
+  "periods": ["2021"],
+  "metric": {"canonical": "net_revenue"},
+  "top_k": 2,
+  "candidate_table_ids": [
+    "tbl_3822178b57d46066687a2719f2337b0e47d3542162a01cc8ab1ba5eb31f40690",
+    "tbl_72880c03dfb923ca4ca715b45310d89ee8596d34e260b51160ae547ac358f950",
+    "tbl_011c3b8764a6d4b0e025bd696501233c05eb7b49defe46e1cc5007b5794c51b4"
+  ]
+}

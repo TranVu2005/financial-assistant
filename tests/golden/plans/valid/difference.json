@@ -1,0 +1,10 @@
+{
+  "operation": "difference",
+  "companies": ["VIB"],
+  "periods": ["2023", "2024"],
+  "metric": {"canonical": "total_assets"},
+  "candidate_table_ids": [
+    "tbl_975d4ebec85e497d4b6151f9f6f7480ccc9e8e41699ce89db48340df43725956",
+    "tbl_c783f76b649483d6706e8551d07460f690dfb9347d1f2dfc4a4ae76144a8f27e"
+  ]
+}

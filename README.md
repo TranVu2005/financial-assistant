@@ -679,3 +679,95 @@ Recall@10 đạt (`0.914286 ≥ 0.90`); F2@R chưa đạt (`0.483581 < 0.80`). T
 trước ở [docs/plans/day14-week2-gate-review.md](docs/plans/day14-week2-gate-review.md): sang
 Tuần 3 với nợ kỹ thuật ghi ở Ngày 27 (đánh giá reranker nhẹ trên top-50 trước khi tối ưu latency);
 planner/compiler Tuần 3 phải chịu được top-10 còn nhiễu.
+
+## Day 15 FinancialQueryPlan
+
+**Phạm vi:** `data/qa/retrieval-gold-v1.jsonl` (gold70) là gold **đánh giá truy hồi** — 3 intent
+`lookup`/`compare`/`growth`, dùng để đo Recall@10/F2@R. Nó **không phải** tập câu hỏi nộp bài và
+không map 1-1 sang 8 operation thực thi (`lookup`, `compare`, `difference`, `growth_rate`, `ratio`,
+`average`, `sum`, `rank`) của `FinancialQueryPlan`. `data/official/test_questions.json` — tập câu
+hỏi nộp bài thật — chưa tồn tại trong repo tại thời điểm viết Ngày 15; 8 operation đang bị đóng
+băng dựa trên [plan.md § 2.3](plan.md) mà chưa thấy phân bố câu hỏi thật (rủi ro ghi ở
+[plan.md § 14](plan.md)). Các câu hỏi gold70 dạng liệt kê thuyết minh (ví dụ *"Tra cứu bốn bảng
+thuyết minh về danh sách công ty con..."*) nằm ngoài phạm vi `FinancialQueryPlan` vì chúng không có
+đáp án số.
+
+### Chẩn đoán: Ngày 14 chưa đủ cho compiler
+
+Ngày 14 chỉ sửa nhánh **truy hồi** (giữ `row_label_raw` trong text document BM25), không đổi
+`cells.row_label_canonical` — thứ compiler dùng để định vị hàng. Đo trên 70 câu gold (đối chiếu
+entity parser Day 10 với canonical label thật của bảng gold):
+
+| Kết quả | Số câu | Tỷ lệ |
+|---|---:|---:|
+| Mọi metric giải được tới canonical | 42 | 60,0 % |
+| Parser không rút được metric nào (phần lớn câu `notes` liệt kê) | 20 | 28,6 % |
+| Có metric nhưng không khớp bảng gold | 6 | 8,6 % |
+| Khớp một phần | 2 | 2,9 % |
+
+Bảng gold chỉ 56/91 (61,5 %) có ≥ 1 canonical row label. Nhưng mật độ dữ kiện `(company, period,
+metric)` sau khi đã có canonical rất cao: một khi metric đã tồn tại, `growth_rate` (cần 2 period)
+đạt 93,2 %, `ratio` (cần 2 metric) đạt 99,3 %, `rank`/`compare` (cần 2 company) đạt 95,7 % — nút
+thắt hoàn toàn nằm ở bước định vị metric đầu tiên, không phải arity nhiều thực thể.
+
+### ADR 0004: `metric_selector` hai nhánh
+
+[ADR 0004](docs/decisions/0004-metric-locator-strategy.md) chọn `MetricSelector` với đúng một
+trong hai khoá: `{"canonical": "net_revenue"}` (56 giá trị trong
+[`normalization/metrics.py`](src/financial_report_qa/normalization/metrics.py)) hoặc
+`{"raw_text": "Cho vay khách hàng"}` (chuỗi sao chép nguyên văn từ bảng ứng viên, không viết tắt).
+Validator Ngày 15 chỉ kiểm tra hình dạng (`canonical` thuộc 56 giá trị, đúng một nhánh có mặt);
+việc `raw_text` có thật sự khớp một hàng trong `candidate_table_ids` cụ thể hay không là việc của
+compiler (Day 18), không lặp lại ở đây.
+
+### Schema và semantic validator
+
+`planning/plan_contracts.py` (structural: `extra="forbid"`, `MetricSelector`, ngữ pháp `period`
+canonical `"YYYY"` — từ chối `"YYYY-MM-DD"`, `candidate_table_ids` 1–12 phần tử không trùng) và
+`planning/plan_validator.py` (bảng arity theo operation, `PlanErrorCode` theo tiền lệ
+`AmbiguityCode`/`NormalizationIssueCode`). Tám operation được định nghĩa quyết định (không có
+trong `plan.md` gốc, chốt lại ở đây để không mơ hồ khi thực thi):
+
+| Operation | companies | periods | metric field | Field riêng |
+|---|:---:|:---:|---|---|
+| `lookup` | 1 | 1 | `metric` | — |
+| `compare` | 1 | 1 | `metric_a`, `metric_b` (hiệu số) | — |
+| `difference` | 1 | 2 (tăng dần) | `metric` | — |
+| `growth_rate` | 1 | 2 (tăng dần) | `metric` | `expected_unit` phải là `percent` |
+| `ratio` | 1 | 1 | `numerator_metric`, `denominator_metric` | `expected_unit` phải là `ratio`/`percent` |
+| `average`/`sum` | đúng một trong hai chiều biến thiên | | `metric` | — |
+| `rank` | ≥ 2 | 1 | `metric` | `top_k` bắt buộc, `1 ≤ top_k < len(companies)` |
+
+`compare` = hai metric cùng một company/period (không phải hai company hay hai period — đã có
+`difference`/`growth_rate` riêng cho việc đó). `average`/`sum` từ chối cả hai trường hợp suy biến:
+không chiều nào biến thiên (company=1, period=1 — không có gì để gộp) và cả hai chiều cùng biến
+thiên (mơ hồ tích chéo).
+
+Field không thuộc operation phải **vắng mặt** (`None`), không phải để trống ngầm — ép bằng
+`_check_forbidden_extras`, liệt kê field **được phép** thay vì field bị cấm, để field mới mặc định
+bị cấm ở operation chưa khai báo thay vì mặc định lọt qua.
+
+### Property test bắt lỗi thật
+
+`tests/unit/planning/test_plan_property.py` so khớp `validate_plan_semantics` với một hàm đặc tả
+arity viết độc lập (không dùng lại code validator). Lần chạy đầu tiên **thất bại thật**: `compare`,
+`difference`, `growth_rate`, `ratio`, `average`, `sum`, `rank` thiếu kiểm tra cấm cho
+`numerator_metric`/`denominator_metric`/`metric_a`/`metric_b` — chỉ `lookup` (viết đầu tiên, làm
+mẫu copy) kiểm đủ cả 5 field cấm. Đây đúng loại lỗi property test được thiết kế để bắt: thiếu sót
+lặp lại có hệ thống khi copy-paste qua nhiều nhánh tương tự, mà unit test theo từng operation
+riêng lẻ không tự động phát hiện chéo được. Sửa bằng thiết kế khai báo `_check_forbidden_extras`
+ở trên, sau đó property test (300 example ngẫu nhiên) và toàn bộ 93 test `planning`/`golden/plans`
+đều xanh.
+
+### JSON examples
+
+8 ví dụ hợp lệ trong [`tests/golden/plans/valid/`](tests/golden/plans/valid/): 2/8 (`lookup`,
+`growth_rate`) lấy trực tiếp từ câu hỏi gold70 thật (`question_id` ghi trong
+[`manifest.json`](tests/golden/plans/manifest.json)); 6/8 còn lại dựng từ dữ kiện thật đo được
+trong release vì gold70 (3 intent lookup/compare/growth) không có câu hỏi khớp hình dạng
+`compare`/`difference`/`ratio`/`average`/`sum`/`rank` — ghi rõ trong manifest, không bịa số liệu.
+12 case invalid trong [`tests/golden/plans/invalid/`](tests/golden/plans/invalid/), mỗi case đúng
+một vi phạm, phân theo tầng bắt lỗi (`schema` = pydantic construction, `semantic` =
+`validate_plan_semantics`).
+
+`pytest -q`: 830 passed, 4 skipped. `ruff check .`: sạch. `mypy`: 0 lỗi mới (168 file).

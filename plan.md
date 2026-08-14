@@ -878,10 +878,52 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 15 — FinancialQueryPlan
 
-- [ ] Chốt schema, error codes và JSON examples cho 8 operation.
-- [ ] Viết semantic validator: số company/period/metric phù hợp operation.
-- [ ] Viết property tests cho các tổ hợp field không hợp lệ.
+- [x] Đo phủ metric/operation trên release trước khi đóng băng schema.
+- [x] ADR 0004 chốt chiến lược định vị metric (canonical / fallback raw / selector hai nhánh).
+- [x] Chốt schema, error codes và JSON examples cho 8 operation.
+- [x] Viết semantic validator: số company/period/metric phù hợp operation.
+- [x] Viết property tests cho các tổ hợp field không hợp lệ.
 - **Đầu ra:** mọi plan không hợp lệ bị từ chối trước execution.
+
+> **✅ HOÀN TẤT ngày 2026-08-14:** `planning/plan_contracts.py` (schema, `MetricSelector` hai
+> nhánh theo ADR 0004, ngữ pháp `period` = `"YYYY"`) và `planning/plan_validator.py` (bảng arity
+> 8 operation, `PlanErrorCode` theo tiền lệ `AmbiguityCode`/`NormalizationIssueCode`). 8 ví dụ JSON
+> hợp lệ trong `tests/golden/plans/valid/` — 2/8 (`lookup`, `growth_rate`) lấy trực tiếp từ câu hỏi
+> gold70 thật, 6/8 còn lại (`compare`, `difference`, `ratio`, `average`, `sum`, `rank`) dựng từ dữ
+> kiện thật trong release vì gold70 không có câu hỏi khớp hình dạng các operation này (gold70 chỉ
+> có 3 intent lookup/compare/growth, không phải 8 operation thực thi) — ghi rõ trong
+> `tests/golden/plans/manifest.json`, không bịa. 12 case invalid, mỗi case đúng một vi phạm, tách
+> theo tầng schema (pydantic, rejected tại construction) và tầng semantic (`validate_plan_semantics`,
+> trả `PlanErrorCode`).
+>
+> Property test (`test_plan_property.py`, so khớp với một hàm đặc tả arity viết độc lập, không dùng
+> lại code validator) bắt được lỗi thật: `compare`/`difference`/`growth_rate`/`ratio`/`average`/
+> `sum`/`rank` thiếu kiểm tra "cấm" cho `numerator_metric`/`denominator_metric`/`metric_a`/`metric_b`
+> — chỉ `lookup` được kiểm đủ 5 field cấm. Sửa bằng `_check_forbidden_extras` khai báo field được
+> phép thay vì liệt kê field bị cấm (thiếu sót mặc định thành lỗi, không phải mặc định bỏ qua).
+>
+> Câu hỏi thiết kế `compare` đã chốt: **hai metric cùng một company/period** (`metric_a`/`metric_b`,
+> hiệu số), không phải hai công ty hay hai kỳ (đã có `difference`/`growth_rate` riêng cho việc đó).
+> `average`/`sum` yêu cầu đúng một trong hai chiều company/period biến thiên (loại cả hai trường hợp
+> suy biến: không chiều nào biến thiên, và cả hai chiều cùng biến thiên gây mơ hồ tích chéo).
+>
+> `pytest -q`: 830 passed, 4 skipped (+93 so với Ngày 14). `ruff check .`: sạch. `mypy`: 0 lỗi mới
+> (168 file). `git diff --check` sạch.
+
+> **⚠️ Chẩn đoán ngày 2026-08-14 (trước khi bắt đầu):** Ngày 14 chỉ sửa nhánh **truy hồi** — giữ
+> `row_label_raw` vào text document BM25 nên retrieval tìm được bảng, nhưng `metric_labels`
+> (canonical) không đổi, mà đó mới là thứ compiler dùng để định vị hàng. Đo trên 70 câu gold: chỉ
+> **60,0 %** câu có mọi metric giải được tới `row_label_canonical` của bảng gold; **28,6 %** parser
+> không rút được metric nào (phần lớn là câu `notes` dạng liệt kê, vốn **không có đáp án số**);
+> 8,6 % có metric nhưng không khớp bảng. Bảng gold chỉ 56/91 (61,5 %) có ≥ 1 canonical label.
+>
+> Hai ranh giới phải ghi rõ trước khi viết schema: (1) `data/qa/retrieval-gold-v1.jsonl` là gold
+> **đánh giá truy hồi**, không phải tập câu hỏi nộp bài; (2) `data/official/test_questions.json`
+> **chưa tồn tại trong repo**, nên 8 operation đang bị đóng băng khi chưa thấy phân bố câu hỏi
+> thật. Ngoài ra `cells.period` tồn tại song song hai dạng (`"2024"` và `"2024-12-31"`) nên schema
+> phải chốt một ngữ pháp canonical duy nhất.
+>
+> **Kế hoạch chi tiết:** [docs/plans/day15-financial-query-plan.md](docs/plans/day15-financial-query-plan.md).
 
 #### Ngày 16 — Deterministic parsing và ontology
 
@@ -1377,6 +1419,7 @@ Ablation bắt buộc trên slide:
 | Extraction chiếm quá nửa tuần 1 | nhiều bảng quality thấp | giới hạn loại statement, review có chọn mẫu, không OCR mọi trang |
 | Dataset thu thập chậm | < 15 báo cáo ngày 6 | ưu tiên đa dạng hơn số lượng; tự động hóa manifest/download |
 | Retrieval chưa đạt | Recall@10 < 0,90 ngày 14 | sửa metadata/aliases/schema; tạm bỏ reranker nặng |
+| 8 operation Ngày 15 bị đóng băng trước khi thấy `data/official/test_questions.json` | tập câu hỏi thật có phép toán ngoài 8 loại đã chốt | `PlanErrorCode`/bảng arity nằm ở một chỗ (`plan_validator.py`) để mở rộng rẻ; không rải luật ra nhiều file |
 | Model nhỏ lập plan kém | retrieval đúng nhưng plan sai > 15% | thêm few-shot theo intent, deterministic parser, sau đó mới QLoRA |
 | RTX 3050 chậm/OOM | P95 > 25 giây hoặc crash | Q4, context 2K–4K, output ngắn, offload hợp lý, cache |
 | UI/backend tốn thời gian | chưa có E2E ngày 21 | Streamlit trực tiếp gọi pipeline; bỏ FastAPI |

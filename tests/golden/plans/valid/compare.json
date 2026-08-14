@@ -1,0 +1,11 @@
+{
+  "operation": "compare",
+  "companies": ["MSN"],
+  "periods": ["2025"],
+  "metric_a": {"canonical": "current_assets"},
+  "metric_b": {"canonical": "non_current_assets"},
+  "candidate_table_ids": [
+    "tbl_0c647147f5601007981e4cfd7fc3e520b08ec3298b4ee0b9521a3a240cd32c81",
+    "tbl_fa63913faaf57c39399e729ff1eb206a0ff550700dc3271c706fd4db17ee187a"
+  ]
+}
