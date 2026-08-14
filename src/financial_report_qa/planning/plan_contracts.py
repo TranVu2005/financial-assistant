@@ -22,6 +22,7 @@ _PERIOD_PATTERN = re.compile(r"^\d{4}$")
 PlanOperation = Literal[
     "lookup",
     "compare",
+    "compare_companies",
     "difference",
     "growth_rate",
     "ratio",

@@ -86,9 +86,7 @@ def test_difference_with_descending_periods_is_rejected() -> None:
 
 
 def test_valid_growth_rate_plan_has_no_issues() -> None:
-    plan = _plan(
-        operation="growth_rate", periods=("2022", "2023"), expected_unit="percent"
-    )
+    plan = _plan(operation="growth_rate", periods=("2022", "2023"), expected_unit="percent")
     assert _codes(plan) == ()
 
 
@@ -167,3 +165,27 @@ def test_lookup_with_top_k_set_is_rejected() -> None:
 def test_unknown_candidate_table_id_is_rejected() -> None:
     plan = _plan(candidate_table_ids=(_table_id("9"),))
     assert "candidate_table_ids_unknown" in _codes(plan)
+
+
+def test_valid_compare_companies_plan_has_no_issues() -> None:
+    plan = _plan(operation="compare_companies", companies=("NVL", "VHM"))
+    assert _codes(plan) == ()
+
+
+def test_compare_companies_with_single_company_is_rejected() -> None:
+    assert "companies_arity_invalid" in _codes(_plan(operation="compare_companies"))
+
+
+def test_compare_companies_with_two_periods_is_rejected() -> None:
+    plan = _plan(operation="compare_companies", companies=("NVL", "VHM"), periods=("2022", "2023"))
+    assert "periods_arity_invalid" in _codes(plan)
+
+
+def test_compare_companies_missing_metric_is_rejected() -> None:
+    plan = _plan(operation="compare_companies", companies=("NVL", "VHM"), metric=None)
+    assert "metric_arity_invalid" in _codes(plan)
+
+
+def test_compare_companies_with_top_k_is_rejected() -> None:
+    plan = _plan(operation="compare_companies", companies=("NVL", "VHM"), top_k=1)
+    assert "top_k_arity_invalid" in _codes(plan)

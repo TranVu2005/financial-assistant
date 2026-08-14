@@ -74,6 +74,27 @@ def test_compare_years_yields_both_periods() -> None:
     assert entities.periods == ("2022", "2023")
 
 
+def test_bare_trailing_year_after_connector_is_captured() -> None:
+    """ "giữa năm 2016 và 2017" must not silently drop the second, bare year."""
+    entities = parse_query_entities("So sánh lưu chuyển tiền thuần của CTG giữa năm 2022 và 2023.")
+    assert entities.periods == ("2022", "2023")
+
+
+def test_bare_trailing_year_after_den_is_captured() -> None:
+    entities = parse_query_entities(
+        "Tính tốc độ tăng trưởng doanh thu thuần của NVL từ năm 2022 đến 2023."
+    )
+    assert entities.periods == ("2022", "2023")
+
+
+def test_bare_year_inside_ticker_or_note_number_is_not_captured() -> None:
+    """A bare year must only resolve when it follows a period connector —
+    not any digit sequence that happens to look like a year (e.g. a note
+    reference or an amount)."""
+    entities = parse_query_entities("Thuyết minh số 2023 của DBC năm 2022 là gì?")
+    assert entities.periods == ("2022",)
+
+
 def test_incomplete_quarter_without_year_is_flagged() -> None:
     entities = parse_query_entities("Doanh thu thuần của DBC quý III là bao nhiêu?")
     assert entities.periods == ()
@@ -107,6 +128,31 @@ def test_unknown_metric_phrase_is_flagged() -> None:
     entities = parse_query_entities("Tra cứu tổng lợi thế cạnh tranh của DBC năm 2023.")
     assert entities.metrics == ()
     assert entities.ambiguity == ("metric_unknown",)
+
+
+def test_banking_metric_not_in_normalization_alias_table_is_still_resolved() -> None:
+    """`cho vay khách hàng` (loans to customers) has 0% canonical coverage in
+    `normalization/metrics.py` (ADR 0004 §1.6) — the release cannot be touched
+    (would change dataset_fingerprint) so this must resolve via a question-side
+    lexicon, not `METRIC_ALIASES`."""
+    entities = parse_query_entities("Tra cứu cho vay khách hàng của STB tại cuối năm 2024.")
+    assert "loans_to_customers" in entities.metrics
+    assert "metric_unknown" not in entities.ambiguity
+
+
+def test_common_abbreviation_lctt_is_resolved() -> None:
+    entities = parse_query_entities("So sánh LCTT trực tiếp của MBB giữa năm 2016 và 2017.")
+    assert "net_cash_flow" in entities.metrics
+    assert "metric_unknown" not in entities.ambiguity
+
+
+def test_question_side_metric_lexicon_does_not_alter_normalization_alias_table() -> None:
+    """Guards ADR 0004 §1.7: extending question-side vocabulary must never grow
+    `METRIC_ALIASES`, since that table is baked into the locked release."""
+    from financial_report_qa.normalization.metrics import METRIC_ALIASES
+
+    assert "cho vay khách hàng" not in METRIC_ALIASES
+    assert "lctt" not in METRIC_ALIASES
 
 
 def test_statement_type_is_only_set_when_named_explicitly() -> None:

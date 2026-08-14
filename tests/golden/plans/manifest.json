@@ -8,6 +8,10 @@
       "question_id": null,
       "note": "No gold70 question has this shape (two metrics, one company, one period); the fact (MSN 2025 current_assets and non_current_assets on the same table) is real, taken directly from the release."
     },
+    "compare_companies.json": {
+      "question_id": null,
+      "note": "Added in Day 16 (ADR 0005) for the (>=2 companies, 1 period, 1 metric) shape that the entity-cases two_companies template exercises but no Day 15 operation covered. Reuses the sum.json fact (GEX/PNJ net_revenue 2021) — same shape, juxtaposed instead of summed."
+    },
     "difference.json": {
       "question_id": null,
       "note": "No gold70 question has this shape (one metric, two periods, subtraction). Facts (VIB total_assets 2023/2024) are real, taken directly from the release."

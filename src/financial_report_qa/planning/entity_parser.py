@@ -44,6 +44,9 @@ _QUARTER_RE = re.compile(
     re.IGNORECASE,
 )
 _YEAR_RE = re.compile(r"năm\s+((?:19|20)\d{2})", re.IGNORECASE)
+_BARE_YEAR_AFTER_CONNECTOR_RE = re.compile(
+    r"(?:đến|và|với|tới|so\s+với|-|–)\s*((?:19|20)\d{2})\b", re.IGNORECASE
+)
 _RELATIVE_PERIOD_RE = re.compile(
     r"năm\s+(?:nay|hiện\s*hành|trước(?:\s+đó)?)|quý\s+(?:này|trước|vừa\s+rồi)", re.IGNORECASE
 )
@@ -176,6 +179,19 @@ def _parse_period(
         consumed.append((start, end))
         spans.append(ParsedSpan(field="period", surface=match.group(0), start=start, end=end))
 
+    if values:
+        # A bare year ("... giữa năm 2022 và 2023") only counts as a second
+        # period once an unambiguous "năm YYYY"/quarter/date already anchors
+        # the sentence to a period list — otherwise a bare digit sequence
+        # after a hyphen or "và" is too weak a signal (e.g. a note number).
+        for match in _BARE_YEAR_AFTER_CONNECTOR_RE.finditer(question):
+            start, end = match.span(1)
+            if overlaps(start, end):
+                continue
+            values.add(match.group(1))
+            consumed.append((start, end))
+            spans.append(ParsedSpan(field="period", surface=match.group(1), start=start, end=end))
+
     if _RELATIVE_PERIOD_RE.search(question):
         ambiguity.add("period_relative_unresolved")
 
@@ -185,16 +201,46 @@ def _parse_period(
     return tuple(sorted(values)), tuple(sorted(ambiguity)), tuple(spans)
 
 
+# Question-side-only synonyms with 0% canonical coverage in the locked release
+# (ADR 0004 §1.6 / Day 16 §1.6-1.7): `normalization.metrics.METRIC_ALIASES` is
+# baked into `cells.row_label_canonical` at build time, so adding entries there
+# would change `dataset_fingerprint` and invalidate every pinned baseline. These
+# names are therefore NOT in `plan_contracts.CANONICAL_METRICS` — a rule planner
+# must locate them via `MetricSelector.raw_text`, never `.canonical` (ADR 0004
+# Option C). Keeping them out of `METRIC_ALIASES` also keeps them out of the
+# `validate_aliases` collision check that table enforces at import time.
+_EXTRA_METRIC_ALIASES: dict[str, str] = {
+    "cho vay khách hàng": "loans_to_customers",
+    "chứng khoán đầu tư": "investment_securities",
+    "chứng khoán kinh doanh": "trading_securities",
+    "tiền gửi của khách hàng": "customer_deposits",
+    "tiền gửi có kỳ hạn": "term_deposits",
+    "dự phòng rủi ro tín dụng": "credit_loss_provision",
+    "tỷ lệ sở hữu": "ownership_ratio",
+    "lctt": "net_cash_flow",
+    # "lnst chưa phân phối" already resolves via METRIC_ALIASES -> retained_earnings.
+    "chi phí thuế hiện hành": "current_income_tax_expense",
+    "chi phí thuế thu nhập doanh nghiệp": "current_income_tax_expense",
+}
+
+
 def _metric_lexicon() -> tuple[tuple[tuple[str, ...], str, str], ...]:
-    """Build a longest-match metric lexicon from curated normalization aliases.
+    """Build a longest-match metric lexicon from curated normalization aliases
+    plus the question-side-only extras above.
 
     Each entry is `(alias_tokens, canonical_metric, raw_alias)`. Distinct raw
     aliases can only collide here if their normalized keys are equal, which
     `financial_report_qa.normalization.metrics.METRIC_ALIASES` already
     forbids at import time (`validate_aliases` raises otherwise) — so no
-    within-lexicon ambiguity is reachable by construction.
+    within-lexicon ambiguity is reachable by construction. `_EXTRA_METRIC_ALIASES`
+    is checked separately for collisions in tests, not at import time.
     """
-    merged = {**INCOME_STATEMENT_ALIASES, **BALANCE_SHEET_ALIASES, **CASH_FLOW_ALIASES}
+    merged = {
+        **INCOME_STATEMENT_ALIASES,
+        **BALANCE_SHEET_ALIASES,
+        **CASH_FLOW_ALIASES,
+        **_EXTRA_METRIC_ALIASES,
+    }
     entries = []
     for raw_alias, canonical in merged.items():
         tokens = tokenize_text(raw_alias)

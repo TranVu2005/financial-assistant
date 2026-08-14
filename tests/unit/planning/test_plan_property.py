@@ -18,6 +18,7 @@ from financial_report_qa.planning.plan_validator import validate_plan_semantics
 _OPERATIONS = (
     "lookup",
     "compare",
+    "compare_companies",
     "difference",
     "growth_rate",
     "ratio",
@@ -48,7 +49,7 @@ def _expected_ok(
     if operation in {"lookup", "compare", "difference", "growth_rate", "ratio"}:
         if n_companies != 1:
             return False
-    elif operation == "rank":
+    elif operation in {"rank", "compare_companies"}:
         if n_companies < 2:
             return False
     elif n_companies > 1 and n_periods > 1:  # average, sum
@@ -59,11 +60,19 @@ def _expected_ok(
     if operation in {"difference", "growth_rate"}:
         if n_periods != 2 or not periods_ascending:
             return False
-    elif operation in {"lookup", "compare", "ratio", "rank"}:
+    elif operation in {"lookup", "compare", "ratio", "rank", "compare_companies"}:
         if n_periods != 1:
             return False
 
-    wants_metric = operation in {"lookup", "difference", "growth_rate", "average", "sum", "rank"}
+    wants_metric = operation in {
+        "lookup",
+        "difference",
+        "growth_rate",
+        "average",
+        "sum",
+        "rank",
+        "compare_companies",
+    }
     if wants_metric != has_metric:
         return False
 

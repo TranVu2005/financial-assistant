@@ -110,9 +110,7 @@ def _check_forbidden_extras(
         if plan.numerator_metric is not None:
             issues = (
                 *issues,
-                _issue(
-                    "numerator_denominator_arity_invalid", "operation forbids numerator_metric"
-                ),
+                _issue("numerator_denominator_arity_invalid", "operation forbids numerator_metric"),
             )
         if plan.denominator_metric is not None:
             issues = (
@@ -264,6 +262,26 @@ def _validate_aggregate(plan: FinancialQueryPlan) -> tuple[PlanValidationIssue, 
     return issues
 
 
+def _validate_compare_companies(plan: FinancialQueryPlan) -> tuple[PlanValidationIssue, ...]:
+    """`(>=2 companies, 1 period, 1 metric)` — juxtapose one metric across companies.
+
+    Distinct from `compare` (two metrics, one company/period) and `rank` (needs
+    `top_k`, ranks rather than lists side by side).
+    """
+    issues = (
+        *_check_periods_count(plan, expected=1),
+        *_check_single_metric(plan, required=True),
+        *_check_forbidden_extras(plan),
+        *_check_expected_unit(plan, allowed=_CURRENCY_UNITS),
+    )
+    if len(plan.companies) < 2:
+        issues = (
+            *issues,
+            _issue("companies_arity_invalid", "compare_companies requires at least 2 companies"),
+        )
+    return issues
+
+
 def _validate_rank(plan: FinancialQueryPlan) -> tuple[PlanValidationIssue, ...]:
     issues = (
         *_check_periods_count(plan, expected=1),
@@ -292,6 +310,7 @@ def _validate_rank(plan: FinancialQueryPlan) -> tuple[PlanValidationIssue, ...]:
 _VALIDATORS = {
     "lookup": _validate_lookup,
     "compare": _validate_compare,
+    "compare_companies": _validate_compare_companies,
     "difference": _validate_difference,
     "growth_rate": _validate_growth_rate,
     "ratio": _validate_ratio,
