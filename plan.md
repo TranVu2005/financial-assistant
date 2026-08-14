@@ -927,10 +927,16 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 16 — Deterministic parsing và ontology
 
-- [ ] Mở rộng dictionary alias, viết tắt, tên doanh nghiệp và kỳ tiếng Việt.
-- [ ] Xử lý các từ “tăng bao nhiêu”, “gấp mấy lần”, “biên”, “bình quân”, “cao nhất”.
-- [ ] Tạo ambiguity flags thay vì chọn bừa.
-- **Đầu ra:** rule baseline tạo đúng plan cho ≥ 60% câu đơn giản.
+- [x] Mở rộng dictionary alias, viết tắt, tên doanh nghiệp và kỳ tiếng Việt.
+- [ ] ~~Xử lý các từ "tăng bao nhiêu", "gấp mấy lần", "biên", "bình quân", "cao nhất"~~ — đo trên
+  gold70 + 1.400 entity case: **0 lần xuất hiện** cả hai nơi (xem
+  [day16-deterministic-planning.md § 1.8](docs/plans/day16-deterministic-planning.md)). Không cài
+  vì sẽ là suy đoán không có dữ liệu hậu thuẫn; ghi lại làm nợ đã biết, không phải nợ ẩn.
+- [x] Tạo ambiguity flags thay vì chọn bừa — 5 `PlanAbstainCode`, false-plan rate đo được = 0,0.
+- **Đầu ra:** rule baseline tạo đúng plan cho ≥ 60% câu đơn giản. **Đạt** — 100 % operation
+  accuracy trên 1.400 plan case (nhãn từ template, không copy từ chính planner); xem
+  [README.md § Day 16](README.md) và [ADR 0005](docs/decisions/0005-operation-coverage-gaps.md)
+  để biết số đo đầy đủ và các quyết định hoãn có chủ đích.
 
 #### Ngày 17 — LLM planner
 

@@ -1,9 +1,15 @@
 # Kế hoạch Ngày 16 — Deterministic parsing và ontology
 
-> Trạng thái: **chưa bắt đầu**. Viết ngày 2026-08-15 sau khi Ngày 15 hoàn tất (`6c82188`), như
-> tài liệu thiết kế trước khi triển khai. Mọi con số ở mục 1 đo trực tiếp trên release khóa
+> Trạng thái: **đã hoàn tất** (xem [plan.md § Ngày 16](../../plan.md),
+> [README.md § Day 16](../../README.md) và [ADR 0005](../decisions/0005-operation-coverage-gaps.md)
+> để biết kết quả thực tế). Viết ngày 2026-08-15 sau khi Ngày 15 hoàn tất (`6c82188`), như tài
+> liệu thiết kế trước khi triển khai. Mọi con số ở mục 1 đo trực tiếp trên release khóa
 > `422df141c935…`, gold70 (`data/qa/retrieval-gold-v1.jsonl`) và bộ 1.400 entity case
-> (`data/qa/entity-cases-v1.jsonl`) bằng chính `entity_parser.py` hiện tại.
+> (`data/qa/entity-cases-v1.jsonl`) bằng chính `entity_parser.py` hiện tại. Quyết định A/B/C ở mục
+> 2 chốt lại ở ADR 0005 (A1 triển khai, B2/C2 hoãn có chủ đích) — coi ADR 0005, plan.md và README
+> là nguồn sự thật, không phải bảng phác thảo ở đây. Từ vựng operation ở mục 1.8 (§16.4) không được
+> cài do đo được 0 lần xuất hiện trong dữ liệu thật; nhiệm vụ 16.2 (ADR) không sinh thêm code, chỉ
+> ghi quyết định.
 
 ## 0. Đầu vào đã sẵn sàng
 

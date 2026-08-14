@@ -23,6 +23,13 @@ from financial_report_qa.planning.entity_evaluation import (
     write_entity_case_report,
     write_held_out_report,
 )
+from financial_report_qa.planning.plan_cases import load_plan_cases, plan_case_set_sha256
+from financial_report_qa.planning.plan_evaluation import (
+    evaluate_plan_cases,
+    evaluate_rule_planner_on_gold,
+    write_held_out_plan_report,
+    write_plan_case_report,
+)
 from financial_report_qa.retrieval.gold import load_gold_questions
 from financial_report_qa.retrieval.release import resolve_retrieval_release
 
@@ -44,6 +51,17 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Optional retrieval-gold-v1 path for a one-shot held-out report.",
+    )
+
+    evaluate_plans = commands.add_parser("evaluate-plans")
+    evaluate_plans.add_argument("--release-lock", type=Path, required=True)
+    evaluate_plans.add_argument("--case-path", type=Path, required=True)
+    evaluate_plans.add_argument("--output-dir", type=Path, required=True)
+    evaluate_plans.add_argument(
+        "--gold-path",
+        type=Path,
+        default=None,
+        help="Optional retrieval-gold-v1 path for a one-shot descriptive held-out report.",
     )
     return parser
 
@@ -74,6 +92,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 print(held_out_json)
                 print(held_out_markdown)
+            return 0
+        if args.command == "evaluate-plans":
+            plan_cases = load_plan_cases(args.case_path)
+            plan_case_sha256 = plan_case_set_sha256(plan_cases)
+            plan_case_report = evaluate_plan_cases(plan_cases, case_set_sha256=plan_case_sha256)
+            plan_json_path, plan_markdown_path = write_plan_case_report(
+                plan_case_report, args.output_dir
+            )
+            print(plan_json_path)
+            print(plan_markdown_path)
+            if args.gold_path is not None:
+                gold = load_gold_questions(args.gold_path, release)
+                plan_held_out_report = evaluate_rule_planner_on_gold(gold)
+                plan_held_out_json, plan_held_out_markdown = write_held_out_plan_report(
+                    plan_held_out_report, args.output_dir
+                )
+                print(plan_held_out_json)
+                print(plan_held_out_markdown)
             return 0
         raise AssertionError("argparse accepted an unknown planning command")
     except (

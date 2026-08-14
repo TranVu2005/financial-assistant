@@ -253,3 +253,89 @@ def test_entity_cli_fails_closed_on_missing_case_file(
         ]
     )
     assert exit_code == 2
+
+
+def _write_fixture_plan_cases(release: ResolvedRetrievalRelease, path: Path) -> None:
+    from financial_report_qa.planning.entity_cases import generate_entity_cases
+    from financial_report_qa.planning.plan_cases import generate_plan_cases, write_plan_cases
+
+    entity_cases = generate_entity_cases(release)
+    write_plan_cases(generate_plan_cases(entity_cases), path)
+
+
+def test_plan_cli_evaluate_is_replayable(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    plan_cases_path = tmp_path / "plan-cases.jsonl"
+    _write_fixture_plan_cases(release, plan_cases_path)
+    output_dir = tmp_path / "artifacts"
+
+    assert (
+        main(
+            [
+                "planning",
+                "evaluate-plans",
+                "--release-lock",
+                "fixture-lock",
+                "--case-path",
+                str(plan_cases_path),
+                "--output-dir",
+                str(output_dir),
+            ]
+        )
+        == 0
+    )
+    json_reports = list(output_dir.glob("plan-cases-*.json"))
+    assert len(json_reports) == 1
+    report = json.loads(json_reports[0].read_text(encoding="utf-8"))
+    assert report["false_plan_rate"] == 0.0
+
+
+def test_plan_cli_evaluate_with_held_out_gold(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    plan_cases_path = tmp_path / "plan-cases.jsonl"
+    _write_fixture_plan_cases(release, plan_cases_path)
+    gold_path = tmp_path / "gold.jsonl"
+    _write_fixture_gold(gold_path)
+    output_dir = tmp_path / "artifacts"
+
+    assert (
+        main(
+            [
+                "planning",
+                "evaluate-plans",
+                "--release-lock",
+                "fixture-lock",
+                "--case-path",
+                str(plan_cases_path),
+                "--output-dir",
+                str(output_dir),
+                "--gold-path",
+                str(gold_path),
+            ]
+        )
+        == 0
+    )
+    assert list(output_dir.glob("plan-held-out-*.json"))
+    assert list(output_dir.glob("plan-held-out-*.md"))
+
+
+def test_plan_cli_fails_closed_on_missing_case_file(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    exit_code = main(
+        [
+            "planning",
+            "evaluate-plans",
+            "--release-lock",
+            "fixture-lock",
+            "--case-path",
+            str(tmp_path / "missing.jsonl"),
+            "--output-dir",
+            str(tmp_path / "artifacts"),
+        ]
+    )
+    assert exit_code == 2

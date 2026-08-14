@@ -771,3 +771,59 @@ một vi phạm, phân theo tầng bắt lỗi (`schema` = pydantic construction
 `validate_plan_semantics`).
 
 `pytest -q`: 830 passed, 4 skipped. `ruff check .`: sạch. `mypy`: 0 lỗi mới (168 file).
+
+## Day 16 Deterministic Parsing và Rule Planner
+
+**Chẩn đoán:** đo trực tiếp `entity_parser.py` trên gold70 và 1.400 entity case (không đoán) phát
+hiện 6 vấn đề. [docs/plans/day16-deterministic-planning.md](docs/plans/day16-deterministic-planning.md)
+là bản đo đầy đủ; [ADR 0005](docs/decisions/0005-operation-coverage-gaps.md) chốt 3 quyết định
+thiết kế. Đã khắc phục 3/6 phát hiện, hoãn có chủ đích 2/6 (không phải nợ ẩn), 1/6 là ràng buộc
+kiến trúc đúng như thiết kế:
+
+| Phát hiện | Xử lý |
+|---|---|
+| Lỗi năm trần trụi ("giữa năm 2016 **và 2017**") bỏ mất 20 % câu gold70 | **Sửa** — bắt năm trần trụi sau từ nối kỳ, chỉ khi đã có kỳ neo trước đó (0 dương tính giả/1.400 case) |
+| `intent` gold70 ≠ `operation` Ngày 15 (10/23 câu `compare` thực chất là `difference`) | **Ghi văn bản** — bảng ánh xạ trong ADR 0005 |
+| Lỗ hổng operation: so sánh chéo công ty `(≥2 company, 1 period, 1 metric)`, 100/1.400 case | **Sửa (ADR 0005 quyết định A1)** — thêm operation `compare_companies` |
+| "Biến động đầu năm–cuối năm" là hai **hàng**, không phải hai kỳ | **Hoãn có chủ đích (B2)** — abstain có mã, chờ compiler Ngày 18 |
+| Từ điển thiếu họ ngân hàng (`cho vay khách hàng`, `chứng khoán đầu tư`... 0 % canonical) | **Sửa một phần** — lexicon riêng phía câu hỏi, cứu 10/20 câu `metric_unknown` |
+| `cells.row_label_canonical` đóng băng trong release khóa | **Không sửa** — đúng ràng buộc thiết kế, xác nhận `dataset_fingerprint` không đổi |
+
+### Rule planner: `QueryEntities → FinancialQueryPlan | abstain`
+
+`planning/rule_planner.py::build_plan` thuần, không tự gọi truy hồi (`candidate_table_ids` được
+tiêm vào). Luật xác định: `(≥2 company, 1 period)` → `compare_companies`; `(1 company, 1 period)` →
+`lookup`; `(1 company, 2 period)` → `growth_rate` nếu câu chứa "tăng trưởng"/"biến động"/"tốc độ",
+ngược lại `difference`. Metric không thuộc 56 giá trị canonical (từ vựng ngân hàng mới thêm) dùng
+nhánh `raw_text` của `MetricSelector` (ADR 0004 Option C), không ép vào `canonical`. Mọi plan trả về
+đã qua `validate_plan_semantics`; không semantic issue nào lọt ra ngoài — vi phạm nội bộ tự động
+rơi về abstain thay vì trả plan sai.
+
+5 mã abstain (`PlanAbstainCode`), theo đúng khuôn code-và-field của `AmbiguityCode`/`PlanErrorCode`:
+`entity_ambiguous`, `period_grammar_unsupported`, `multi_metric_unsupported`, `operation_unknown`,
+`metric_role_unassignable` (dự phòng, chưa có đường dẫn nào kích hoạt ở Ngày 16).
+
+### Bộ case và harness đánh giá
+
+`planning/plan_cases.py` gán nhãn `expected_operation`/`expected_abstain_code` cho toàn bộ 1.400
+entity case đã ghim (Ngày 10) bằng một hàm thuần theo `template_id` — **không** chạy rule planner
+rồi copy kết quả, giữ đúng kỷ luật "bug trong planner không thể tự làm hỏng đáp án của chính nó".
+Phạm vi cố ý thu hẹp: gán nhãn 14 template sẵn có, không thêm template mới cho từ vựng operation ở
+`day16-deterministic-planning.md § 1.8` (`gấp mấy lần`, `biên`...) vì từ vựng đó xuất hiện **0 lần**
+trong cả gold70 lẫn entity case — thêm template cho nó sẽ là suy đoán, ghi rõ trong docstring của
+module để không bị hiểu nhầm là bao phủ đầy đủ.
+
+`planning evaluate-plans` (mới, cùng khuôn `evaluate-entities`) cho hai báo cáo độc lập, không trộn:
+
+| Báo cáo | Nguồn | Kết quả thật |
+|---|---|---:|
+| `plan-cases-*.md` — số chính, được lặp | 1.400 plan case | operation accuracy **1,000000**, abstain recall **1,000000**, **false-plan rate 0,000000** (chỉ tiêu cứng DoD) |
+| `plan-held-out-*.md` — **chỉ mô tả**, chạy 1 lần | gold70 (70 câu) | plannable rate **72,9 %** (51/70): 20 `lookup`, 18 `growth_rate`, 13 `difference`; abstain: 10 `entity_ambiguous`, 9 `multi_metric_unsupported` |
+
+Báo cáo held-out gold70 **không phải** điểm chính xác — gold70 chỉ có 3 intent
+(`lookup`/`compare`/`growth`) không map 1-1 sang 9 `PlanOperation`, nên không có đáp án đúng từng
+câu để so khớp (đúng phát hiện #2). Nó chỉ mô tả khả năng lập plan, ghi rõ trong docstring và cả
+tiêu đề Markdown của báo cáo. So với ước tính sơ bộ 43/70 (61,4 %) trước khi sửa lỗi năm và mở
+từ điển, con số đo thật 51/70 cao hơn — phần lớn nhờ 14 câu được cứu khỏi bug năm trần trụi.
+
+`pytest -q`: 871 passed, 4 skipped. `ruff check .`: sạch. `mypy`: 0 lỗi (89 file).
