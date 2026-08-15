@@ -160,17 +160,31 @@ def _explicit_tickers(value: str) -> set[str]:
 
 
 def _contained_company_codes(name_key: str) -> set[str]:
+    """Find every company whose alias appears in `name_key`, greedily
+    preferring the longest alias at each text span (`_CONTAINED_NAMES` is
+    pre-sorted longest-first) so a subsidiary's name never gets falsely
+    claimed out from under a mention of its own parent group's longer legal
+    name (e.g. HNG's alias inside HAG's canonical name) -- but a genuinely
+    separate mention of a *different* company elsewhere in the same text
+    (Day 22 coverage follow-up: multi-company comparison questions) is no
+    longer dropped just because some other company's alias elsewhere in the
+    text happens to be longer.
+    """
     padded = f" {name_key} "
-    matches: list[tuple[int, str]] = []
+    claimed_spans: list[tuple[int, int]] = []
+    codes: set[str] = set()
     for alias_key, ticker in _CONTAINED_NAMES:
-        if f" {alias_key} " in padded:
-            matches.append((len(alias_key), ticker))
+        needle = f" {alias_key} "
+        start = padded.find(needle)
+        while start != -1:
+            end = start + len(needle)
+            if not any(start < c_end and end > c_start for c_start, c_end in claimed_spans):
+                claimed_spans.append((start, end))
+                codes.add(ticker)
+                break
+            start = padded.find(needle, start + 1)
 
-    if not matches:
-        return set()
-
-    longest = matches[0][0]
-    return {ticker for length, ticker in matches if length == longest}
+    return codes
 
 
 def _company_evidence_codes(value: str) -> set[str]:

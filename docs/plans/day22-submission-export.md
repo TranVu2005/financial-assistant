@@ -6,13 +6,49 @@
 > đầy đủ và các quyết định giản lược (A-G) đã áp dụng đúng như dưới đây.
 >
 > **Theo dõi (2026-08-15, cùng ngày):** người dùng yêu cầu cải thiện coverage bằng cách bật LLM
-> planner (Ngày 17, `plan_router.route_plan`) trong luồng submission. Máy hiện tại **không có LLM
-> server sống** (`http://127.0.0.1:8080/v1` bị `Connection refused`, đo trực tiếp) — README đã ghi
-> nhận từ trước "an toàn khi 0 mô hình sống, chưa đo được độ chính xác LLM thật". Đã nối code
-> (`submission/exporter.py` gọi `route_plan` thay vì `rule_planner.build_plan` trực tiếp khi có
-> `llm_client`; CLI thêm `--llm-config` tuỳ chọn) và TDD đầy đủ bằng `httpx.MockTransport` (không
-> có server thật) — **chưa đo coverage cải thiện thật** vì chưa có server sống. Người dùng sẽ tự
-> chạy server local rồi báo lại để đo thật trên toàn bộ 1.012 câu.
+> planner (Ngày 17, `plan_router.route_plan`) trong luồng submission. Máy không có server đúng
+> spec dự án (`llama.cpp` + `qwen3-4b-instruct-2507-q4_k_m`), nhưng có **Ollama đã cài sẵn và đang
+> chạy**, endpoint OpenAI-compatible tại `127.0.0.1:11434/v1`, model `qwen2.5:3b`/`qwen2.5:7b` đã
+> pull. Nối code xong (`submission/exporter.py` gọi `route_plan` khi có `llm_client`; CLI thêm
+> `--llm-config` tuỳ chọn, mặc định `None` giữ hành vi cũ) và TDD bằng `httpx.MockTransport`.
+>
+> **Đo thật hai lần** (mẫu 30 câu rồi toàn bộ 1.012 câu, `qwen2.5:3b` qua Ollama,
+> `configs/local_ollama_test.yaml`): **0 câu trả lời thêm ở cả hai lần** — SHA-256 của
+> `submission_422df141c935_llm.zip` giống hệt bản rule-only (`cbd1b69d0b8d441eca26ec5a99067ddb0bc367d5d223d85ca9eb9df211779365`,
+> vẫn 32/1012). LLM được gọi cho toàn bộ 623 câu rule abstain, phân rã lỗi:
+> `llm_plan_invalid` 458 (73,5 %), `metric_not_found` 146 (23,4 %, LLM tự bịa tên chỉ tiêu canonical),
+> `llm_invalid_json` 12, còn lại (`cell_ambiguous`/`period_unresolved`/`unit_missing`) 7. Nguyên nhân
+> gốc: ADR 0006 quyết định B1 **cố tình** không đưa 56 tên chỉ tiêu canonical hay row label bảng vào
+> prompt (tiết kiệm token) — `qwen3-4b`/model lớn hơn theo spec gốc có thể tuân thủ tốt hơn, nhưng
+> `qwen2.5:3b` liên tục tự bịa tên thay vì rơi về `raw_text` như prompt yêu cầu. Kết luận: hạ tầng
+> LLM-fallback đúng và an toàn (không làm giảm 32 câu rule đã có), nhưng **không cải thiện coverage
+> với model 3B/prompt hiện tại** — cần model mạnh hơn (đúng spec `qwen3-4b` qua llama.cpp, hoặc
+> `qwen2.5:7b`) hoặc đưa vocabulary chỉ tiêu vào prompt, việc của bước sau, không phải nợ ẩn.
+>
+> **Theo dõi tiếp (2026-08-16): mở rộng company alias từ `code_stock.csv`, đo được cả tiến bộ lẫn
+> một bug thật.** Người dùng chỉ ra `data/raw/ViFinQA/code_stock.csv` là nguồn duy nhất tên 100
+> công ty. Đối chiếu với `company_registry.csv` nội bộ: khớp 100/100 mã, chỉ lệch tên STB
+> (`code_stock.csv` ghi nhầm "Sài Gòn Tài Lộc" — giữ làm alias, không "sửa đúng", vì câu hỏi thật
+> dùng đúng tên sai đó). Đào 34 câu `company_missing` thật: nguyên nhân là `company_name_codes_in_text`
+> chỉ khớp cụm ≥3 từ **giống hệt** tên canonical đầy đủ, không khớp tên ngắn thường dùng
+> ("Đô thị Kinh Bắc" thay vì "Tổng Công ty Phát triển Đô thị Kinh Bắc - CTCP"). Thêm 21 alias ≥3 từ
+> (an toàn, tránh đổi ngưỡng 3-từ tránh nhận nhầm) vào `company_registry.csv`, TDD 9 case thật.
+>
+> Trong lúc đó phát hiện **một bug thật** trong `companies.py::_contained_company_codes`: hàm chỉ
+> giữ lại công ty có alias **dài nhất toàn câu**, âm thầm bỏ công ty thứ hai khi câu hỏi so sánh 2+
+> công ty bằng tên (không phải mã). Sửa bằng thuật toán "longest-match theo từng vị trí, không đè
+> lên nhau" (vẫn giữ nguyên tắc tránh nhầm công ty con/mẹ, ví dụ HNG lồng trong tên HAG).
+>
+> Chạy lại thật trên 1.012 câu: **answered giảm 32 → 28** (không phải cải thiện thô) — nhưng lý do
+> là **sửa đúng**, không phải hỏng: 4 câu "mất" (734, 745, 777, 964) trước đó âm thầm trả lời bằng
+> `pandas_query` chỉ tra **một** công ty cho câu hỏi hỏi **chênh lệch giữa 2 công ty** — tức trả lời
+> sai câu hỏi thật một cách tự tin, do đúng cái bug vừa sửa. Sau khi sửa, 4 câu này đúng đắn abstain
+> (`metric_not_found`, không tìm được chỉ tiêu khi tra đúng cả 2 công ty) thay vì trả lời sai.
+> Riêng 34 câu mục tiêu: 10/34 tiến qua được bước nhận diện công ty (chuyển sang
+> `metric_not_found`/`multi_metric_unsupported` — bị chặn ở bước sau, không còn ở company_missing);
+> 24/34 còn lại là câu hỏi nhiều bước/điều kiện (`"biên lợi nhuận gộp của năm ngay sau năm đầu tiên
+> ghi nhận CFO âm"`) vượt quá 9 operation hiện có — không phải lỗi alias, là nợ kỹ thuật khác.
+> `pytest -q`: 1.202 passed. ZIP mới `sha256:aa98c918d...`, validator `valid=True items=28`.
 
 ## 0. Bối cảnh
 

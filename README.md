@@ -1199,14 +1199,50 @@ là việc của các ngày sau, không phải nợ ẩn của module này.
 `mypy`: 0 lỗi (123 file `src`). Security: 8 test riêng cho ZIP (ZIP Slip, absolute/drive path,
 backslash, symlink metadata, duplicate entry, entry ngoài `data/`, JSON root thừa).
 
-### Theo dõi cùng ngày: nối LLM planner (Ngày 17) vào submission, chưa đo được thật
+### Theo dõi cùng ngày: nối LLM planner (Ngày 17) vào submission — đo thật, kết quả âm tính
 
-Yêu cầu cải thiện coverage bằng LLM fallback. Đo trực tiếp: máy hiện tại **không có LLM server sống**
-(`http://127.0.0.1:8080/v1` → `Connection refused`) — khớp cảnh báo đã ghi ở mục Ngày 17 phía trên
-("an toàn khi 0 mô hình sống, chưa đo được độ chính xác LLM thật"). Đã nối
+Yêu cầu cải thiện coverage bằng LLM fallback. Máy không có server đúng spec dự án (llama.cpp), nhưng
+có sẵn **Ollama đang chạy** (`127.0.0.1:11434/v1`, model `qwen2.5:3b` đã pull). Nối
 `submission/exporter.py` gọi `planning.plan_router.route_plan` (rule planner luôn chạy trước, LLM chỉ
-chạy khi rule abstain — không đổi hành vi khi rule thành công, đúng ADR 0006 A1) thay vì gọi thẳng
+chạy khi rule abstain, không đổi hành vi khi rule thành công — đúng ADR 0006 A1) thay vì gọi thẳng
 `rule_planner.build_plan`; CLI `submission export` thêm `--llm-config` tuỳ chọn (bỏ qua giữ nguyên
-hành vi cũ). TDD đầy đủ bằng `httpx.MockTransport` (không cần server thật, cùng pattern
-`test_plan_router.py`) — `pytest -q`: 1.191 passed. **Chưa có số coverage cải thiện thật** vì chưa
-đo trên server sống; sẽ đo ngay khi có server.
+hành vi cũ). TDD bằng `httpx.MockTransport`, `pytest -q`: 1.191 passed.
+
+**Đo thật hai lần** (mẫu 30 câu, rồi toàn bộ 1.012 câu, `qwen2.5:3b` qua Ollama): **0 câu trả lời
+thêm cả hai lần** — SHA-256 ZIP giống hệt bản rule-only, vẫn 32/1.012. LLM được gọi cho toàn bộ 623
+câu rule abstain: 458 (73,5 %) sinh plan JSON hợp lệ cú pháp nhưng sai schema
+(`llm_plan_invalid`), 146 (23,4 %) tự bịa tên chỉ tiêu canonical không có thật (`metric_not_found`),
+12 JSON không hợp lệ, 7 lỗi khác. Nguyên nhân: ADR 0006 quyết định B1 cố tình không đưa 56 tên chỉ
+tiêu chuẩn vào prompt (tiết kiệm token, xem [docs/plans/day22-submission-export.md](docs/plans/day22-submission-export.md))
+— giả định hợp lý với model đúng spec (`qwen3-4b-instruct`) nhưng `qwen2.5:3b` không tuân thủ đủ tốt
+để rơi về `raw_text` khi không chắc, thay vào đó tự bịa. Hạ tầng LLM-fallback đúng và an toàn (không
+làm mất 32 câu rule đã có), nhưng cải thiện coverage thật cần model mạnh hơn hoặc đưa vocabulary chỉ
+tiêu vào prompt — việc của bước sau, không phải bug ở module submission này.
+
+### Theo dõi tiếp: mở rộng company alias từ `code_stock.csv` — sửa được 1 bug thật, coverage thô giảm nhưng đúng đắn hơn
+
+Người dùng chỉ ra `data/raw/ViFinQA/code_stock.csv` là nguồn duy nhất cho tên 100 công ty. Đối
+chiếu trực tiếp: khớp 100/100 mã với `company_registry.csv` nội bộ, chỉ lệch tên STB
+(`code_stock.csv` ghi nhầm "Sài Gòn Tài Lộc" — giữ làm alias đúng theo nguồn sinh câu hỏi, không
+"sửa lại cho đúng"). Đào 34 câu `company_missing` thật: nguyên nhân là khớp tên công ty chỉ nhận
+cụm ≥3 từ giống *hệt* tên canonical đầy đủ, không nhận tên ngắn câu hỏi thật hay dùng ("Đô thị Kinh
+Bắc" thay vì "Tổng Công ty Phát triển Đô thị Kinh Bắc - CTCP"). Thêm 21 alias ≥3 từ an toàn (giữ
+nguyên ngưỡng 3-từ chống nhận nhầm), TDD 9 câu thật + 2 test hồi quy.
+
+Trong lúc đó phát hiện một **bug thật** trong `companies.py::_contained_company_codes`: hàm chỉ giữ
+lại công ty có alias dài nhất *toàn câu*, âm thầm bỏ công ty thứ hai khi câu hỏi so sánh ≥2 công ty
+bằng tên (không phải mã). Sửa bằng longest-match theo từng vị trí văn bản, không đè lên nhau — vẫn
+giữ nguyên tắc chống nhầm công ty con/mẹ (vd. HNG lồng trong tên HAG).
+
+Chạy lại thật trên 1.012 câu: **answered 32 → 28** — nhìn thô là giảm, nhưng lý do là **sửa đúng**:
+4 câu "mất" (id 734, 745, 777, 964) trước đó âm thầm trả lời bằng `pandas_query` chỉ tra **một**
+công ty cho câu hỏi hỏi **chênh lệch giữa 2 công ty** — trả lời sai câu hỏi thật một cách tự tin,
+đúng do bug vừa sửa. Sau khi sửa, cả 4 câu đúng đắn abstain (`metric_not_found`, không tìm được chỉ
+tiêu khi tra đúng cả 2 công ty) thay vì tiếp tục trả lời sai. Riêng 34 câu mục tiêu: 10/34 tiến qua
+được bước nhận diện công ty (chuyển sang `metric_not_found`/`multi_metric_unsupported` — bị chặn ở
+bước sau); 24/34 còn lại là câu hỏi nhiều bước/điều kiện (vd. "biên lợi nhuận gộp của năm ngay sau
+năm đầu tiên ghi nhận CFO âm") vượt quá 9 operation hiện có — nợ kỹ thuật khác, không phải lỗi alias.
+
+`pytest -q`: 1.202 passed, 4 skipped. `ruff check .` / `ruff format --check .`: sạch. `mypy`: 0 lỗi.
+ZIP mới `submissions/submission_422df141c935.zip`, SHA-256 `aa98c918d...`, validator
+`valid=True items=28`.

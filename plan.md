@@ -1263,6 +1263,33 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 > `tables.parquet` — `Citation.table_title` trước đó bắt buộc non-empty string, làm sập pipeline
 > trên câu hỏi thật đầu tiên chạm bảng loại này (gold70/gold120 chưa từng chạm ngẫu nhiên). Nới
 > thành `NonEmptyString | None`, TDD, không ảnh hưởng contract khác.
+>
+> **Theo dõi cùng ngày — thử bật LLM planner (Ngày 17) làm fallback, kết quả âm tính đo được:**
+> nối `submission/exporter.py` gọi `plan_router.route_plan` (rule trước, LLM chỉ khi rule abstain);
+> CLI thêm `--llm-config` tuỳ chọn. Đo thật hai lần (mẫu 30 câu, rồi toàn bộ 1.012 câu) với Ollama
+> sẵn có trên máy (`qwen2.5:3b`, không đúng model spec `qwen3-4b` qua llama.cpp) — **0 câu trả lời
+> thêm cả hai lần**, SHA-256 ZIP giống hệt bản rule-only. 623 câu rule abstain đều được LLM thử:
+> 73,5 % sai schema (`llm_plan_invalid`), 23,4 % tự bịa tên chỉ tiêu (`metric_not_found`) thay vì
+> rơi về `raw_text`. Nguyên nhân: ADR 0006 B1 cố tình không đưa vocabulary 56 chỉ tiêu vào prompt để
+> tiết kiệm token — giả định hợp lý với model đúng spec, không đủ với `qwen2.5:3b`. Hạ tầng đúng và
+> an toàn; cải thiện coverage thật cần model mạnh hơn hoặc prompt có vocabulary — chưa làm ở đây.
+>
+> **Theo dõi tiếp — mở rộng company alias từ `code_stock.csv`, kết quả: 1 bug thật sửa được, coverage
+> thô 32→28 (đúng đắn hơn, không phải tệ hơn):** người dùng chỉ ra `code_stock.csv` là nguồn duy
+> nhất tên 100 công ty (khớp 100/100 mã với `company_registry.csv` nội bộ, chỉ lệch tên STB — giữ
+> theo `code_stock.csv` vì câu hỏi thật dùng tên đó). Đào 34 câu `company_missing`: nguyên nhân là
+> khớp tên công ty chỉ nhận cụm ≥3 từ giống *hệt* canonical đầy đủ, không nhận tên ngắn thường dùng.
+> Thêm 21 alias ≥3 từ an toàn (không đổi ngưỡng 3-từ). Nhân tiện phát hiện **bug thật**:
+> `_contained_company_codes` chỉ giữ công ty có alias dài nhất *toàn câu*, âm thầm bỏ công ty thứ 2
+> khi câu hỏi so sánh ≥2 công ty bằng tên. Sửa bằng longest-match theo từng vị trí (không đè lên
+> nhau, vẫn tránh nhầm công ty con/mẹ).
+>
+> Chạy lại 1.012 câu: **answered 32→28** — nhưng 4 câu "mất" trước đó âm thầm trả lời bằng
+> `pandas_query` tra **một** công ty cho câu hỏi hỏi **chênh lệch giữa 2 công ty** (đúng bug vừa
+> sửa) — trả lời sai câu hỏi thật một cách tự tin; giờ đúng đắn abstain thay vì trả lời sai. 10/34
+> câu mục tiêu tiến qua được bước nhận diện công ty (chuyển sang `metric_not_found`/
+> `multi_metric_unsupported`); 24/34 còn lại là câu hỏi nhiều bước/điều kiện vượt quá 9 operation
+> hiện có — nợ kỹ thuật khác, không phải lỗi alias. `pytest -q`: 1.202 passed.
 
 - [x] Viết contract tests trước cho JSON root array và đúng bảy field của `SubmissionItem`:
   `id`, `question`, `answer`, `relevant_docs`, `relevant_tables`, `evidence`, `pandas_query`.
@@ -1272,21 +1299,22 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
   `placements.parquet`/`source_table_occurrences.parquet`; xem quyết định C trong plan doc.
 - [x] Materialize đúng các DataFrame mà compiler dùng thành CSV UTF-8 dưới `data/`; đặt biến
   Python hợp lệ/duy nhất và ghi `csv_path` POSIX tương đối vào từng phần tử `evidence`.
-- [ ] Xuất đủ và chỉ đúng toàn bộ `id`/`question` của bộ câu hỏi thi thật — **chưa đạt**: 32/1.012
-  (3,16 %); chặn `abstained`/`error`/đáp án không hữu hạn/ID thiếu-thừa-trùng đã cài và kiểm chứng
-  đúng cho tập con đã trả lời.
+- [ ] Xuất đủ và chỉ đúng toàn bộ `id`/`question` của bộ câu hỏi thi thật — **chưa đạt**: 28/1.012
+  (2,77 %, sau khi sửa bug company-name Ngày 22 theo dõi tiếp — số ban đầu là 32/1.012 nhưng 4 câu
+  trong đó trả lời sai câu hỏi thật, xem theo dõi tiếp phía trên); chặn `abstained`/`error`/đáp án
+  không hữu hạn/ID thiếu-thừa-trùng đã cài và kiểm chứng đúng cho tập con đã trả lời.
 - [x] Replay mọi `pandas_query` trong sandbox whitelist (`execution.sandbox.replay_in_sandbox`, tái
   dùng nguyên bản Ngày 19, không gọi `replay_pandas_query` trực tiếp) từ chính CSV đã đóng gói;
-  xác nhận scalar số khớp `answer` theo tolerance trước khi nén — chạy thật, `valid=True items=32`.
+  xác nhận scalar số khớp `answer` theo tolerance trước khi nén — chạy thật, `valid=True items=28`.
 - [x] Tạo ZIP quyết định gồm đúng một JSON ở root và `data/`; validator mở lại ZIP trong thư mục
   tạm, chặn path traversal/symlink/duplicate-entry, CSV thiếu/mồ côi, entry ngoài `data/` và field
   thừa — 8 security test riêng (ZIP Slip, absolute/drive path, backslash, symlink metadata,
   duplicate entry, entry ngoài data/, JSON root thừa).
-- [x] Chạy unit, integration và security tests cho contract nộp bài — 1186 passed (repo), gồm
+- [x] Chạy unit, integration và security tests cho contract nộp bài — 1202 passed (repo), gồm
   integration test thật trên release + BM25 v4 + câu hỏi ViFinQA thật.
 - **Đầu ra:** `submissions/submission_422df141c935.zip` vượt validator offline, SHA-256 lưu ngoài
   ZIP (`submissions/submission_422df141c935.sha256.json`) — **nhưng chưa sẵn sàng nộp Dashboard**
-  do coverage 3,16 %; hạ tầng export/validate đã sẵn sàng tái sử dụng ngay khi coverage cải thiện.
+  do coverage 2,77 %; hạ tầng export/validate đã sẵn sàng tái sử dụng ngay khi coverage cải thiện.
 
 #### Ngày 25 — Benchmark model
 
@@ -1574,7 +1602,7 @@ pseudocode. `submission export` tự in đường dẫn ZIP, SHA-256 và `answer
 validate` in `valid=True|False items=N` và mọi issue ra stderr. Thay `--release-lock`/`--bm25-index`
 bằng release chính thức của run cần nộp nếu khác. Không công bố "đã xong" nếu validator chưa in
 `valid=True` hoặc coverage (`answered`) chưa đạt yêu cầu nộp bài (100% câu hỏi thi, xem cảnh báo
-coverage 3,16% ở mục Ngày 24).
+coverage 2,77% ở mục Ngày 24).
 
 ---
 

@@ -2,6 +2,7 @@ import pytest
 
 from financial_report_qa.normalization.companies import (
     COMPANY_REGISTRY,
+    company_name_codes_in_text,
     company_name_for_code,
     normalize_company,
     resolve_company_code,
@@ -121,3 +122,91 @@ def test_registry_is_open_set_for_valid_unlisted_tickers() -> None:
     assert decision.value == "TCB"
     assert decision.issue_code is None
     assert validate_company_codes(["VCB", "tcb", "TCB", "HPG"]) == ("TCB",)
+
+
+@pytest.mark.parametrize(
+    ("question", "ticker"),
+    [
+        # Day 22 coverage follow-up: 34 real ViFinQA questions failed with
+        # company_missing because the registry only matched each company's
+        # exact >=3-word canonical name, not the shorter informal >=3-word
+        # phrase real questions actually use. `code_stock.csv` (the source
+        # ViFinQA itself generated questions from) confirms these referents,
+        # including STB's erroneous "Sài Gòn Tài Lộc" label -- kept as an
+        # alias, not "corrected", because the question corpus uses it verbatim.
+        (
+            "Chi phí dự phòng của Ngân hàng TMCP Sài Gòn Tài Lộc trong năm 2020 "
+            "là bao nhiêu triệu đồng?",
+            "STB",
+        ),
+        (
+            "Trong giai đoạn 2022–2024 của Tổng công ty Phân bón Dầu khí Cà Mau, "
+            "xét các năm có tỷ lệ lợi nhuận sau thuế trên doanh thu thuần lớn hơn 10%.",
+            "DCM",
+        ),
+        (
+            "Khoản chênh lệch số dư Quỹ đầu tư phát triển cuối năm 2015 giữa "
+            "Tập đoàn Công nghiệp Cao su Việt Nam và Tổng công ty Phân bón và "
+            "Hóa chất Dầu khí là bao nhiêu nghìn tỷ đồng?",
+            "GVR",
+        ),
+        (
+            "Tốc độ tăng trưởng tiền và các khoản tương đương tiền của Tổng Công "
+            "ty Cảng Hàng không Việt Nam từ cuối năm 2021 đến cuối năm 2022.",
+            "ACV",
+        ),
+        (
+            "Chênh lệch khoản vay ngắn hạn từ các bên liên quan cuối năm 2025 của "
+            "công ty mẹ Tổng Công ty Phát triển Đô thị Kinh Bắc so với công ty mẹ "
+            "Tập đoàn VINGROUP là bao nhiêu tỷ đồng?",
+            "KBC",
+        ),
+        (
+            "Cuối năm 2024, dự phòng rủi ro cho vay khách hàng của ngân hàng mẹ "
+            "Bắc Á chênh lệch bao nhiêu triệu đồng so với Saigonbank?",
+            "BAB",
+        ),
+        (
+            "Năm 2024, trạng thái tiền tệ nội bảng của công ty mẹ Ngân hàng Quốc "
+            "Dân và Ngân hàng Kiên Long chênh lệch nhau mấy triệu đồng?",
+            "NVB",
+        ),
+        (
+            "Trong năm 2021, tỷ trọng chi phí lãi tiền gửi của Sài Gòn Công Thương "
+            "và TMCP Quốc Dân chênh lệch nhau bao nhiêu phần trăm?",
+            "SGB",
+        ),
+        (
+            "Chênh lệch tổng phải thu ngắn hạn từ các bên liên quan tại thời điểm "
+            "cuối năm 2018 giữa hai công ty mẹ Địa ốc Sài Gòn Thương Tín và Đầu "
+            "tư Phát triển Xây dựng là bao nhiêu tỷ đồng?",
+            "SCR",
+        ),
+    ],
+)
+def test_company_name_codes_in_text_finds_informal_multiword_names(
+    question: str, ticker: str
+) -> None:
+    assert ticker in company_name_codes_in_text(question)
+
+
+def test_company_name_codes_in_text_finds_multiple_distinct_companies() -> None:
+    """The Day 22 fix must not just swap which single winner is picked --
+    two genuinely distinct companies named with different-length aliases in
+    the same sentence must both be returned."""
+    question = (
+        "Khoản chênh lệch số dư Quỹ đầu tư phát triển cuối năm 2015 giữa Tập "
+        "đoàn Công nghiệp Cao su Việt Nam và Tổng công ty Phân bón và Hóa "
+        "chất Dầu khí là bao nhiêu nghìn tỷ đồng?"
+    )
+    assert set(company_name_codes_in_text(question)) >= {"GVR", "DPM"}
+
+
+def test_company_name_codes_in_text_does_not_confuse_subsidiary_with_parent() -> None:
+    """A subsidiary's own full legal name must still resolve to the
+    subsidiary, not fall through to a parent-group alias that happens to be
+    a substring of it (the original reason `_contained_company_codes`
+    prefers the longest match at a given text span)."""
+    assert company_name_codes_in_text(
+        "Báo cáo tài chính của CTCP Nông nghiệp Quốc tế Hoàng Anh Gia Lai năm 2023."
+    ) == ("HNG",)
