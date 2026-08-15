@@ -9,13 +9,15 @@ import zipfile
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from financial_report_qa.core.config import ExecutionSettings
+from financial_report_qa.core.config import ExecutionSettings, LLMSettings
 from financial_report_qa.core.errors import SubmissionInputError
 from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
+from financial_report_qa.planning.llm_client import LLMClient
 from financial_report_qa.retrieval.contracts import (
     MetricLabelObservation,
     TableDocument,
@@ -35,6 +37,15 @@ DOC_ID = "doc_" + "a" * 64
 CELL_ID = "cell_" + "a" * 64
 
 _ALLOW_LOOKUP = ExecutionSettings(timeout_seconds=5, max_rows=20000, allow_operations=("lookup",))
+_LLM_SETTINGS = LLMSettings(
+    base_url="http://127.0.0.1:8080/v1",
+    model="qwen3-4b-instruct-2507-q4_k_m",
+    timeout_seconds=5.0,
+    max_output_tokens=160,
+    temperature=0.0,
+    context_length=4096,
+    json_schema_constrained=True,
+)
 
 
 def _write_release(tmp_path: Path) -> Path:
@@ -167,7 +178,96 @@ def test_export_submission_records_no_candidate_tables_as_abstained(tmp_path: Pa
     assert report.answered_count == 0
     assert items == ()
     assert csv_rows == {}
+
+
+def test_export_submission_rule_abstain_without_llm_client_stays_abstained(
+    tmp_path: Path,
+) -> None:
+    """Regression: `llm_client=None` (the default) must reproduce the exact
+    pre-LLM-fallback behavior -- rule-planner abstain stays a `planning`
+    abstain, nothing tries to reach a network endpoint."""
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=3, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
+
+    report, items, _ = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+    )
+
+    assert report.answered_count == 0
+    assert items == ()
     assert report.outcomes[0].status == "abstained"
+    assert report.outcomes[0].stage == "planning"
+
+
+def test_export_submission_falls_back_to_llm_when_rule_planner_abstains(
+    tmp_path: Path,
+) -> None:
+    """Day 22 coverage-improvement follow-up: when the rule planner abstains
+    but an LLM client is supplied, `plan_router.route_plan` must be given a
+    chance before the question is written off -- exercised here with a
+    mocked httpx transport, never a live server (ADR 0006's existing test
+    pattern in test_plan_router.py)."""
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=3, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
+    valid_plan = json.dumps(
+        {
+            "operation": "lookup",
+            "companies": ["ACB"],
+            "periods": ["2023"],
+            "metric": {"canonical": "net_revenue"},
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": valid_plan}}]})
+
+    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
+
+    report, items, csv_rows = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        llm_client=llm_client,
+    )
+
+    assert report.answered_count == 1
+    assert items[0].answer == 100.0
+    assert report.outcomes[0].plan_source == "llm"
+
+
+def test_export_submission_rule_success_never_calls_llm(tmp_path: Path) -> None:
+    """Mirrors test_plan_router.py's own guarantee, at the exporter's own
+    call site -- an LLM client being present must never override a rule plan
+    that already succeeded."""
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=1, question="Tra cứu doanh thu thuần của ACB năm 2023.")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("LLM must not be called when the rule planner already succeeded")
+
+    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
+
+    report, items, _ = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        llm_client=llm_client,
+    )
+
+    assert report.answered_count == 1
+    assert report.outcomes[0].plan_source == "rule"
+    assert report.outcomes[0].status == "answered"
 
 
 def test_load_raw_questions_parses_and_sorts_by_id(tmp_path: Path) -> None:

@@ -118,6 +118,11 @@ class QuestionOutcome(_FrozenModel):
     status: Literal["answered", "abstained", "error"]
     stage: PipelineStage | None
     code: NonEmptyString | None
+    # Which planner actually produced the plan (Day 22 coverage-improvement
+    # follow-up: route_plan tries the rule planner first, falling back to the
+    # LLM planner only on abstain -- ADR 0006 decision A1). None whenever
+    # planning was never reached (e.g. stage == "retrieval").
+    plan_source: Literal["rule", "llm"] | None = None
 
     @model_validator(mode="after")
     def validate_consistency(self) -> Self:

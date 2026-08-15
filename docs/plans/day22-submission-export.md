@@ -4,6 +4,15 @@
 > 32/1.012 trả lời được (3,16 %), `submission.zip` vượt validator offline (`valid=True items=32`).
 > Xem [plan.md § Ngày 24](../../plan.md) và [README.md § Ngày 22](../../README.md) để biết số đo
 > đầy đủ và các quyết định giản lược (A-G) đã áp dụng đúng như dưới đây.
+>
+> **Theo dõi (2026-08-15, cùng ngày):** người dùng yêu cầu cải thiện coverage bằng cách bật LLM
+> planner (Ngày 17, `plan_router.route_plan`) trong luồng submission. Máy hiện tại **không có LLM
+> server sống** (`http://127.0.0.1:8080/v1` bị `Connection refused`, đo trực tiếp) — README đã ghi
+> nhận từ trước "an toàn khi 0 mô hình sống, chưa đo được độ chính xác LLM thật". Đã nối code
+> (`submission/exporter.py` gọi `route_plan` thay vì `rule_planner.build_plan` trực tiếp khi có
+> `llm_client`; CLI thêm `--llm-config` tuỳ chọn) và TDD đầy đủ bằng `httpx.MockTransport` (không
+> có server thật) — **chưa đo coverage cải thiện thật** vì chưa có server sống. Người dùng sẽ tự
+> chạy server local rồi báo lại để đo thật trên toàn bộ 1.012 câu.
 
 ## 0. Bối cảnh
 

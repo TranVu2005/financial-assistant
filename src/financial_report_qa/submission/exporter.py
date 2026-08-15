@@ -23,6 +23,8 @@ from financial_report_qa.execution.compiler import compile_plan
 from financial_report_qa.execution.contracts import CompiledQuery, ReplayRow
 from financial_report_qa.pipeline.contracts import PipelineStage
 from financial_report_qa.planning.entity_parser import parse_query_entities
+from financial_report_qa.planning.llm_client import ChatCompletionClient
+from financial_report_qa.planning.plan_router import route_plan
 from financial_report_qa.planning.rule_planner import build_plan
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
 from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
@@ -108,6 +110,7 @@ def _run_one_question(
     *,
     execution_settings: ExecutionSettings,
     k: int,
+    llm_client: ChatCompletionClient | None,
 ) -> tuple[QuestionOutcome, SubmissionItem | None, tuple[CsvRow, ...] | None]:
     question = raw_question.question
 
@@ -128,9 +131,24 @@ def _run_one_question(
         )
 
     entities = parse_query_entities(question)
-    plan_result = build_plan(
-        entities, candidate_table_ids=retrieved, known_table_ids=frozenset(retrieved)
-    )
+    # Day 22 coverage-improvement follow-up: `route_plan` (ADR 0006 A1) tries
+    # the rule planner first and only calls the LLM planner when it abstains
+    # -- never the reverse, so the Day 16 false-plan-rate-0.0 guarantee is
+    # unaffected. `llm_client=None` reproduces the exact pre-fallback
+    # behavior (no network call attempted).
+    if llm_client is not None:
+        routed = route_plan(
+            entities,
+            client=llm_client,
+            candidate_table_ids=retrieved,
+            known_table_ids=frozenset(retrieved),
+        )
+        plan_result, plan_source = routed.result, routed.source
+    else:
+        plan_result = build_plan(
+            entities, candidate_table_ids=retrieved, known_table_ids=frozenset(retrieved)
+        )
+        plan_source = "rule"
     if plan_result.plan is None:
         return (
             QuestionOutcome.model_validate(
@@ -140,6 +158,7 @@ def _run_one_question(
                     "status": "abstained",
                     "stage": "planning",
                     "code": "+".join(plan_result.abstain_codes),
+                    "plan_source": plan_source,
                 }
             ),
             None,
@@ -163,6 +182,7 @@ def _run_one_question(
                     "status": "error",
                     "stage": "execution",
                     "code": compiled.error_code,
+                    "plan_source": plan_source,
                 }
             ),
             None,
@@ -188,6 +208,7 @@ def _run_one_question(
                     "status": "error",
                     "stage": "verification",
                     "code": "+".join(issue.code for issue in package.verification_issues),
+                    "plan_source": plan_source,
                 }
             ),
             None,
@@ -216,6 +237,7 @@ def _run_one_question(
                 "status": "answered",
                 "stage": None,
                 "code": None,
+                "plan_source": plan_source,
             }
         ),
         item,
@@ -231,11 +253,19 @@ def export_submission(
     execution_settings: ExecutionSettings,
     dataset_fingerprint: str,
     k: int = 10,
+    llm_client: ChatCompletionClient | None = None,
 ) -> tuple[SubmissionExportReport, tuple[SubmissionItem, ...], dict[str, tuple[CsvRow, ...]]]:
     """Run every question through the live pipeline once. Returns the
     coverage report (all questions), the `SubmissionItem`s that qualify for
     `submission.json` (answered + verified only), and their CSV rows keyed by
-    `csv_path`."""
+    `csv_path`.
+
+    `llm_client=None` (the default) keeps the pre-Day-22-coverage-follow-up
+    behavior: only the rule planner ever runs. Passing a client routes every
+    rule-planner abstain through `plan_router.route_plan`'s LLM fallback
+    (ADR 0006 decision A1) -- the rule planner still always runs first and is
+    never overridden once it succeeds.
+    """
     ordered = tuple(sorted(raw_questions, key=lambda item: item.id))
     outcomes: list[QuestionOutcome] = []
     items: list[SubmissionItem] = []
@@ -244,7 +274,12 @@ def export_submission(
 
     for raw_question in ordered:
         outcome, item, rows = _run_one_question(
-            raw_question, service, release_dir, execution_settings=execution_settings, k=k
+            raw_question,
+            service,
+            release_dir,
+            execution_settings=execution_settings,
+            k=k,
+            llm_client=llm_client,
         )
         outcomes.append(outcome)
         if outcome.stage is not None:

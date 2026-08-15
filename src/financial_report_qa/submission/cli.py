@@ -12,13 +12,14 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from financial_report_qa.core.config import load_execution_settings
+from financial_report_qa.core.config import load_execution_settings, load_llm_settings
 from financial_report_qa.core.errors import (
     ExecutionError,
     PlanningArtifactError,
     PlanningInputError,
     SubmissionError,
 )
+from financial_report_qa.planning.llm_client import LLMClient
 from financial_report_qa.retrieval.index import load_bm25_index
 from financial_report_qa.retrieval.release import resolve_retrieval_release
 from financial_report_qa.retrieval.service import RetrievalService
@@ -47,6 +48,17 @@ def _parser() -> argparse.ArgumentParser:
         '{"id": int, "question": str} (e.g. data/raw/ViFinQA/questions/questions.jsonl).',
     )
     export.add_argument("--execution-config", type=Path, nargs="+", required=True)
+    export.add_argument(
+        "--llm-config",
+        type=Path,
+        nargs="+",
+        default=None,
+        help="One or more YAML files layering the `llm:` block (e.g. configs/base.yaml "
+        "configs/local_rtx3050.yaml). When given, a rule-planner abstain falls back to "
+        "the LLM planner (plan_router.route_plan, ADR 0006 A1) against this endpoint -- "
+        "the rule planner still always runs first and is never overridden once it "
+        "succeeds. Omit to keep the rule-planner-only behavior.",
+    )
     export.add_argument("--output-zip", type=Path, required=True)
     export.add_argument("--report-dir", type=Path, required=True)
     export.add_argument("--k", type=int, default=10)
@@ -82,14 +94,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             execution_settings = load_execution_settings(args.execution_config)
             questions = load_raw_questions(args.questions_path)
 
-            report, items, csv_rows = export_submission(
-                questions,
-                service,
-                release.release_dir,
-                execution_settings=execution_settings,
-                dataset_fingerprint=release.dataset_fingerprint,
-                k=args.k,
-            )
+            if args.llm_config is not None:
+                llm_settings = load_llm_settings(args.llm_config)
+                with LLMClient(llm_settings) as llm_client:
+                    report, items, csv_rows = export_submission(
+                        questions,
+                        service,
+                        release.release_dir,
+                        execution_settings=execution_settings,
+                        dataset_fingerprint=release.dataset_fingerprint,
+                        k=args.k,
+                        llm_client=llm_client,
+                    )
+            else:
+                report, items, csv_rows = export_submission(
+                    questions,
+                    service,
+                    release.release_dir,
+                    execution_settings=execution_settings,
+                    dataset_fingerprint=release.dataset_fingerprint,
+                    k=args.k,
+                )
             sha256 = write_submission_zip(items, csv_rows, args.output_zip)
             json_path, markdown_path = write_export_report(report, args.report_dir)
             print(args.output_zip)

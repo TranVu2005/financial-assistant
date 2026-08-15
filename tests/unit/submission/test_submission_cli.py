@@ -6,12 +6,14 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pytest import MonkeyPatch
 
 from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
 from financial_report_qa.evaluation.week1_release import ReleaseLock
+from financial_report_qa.planning.llm_client import LLMClient
 from financial_report_qa.retrieval.contracts import (
     MetricLabelObservation,
     TableDocument,
@@ -193,6 +195,88 @@ def test_export_then_validate_roundtrip(tmp_path: Path, monkeypatch: MonkeyPatch
         ["validate", "--zip-path", str(output_zip), "--report-path", str(report_files[0])]
     )
     assert exit_code == 0
+
+
+def _write_llm_config(path: Path) -> None:
+    path.write_text(
+        "llm:\n"
+        "  base_url: http://127.0.0.1:8080/v1\n"
+        "  model: test-model\n"
+        "  timeout_seconds: 5\n"
+        "  max_output_tokens: 160\n"
+        "  temperature: 0.0\n"
+        "  context_length: 4096\n"
+        "  json_schema_constrained: true\n",
+        encoding="utf-8",
+    )
+
+
+def test_export_with_llm_config_answers_a_rule_planner_abstain(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    """`--llm-config` must route a rule-planner abstain through the LLM
+    fallback (never a live server here -- `LLMClient` is monkeypatched to use
+    an in-memory `httpx.MockTransport`, the same pattern test_plan_router.py
+    uses)."""
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    index_dir = tmp_path / "index"
+    _write_bm25_index(index_dir)
+    config_path = tmp_path / "execution.yaml"
+    _write_execution_config(config_path)
+    llm_config_path = tmp_path / "llm.yaml"
+    _write_llm_config(llm_config_path)
+    questions_path = tmp_path / "questions.jsonl"
+    questions_path.write_text(
+        '{"id": 1, "question": "Tổng lợi thế cạnh tranh của DBC năm 2023 là bao nhiêu?"}\n',
+        encoding="utf-8",
+    )
+    output_zip = tmp_path / "submission.zip"
+    report_dir = tmp_path / "report"
+
+    valid_plan = json.dumps(
+        {
+            "operation": "lookup",
+            "companies": ["DBC"],
+            "periods": ["2023"],
+            "metric": {"canonical": "total_assets"},
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": valid_plan}}]})
+
+    import financial_report_qa.submission.cli as submission_cli
+
+    def fake_llm_client(settings: object, **kwargs: object) -> LLMClient:
+        return LLMClient(settings, transport=httpx.MockTransport(handler), max_retries=1)
+
+    monkeypatch.setattr(submission_cli, "LLMClient", fake_llm_client)
+
+    exit_code = main(
+        [
+            "export",
+            "--release-lock",
+            "lock.json",
+            "--bm25-index",
+            str(index_dir),
+            "--questions-path",
+            str(questions_path),
+            "--execution-config",
+            str(config_path),
+            "--llm-config",
+            str(llm_config_path),
+            "--output-zip",
+            str(output_zip),
+            "--report-dir",
+            str(report_dir),
+        ]
+    )
+    assert exit_code == 0
+    report_files = list(report_dir.glob("submission-export-*.json"))
+    report_payload = json.loads(report_files[0].read_text(encoding="utf-8"))
+    assert report_payload["answered_count"] == 1
+    assert report_payload["outcomes"][0]["plan_source"] == "llm"
 
 
 def test_export_rejects_mismatched_index_fingerprint(

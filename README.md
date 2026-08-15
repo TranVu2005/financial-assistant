@@ -1198,3 +1198,15 @@ là việc của các ngày sau, không phải nợ ẩn của module này.
 `pytest -q`: 1.186 passed, 4 skipped. `ruff check .` / `ruff format --check .`: sạch trên 263 file.
 `mypy`: 0 lỗi (123 file `src`). Security: 8 test riêng cho ZIP (ZIP Slip, absolute/drive path,
 backslash, symlink metadata, duplicate entry, entry ngoài `data/`, JSON root thừa).
+
+### Theo dõi cùng ngày: nối LLM planner (Ngày 17) vào submission, chưa đo được thật
+
+Yêu cầu cải thiện coverage bằng LLM fallback. Đo trực tiếp: máy hiện tại **không có LLM server sống**
+(`http://127.0.0.1:8080/v1` → `Connection refused`) — khớp cảnh báo đã ghi ở mục Ngày 17 phía trên
+("an toàn khi 0 mô hình sống, chưa đo được độ chính xác LLM thật"). Đã nối
+`submission/exporter.py` gọi `planning.plan_router.route_plan` (rule planner luôn chạy trước, LLM chỉ
+chạy khi rule abstain — không đổi hành vi khi rule thành công, đúng ADR 0006 A1) thay vì gọi thẳng
+`rule_planner.build_plan`; CLI `submission export` thêm `--llm-config` tuỳ chọn (bỏ qua giữ nguyên
+hành vi cũ). TDD đầy đủ bằng `httpx.MockTransport` (không cần server thật, cùng pattern
+`test_plan_router.py`) — `pytest -q`: 1.191 passed. **Chưa có số coverage cải thiện thật** vì chưa
+đo trên server sống; sẽ đo ngay khi có server.
