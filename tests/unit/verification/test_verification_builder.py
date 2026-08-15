@@ -64,6 +64,15 @@ def _compiled(**overrides: object) -> CompiledQuery:
         "pandas_query": 'df1[(df1.period == 2023)]["value"].iloc[0]',
         "error_code": None,
         "error_message": None,
+        "replay_rows": (
+            {
+                "company_code": "ACB",
+                "row_label_canonical": "cash_and_cash_equivalents",
+                "row_label_raw": None,
+                "period": 2023,
+                "value": Decimal("100"),
+            },
+        ),
     }
     defaults.update(overrides)
     return CompiledQuery.model_validate(defaults)

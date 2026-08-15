@@ -60,6 +60,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Run the real text -> retrieval -> plan -> execution -> "
         "verification E2E chain (Day 21).",
     )
+    commands.add_parser(
+        "submission",
+        add_help=False,
+        help="Export and validate the Dashboard submission ZIP (Day 22).",
+    )
     return parser
 
 
@@ -100,6 +105,10 @@ def main(
         from financial_report_qa.pipeline.cli import main as pipeline_main
 
         return pipeline_main(remaining)
+    if parsed.command == "submission":
+        from financial_report_qa.submission.cli import main as submission_main
+
+        return submission_main(remaining)
     raise AssertionError("argparse accepted an unknown command")
 
 

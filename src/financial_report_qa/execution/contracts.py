@@ -61,6 +61,19 @@ class CellMatch(_FrozenModel):
         return self
 
 
+class ReplayRow(_FrozenModel):
+    """One row of the exact frame (pandas_query's `df1`) the compiler replayed
+    against. Day 22 plan §1/§2 decision A: exposed so a submission exporter
+    never re-derives this from `_dispatch`'s per-operation branches -- it is
+    the compiler's own replay input, not a reconstruction."""
+
+    company_code: NonEmptyString
+    row_label_canonical: NonEmptyString | None
+    row_label_raw: NonEmptyString | None
+    period: int = Field(ge=1900, le=2100)
+    value: Decimal
+
+
 class CompiledQuery(_FrozenModel):
     """One deterministic compilation result: a locked answer or a typed error."""
 
@@ -77,6 +90,8 @@ class CompiledQuery(_FrozenModel):
     # default_statement_scope` resolved the candidate frame instead --
     # verification must not present such an answer as certain.
     scope_inferred: bool = False
+    # Day 22 plan §2 decision A: only populated when status == "answered".
+    replay_rows: tuple[ReplayRow, ...] = ()
 
     @model_validator(mode="after")
     def validate_status_consistency(self) -> Self:
@@ -87,9 +102,13 @@ class CompiledQuery(_FrozenModel):
                 raise ValueError("answered result requires evidence")
             if self.error_code is not None or self.error_message is not None:
                 raise ValueError("answered result must not carry error fields")
+            if not self.replay_rows:
+                raise ValueError("answered result requires replay_rows")
         else:
             if self.answer is not None:
                 raise ValueError("error result must not carry answer")
             if self.error_code is None or self.error_message is None:
                 raise ValueError("error result requires error_code and error_message")
+            if self.replay_rows:
+                raise ValueError("error result must not carry replay_rows")
         return self

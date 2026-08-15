@@ -72,6 +72,15 @@ def test_citation_rejects_unknown_field() -> None:
         Citation.model_validate({**_citation().model_dump(mode="json"), "extra": "x"})
 
 
+def test_citation_accepts_null_table_title() -> None:
+    """Day 22 plan: measured 7,643/146,011 (5.2%) real tables have a NULL
+    `title_raw` in tables.parquet -- `build_citation_lookup` passes that
+    through as-is, so Citation must not reject a real, otherwise-valid
+    evidence cell just because its table has no title."""
+    citation = _citation(table_title=None)
+    assert citation.table_title is None
+
+
 def test_answer_package_constructs_with_valid_fields() -> None:
     package = _package()
     assert package.answer == Decimal("100")

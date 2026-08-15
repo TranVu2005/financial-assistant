@@ -161,6 +161,56 @@ def test_compile_plan_lookup_answers_and_replays(tmp_path: Path) -> None:
     assert len(result.evidence) == 1
 
 
+def test_compile_plan_answered_exposes_replay_rows_matching_pandas_query(tmp_path: Path) -> None:
+    """A submission exporter must be able to materialize the exact DataFrame
+    `pandas_query` (variable `df1`) operated on without re-deriving compiler
+    internals -- `replay_rows` is that frame, in row form."""
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="Tien mat",
+                row_label_canonical="cash_and_cash_equivalents",
+                value_numeric="100",
+                period="2023",
+            )
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="cash_and_cash_equivalents"),
+    )
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "answered"
+    assert len(result.replay_rows) == 1
+    row = result.replay_rows[0]
+    assert row.company_code == "ACB"
+    assert row.row_label_canonical == "cash_and_cash_equivalents"
+    assert row.period == 2023
+    assert row.value == Decimal("100")
+
+
+def test_compile_plan_error_result_has_no_replay_rows(tmp_path: Path) -> None:
+    release_dir = _write_release(tmp_path, [])
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="cash_and_cash_equivalents"),
+    )
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "error"
+    assert result.replay_rows == ()
+
+
 def test_compile_plan_lookup_negative_value(tmp_path: Path) -> None:
     """Day 18 plan §1.5: negative cells must pass through unmodified."""
     release_dir = _write_release(

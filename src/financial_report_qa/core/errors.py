@@ -167,3 +167,11 @@ class ExecutionInputError(ExecutionError):
 
 class ExecutionReplayMismatchError(ExecutionError):
     """A compiled `pandas_query` did not replay to the compiler's own answer."""
+
+
+class SubmissionError(FinancialReportQAError):
+    """Base class for Day 22 submission bundle failures."""
+
+
+class SubmissionInputError(SubmissionError):
+    """A question file, ZIP, or CLI input to the submission bundle is invalid."""

@@ -23,7 +23,12 @@ from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.core.errors import ExecutionReplayMismatchError
 from financial_report_qa.execution import operations
 from financial_report_qa.execution.cell_frame import build_cell_frame
-from financial_report_qa.execution.contracts import CellMatch, CompiledQuery, ExecutionIssueCode
+from financial_report_qa.execution.contracts import (
+    CellMatch,
+    CompiledQuery,
+    ExecutionIssueCode,
+    ReplayRow,
+)
 from financial_report_qa.execution.locator import LocateResult, locate
 from financial_report_qa.execution.pandas_query import render_pandas_query
 from financial_report_qa.execution.sandbox import replay_in_sandbox
@@ -179,6 +184,7 @@ def compile_plan(
         error_code=None,
         error_message=None,
         scope_inferred=scope_inferred,
+        replay_rows=tuple(ReplayRow.model_validate(row) for row in replay_rows),
     )
 
 

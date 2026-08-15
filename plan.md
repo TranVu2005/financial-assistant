@@ -1235,22 +1235,58 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 24 — Export và contract submission
 
-- [ ] Viết contract tests trước cho JSON root array và đúng bảy field của `SubmissionItem`:
+> **Thực hiện sớm ngày 2026-08-15 (trước Ngày 22/23, theo yêu cầu người dùng ưu tiên submission
+> trước giao diện):** người dùng cung cấp bộ câu hỏi thi thật
+> `data/raw/ViFinQA/questions/questions.jsonl` (1.012 câu, không có đáp án). Đo trực tiếp xác nhận
+> corpus của nó (`financial_statements/`, 1.973 file) khớp gần tuyệt đối với corpus release đã
+> khóa (1.971/1.973 tài liệu) — không cần ingest lại. Kế hoạch chi tiết + các quyết định giản lược
+> có chủ đích: [docs/plans/day22-submission-export.md](docs/plans/day22-submission-export.md).
+>
+> Phát hiện quan trọng: mọi harness Ngày 8-21 chỉ đánh giá truy hồi trên câu hỏi **đã có nhãn**
+> (`GoldRetrievalQuestion.filters` được gán sẵn) — chưa từng có đường truy hồi cho câu hỏi thô,
+> chưa từng thấy. Xây `retrieval/live_query.py` nối `parse_query_entities` → `to_retrieval_filters`
+> (đã có từ Ngày 10) → `RetrievalService.retrieve`, không cần logic truy hồi mới. Thêm
+> `CompiledQuery.replay_rows` để exporter đọc đúng DataFrame compiler đã dùng, không dựng lại logic.
+>
+> Chạy thật trên toàn bộ 1.012 câu (`financial-report-qa submission export`, BM25 v4,
+> `configs/local_rtx3050.yaml`): **32/1.012 câu trả lời được (3,16 %)** — retrieval rỗng: 43,
+> planning abstain: 623 (đa số), execution error: 314. `submissions/submission_422df141c935.zip`
+> (32 items) **vượt validator offline** (`submission validate`: `valid=True items=32`, mọi
+> `pandas_query` replay khớp `answer` qua sandbox thật) — nhưng **chưa phải bản nộp Dashboard sẵn
+> sàng**: quy tắc 4 của contract §2.4 đòi hỏi phủ đúng và đủ toàn bộ `id`/`question` của bộ câu hỏi
+> thi, còn đây mới phủ 3,16 %. Phần hạ tầng (contract/exporter/validator/ZIP packaging/CLI) đã xong
+> và đã kiểm chứng đúng trên dữ liệu thật; phần thiếu là **coverage của pipeline** (rule planner
+> Ngày 16 rất bảo thủ trên câu hỏi tự nhiên đa dạng), việc của Ngày 25+ (benchmark/fine-tune model)
+> và cải thiện truy hồi/planning trước khi nộp thật.
+>
+> Phát hiện phụ, sửa cùng lúc: 5,2 % bảng thật (7.643/146.011) có `title_raw = NULL` trong
+> `tables.parquet` — `Citation.table_title` trước đó bắt buộc non-empty string, làm sập pipeline
+> trên câu hỏi thật đầu tiên chạm bảng loại này (gold70/gold120 chưa từng chạm ngẫu nhiên). Nới
+> thành `NonEmptyString | None`, TDD, không ảnh hưởng contract khác.
+
+- [x] Viết contract tests trước cho JSON root array và đúng bảy field của `SubmissionItem`:
   `id`, `question`, `answer`, `relevant_docs`, `relevant_tables`, `evidence`, `pandas_query`.
-- [ ] Cài ánh xạ `relative_path → report_id` và provenance
-  `canonical cell → source occurrence → <report_id>|<line_start>`; test riêng bảng thường,
-  bảng continuation và duplicate document.
-- [ ] Materialize đúng các DataFrame mà compiler dùng thành CSV UTF-8 dưới `data/`; đặt biến
+- [x] Cài ánh xạ `relative_path → report_id` và provenance cell-level `<report_id>|<line_start>` —
+  **giản lược có ghi chú**: dùng `source_line_start` của chính cell bằng chứng (đã kiểm chứng đầy
+  đủ từ Ngày 20), không dựng lại tầng "occurrence nào cấp bảng" qua
+  `placements.parquet`/`source_table_occurrences.parquet`; xem quyết định C trong plan doc.
+- [x] Materialize đúng các DataFrame mà compiler dùng thành CSV UTF-8 dưới `data/`; đặt biến
   Python hợp lệ/duy nhất và ghi `csv_path` POSIX tương đối vào từng phần tử `evidence`.
-- [ ] Xuất đủ và chỉ đúng toàn bộ `id`/`question` của `data/official/test_questions.json`;
-  chặn `abstained`, `error`, đáp án không hữu hạn, ID thiếu/thừa/trùng và question bị sửa.
-- [ ] Replay mọi `pandas_query` trong sandbox whitelist từ chính CSV trong staging directory;
-  xác nhận scalar số khớp `answer` theo tolerance trước khi nén.
-- [ ] Tạo ZIP quyết định gồm đúng một JSON ở root và `data/`; validator mở lại ZIP trong thư
-  mục tạm, chặn path traversal/symlink, CSV thiếu/mồ côi, path sai chữ hoa/thường và field thừa.
-- [ ] Chạy unit, integration, golden và security tests cho contract nộp bài.
-- **Đầu ra:** `submissions/submission_<dataset-fingerprint>.zip` vượt validator offline, có
-  SHA-256 được lưu ngoài ZIP và sẵn sàng upload Dashboard.
+- [ ] Xuất đủ và chỉ đúng toàn bộ `id`/`question` của bộ câu hỏi thi thật — **chưa đạt**: 32/1.012
+  (3,16 %); chặn `abstained`/`error`/đáp án không hữu hạn/ID thiếu-thừa-trùng đã cài và kiểm chứng
+  đúng cho tập con đã trả lời.
+- [x] Replay mọi `pandas_query` trong sandbox whitelist (`execution.sandbox.replay_in_sandbox`, tái
+  dùng nguyên bản Ngày 19, không gọi `replay_pandas_query` trực tiếp) từ chính CSV đã đóng gói;
+  xác nhận scalar số khớp `answer` theo tolerance trước khi nén — chạy thật, `valid=True items=32`.
+- [x] Tạo ZIP quyết định gồm đúng một JSON ở root và `data/`; validator mở lại ZIP trong thư mục
+  tạm, chặn path traversal/symlink/duplicate-entry, CSV thiếu/mồ côi, entry ngoài `data/` và field
+  thừa — 8 security test riêng (ZIP Slip, absolute/drive path, backslash, symlink metadata,
+  duplicate entry, entry ngoài data/, JSON root thừa).
+- [x] Chạy unit, integration và security tests cho contract nộp bài — 1186 passed (repo), gồm
+  integration test thật trên release + BM25 v4 + câu hỏi ViFinQA thật.
+- **Đầu ra:** `submissions/submission_422df141c935.zip` vượt validator offline, SHA-256 lưu ngoài
+  ZIP (`submissions/submission_422df141c935.sha256.json`) — **nhưng chưa sẵn sàng nộp Dashboard**
+  do coverage 3,16 %; hạ tầng export/validate đã sẵn sàng tái sử dụng ngay khi coverage cải thiện.
 
 #### Ngày 25 — Benchmark model
 
@@ -1518,26 +1554,27 @@ uv run --frozen --no-sync mypy src tests
 uv run --frozen --no-sync pytest --cov=src --cov-report=term-missing
 uv run --frozen --no-sync python scripts/evaluate.py --config configs/evaluation.yaml --split test_locked
 
-$releasePath = "data/processed/release_v2_7fc5d5d57bf6"
-$questionsPath = "data/official/test_questions.json"
-$predictionsPath = "artifacts/predictions/test.jsonl"
-$submissionPath = "submissions/submission_7fc5d5d57bf6.zip"
+uv run --frozen --no-sync python -m financial_report_qa.cli submission export `
+  --release-lock data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json `
+  --bm25-index data/indexes/bm25-v4/422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a `
+  --questions-path data/raw/ViFinQA/questions/questions.jsonl `
+  --execution-config configs/local_rtx3050.yaml `
+  --output-zip submissions/submission_422df141c935.zip `
+  --report-dir artifacts/evaluations/day22/submission `
+  --k 10
 
-uv run --frozen --no-sync python scripts/export_submission.py `
-  --release-path $releasePath `
-  --questions-path $questionsPath `
-  --predictions-path $predictionsPath `
-  --output-path $submissionPath
-
-uv run --frozen --no-sync python scripts/validate_submission.py `
-  --submission-path $submissionPath `
-  --questions-path $questionsPath `
-  --replay-all
-Get-FileHash -Algorithm SHA256 $submissionPath
+uv run --frozen --no-sync python -m financial_report_qa.cli submission validate `
+  --zip-path submissions/submission_422df141c935.zip `
+  --report-path artifacts/evaluations/day22/submission/submission-export-422df141c935.json
 ```
 
-Thay bốn biến bằng release chính thức của run cần nộp. Không công bố “đã xong” nếu lệnh trên
-chưa chạy trên đúng dataset fingerprint/model hash hoặc validator chưa replay đủ 100% câu hỏi.
+Đây là câu lệnh thật đã chạy trên toàn bộ 1.012 câu (Ngày 22, xem kết quả ở mục Ngày 24 bên trên và
+[docs/plans/day22-submission-export.md](docs/plans/day22-submission-export.md)) — không còn là
+pseudocode. `submission export` tự in đường dẫn ZIP, SHA-256 và `answered N/M`; `submission
+validate` in `valid=True|False items=N` và mọi issue ra stderr. Thay `--release-lock`/`--bm25-index`
+bằng release chính thức của run cần nộp nếu khác. Không công bố "đã xong" nếu validator chưa in
+`valid=True` hoặc coverage (`answered`) chưa đạt yêu cầu nộp bài (100% câu hỏi thi, xem cảnh báo
+coverage 3,16% ở mục Ngày 24).
 
 ---
 

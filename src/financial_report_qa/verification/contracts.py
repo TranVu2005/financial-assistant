@@ -78,7 +78,10 @@ class Citation(_FrozenModel):
     doc_relative_path: NonEmptyString
     source_line_start: int = Field(ge=1)
     source_line_end: int = Field(ge=1)
-    table_title: NonEmptyString
+    # Day 22 plan: measured 7,643/146,011 (5.2%) real tables have NULL
+    # title_raw in tables.parquet -- a real evidence cell must not be
+    # rejected just because its table has no title.
+    table_title: NonEmptyString | None
     value: Decimal
     unit: CanonicalUnit
 

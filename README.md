@@ -1155,3 +1155,46 @@ bằng retrieval. Nợ kỹ thuật thật chuyển sang ngày sau: `multi_metri
 
 `pytest -q`: 1.141 passed, 4 skipped (chỉ symlink/ACL Windows). `ruff check .` / `ruff format --check .`:
 sạch trên 250 file. `mypy`: 0 lỗi (117 file `src`).
+
+## Ngày 22 (thực hiện sớm) — Submission Export
+
+Người dùng cung cấp bộ câu hỏi thi thật (`data/raw/ViFinQA/questions/questions.jsonl`, 1.012 câu,
+không nhãn) và yêu cầu ưu tiên trước giao diện Streamlit — làm trước Ngày 22/23 gốc trong `plan.md`,
+trùng phạm vi Ngày 24 (Task G). Kế hoạch: [docs/plans/day22-submission-export.md](docs/plans/day22-submission-export.md).
+
+### Kiến trúc: retrieval trực tiếp là mảnh ghép còn thiếu, không phải submission
+
+Mọi harness Ngày 8-21 đo BM25 trên câu hỏi **đã có nhãn** (`GoldRetrievalQuestion.filters`) — chưa
+từng có đường "câu hỏi thô → candidate table_ids". `to_retrieval_filters` (Ngày 10) đã làm đúng việc
+chiếu `QueryEntities` sang `RetrievalFilters`, chỉ chưa ai nối nó với `RetrievalService.retrieve`.
+`retrieval/live_query.py` là dây nối 4 dòng đó — không có logic truy hồi mới, chỉ ghép ba hàm đã kiểm
+chứng. `execution/contracts.py` thêm `CompiledQuery.replay_rows` để exporter đọc đúng DataFrame
+compiler đã dùng (biến `df1` trong `pandas_query`) thay vì dựng lại logic `_dispatch`.
+
+### Một bug thật chỉ lộ ra trên toàn bộ corpus, không phải trên gold70/gold120
+
+5,2 % bảng thật (7.643/146.011, đo trực tiếp trên `tables.parquet`) có `title_raw = NULL`.
+`Citation.table_title` (Ngày 20) bắt buộc chuỗi non-empty — sập ngay câu hỏi thật đầu tiên chạm một
+bảng loại này. gold70/gold120 (mẫu nhỏ, có chủ đích) chưa từng chạm ngẫu nhiên trường hợp này. Sửa
+bằng TDD: nới `table_title: NonEmptyString | None`.
+
+### Kết quả chạy thật trên toàn bộ 1.012 câu
+
+| Số đo | Giá trị |
+|---|---:|
+| Câu trả lời được (`submission.json`) | **32/1.012 = 3,16 %** |
+| Lỗi theo tầng | retrieval (không candidate): 43, planning (abstain): 623, execution: 314 |
+| Validator offline (`submission validate`) | `valid=True items=32` — mọi `pandas_query` replay khớp `answer` qua sandbox thật |
+| ZIP | `submissions/submission_422df141c935.zip`, SHA-256 lưu ngoài ZIP |
+
+Hạ tầng export/validate/đóng gói ZIP đã đúng và đã kiểm chứng trên dữ liệu thật (không phải fixture
+tổng hợp). Nhưng **đây chưa phải bản nộp Dashboard sẵn sàng**: contract §2.4 quy tắc 4 đòi hỏi phủ
+đúng và đủ 100 % câu hỏi thi, còn coverage thật hiện tại chỉ 3,16 % — phần lớn do rule planner Ngày
+16 (bảo thủ có chủ đích, "false-plan rate = 0" quan trọng hơn coverage) abstain trên câu hỏi tự
+nhiên đa dạng hơn nhiều so với gold70/120 (được sinh có kiểm soát). Cải thiện coverage — LLM planner
+(Ngày 17) đã có nhưng chưa bật trong luồng submission, mở rộng ontology, giảm rule planner abstain —
+là việc của các ngày sau, không phải nợ ẩn của module này.
+
+`pytest -q`: 1.186 passed, 4 skipped. `ruff check .` / `ruff format --check .`: sạch trên 263 file.
+`mypy`: 0 lỗi (123 file `src`). Security: 8 test riêng cho ZIP (ZIP Slip, absolute/drive path,
+backslash, symlink metadata, duplicate entry, entry ngoài `data/`, JSON root thừa).

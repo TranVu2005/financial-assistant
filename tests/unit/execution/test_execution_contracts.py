@@ -25,6 +25,18 @@ def _cell_match(**overrides: object) -> CellMatch:
     return CellMatch.model_validate(defaults)
 
 
+def _replay_row(**overrides: object) -> dict[str, object]:
+    defaults: dict[str, object] = {
+        "company_code": "ACB",
+        "row_label_canonical": "cash_and_cash_equivalents",
+        "row_label_raw": None,
+        "period": 2023,
+        "value": Decimal("100"),
+    }
+    defaults.update(overrides)
+    return defaults
+
+
 def test_cell_match_requires_at_least_one_cell_id() -> None:
     """An evidence record with zero cell_ids cannot be traced back to a source
     cell, defeating the audit trail plan.md requires."""
@@ -61,6 +73,44 @@ def test_compiled_query_answered_forbids_error_fields() -> None:
                 "pandas_query": "df1['value'].iloc[0]",
                 "error_code": "metric_not_found",
                 "error_message": None,
+                "replay_rows": (_replay_row(),),
+            }
+        )
+
+
+def test_compiled_query_answered_requires_replay_rows() -> None:
+    """Day 22 plan §2 decision A: a submission exporter reads the exact
+    replayed DataFrame from `replay_rows` -- an answered result without it
+    would silently break that contract."""
+    with pytest.raises(ValidationError):
+        CompiledQuery.model_validate(
+            {
+                "operation": "lookup",
+                "status": "answered",
+                "answer": Decimal("100"),
+                "unit": "VND",
+                "evidence": (_cell_match().model_dump(mode="json"),),
+                "pandas_query": "df1['value'].iloc[0]",
+                "error_code": None,
+                "error_message": None,
+                "replay_rows": (),
+            }
+        )
+
+
+def test_compiled_query_error_forbids_replay_rows() -> None:
+    with pytest.raises(ValidationError):
+        CompiledQuery.model_validate(
+            {
+                "operation": "lookup",
+                "status": "error",
+                "answer": None,
+                "unit": None,
+                "evidence": (),
+                "pandas_query": "df1['value'].iloc[0]",
+                "error_code": "metric_not_found",
+                "error_message": "no matching row",
+                "replay_rows": (_replay_row(),),
             }
         )
 
@@ -108,9 +158,11 @@ def test_compiled_query_answered_accepts_valid_result() -> None:
             "pandas_query": "df1['value'].iloc[0]",
             "error_code": None,
             "error_message": None,
+            "replay_rows": (_replay_row(),),
         }
     )
     assert result.answer == Decimal("100")
+    assert result.replay_rows[0].company_code == "ACB"
 
 
 def test_execution_issue_code_includes_day19_sandbox_codes() -> None:

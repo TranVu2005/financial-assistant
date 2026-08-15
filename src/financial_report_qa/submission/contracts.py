@@ -1,0 +1,177 @@
+"""Day 22 submission-bundle contracts (plan.md §2.3/§2.4).
+
+`SubmissionItem` is the one public contract serialized into `submission.json`
+-- `extra="forbid"` and exactly the seven fields plan.md specifies. It is
+never built directly from an internal `AnswerPackage`; `submission/exporter.py`
+is the only place that constructs one, and only from a verified `answered`
+result.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from pathlib import PurePosixPath, PureWindowsPath
+from typing import Literal, Self
+
+from pydantic import Field, StrictInt, field_validator, model_validator
+
+from financial_report_qa.pipeline.contracts import PipelineStage
+from financial_report_qa.retrieval.contracts import Fingerprint, NonEmptyString, _FrozenModel
+
+
+class RawQuestion(_FrozenModel):
+    """One row of the official test question file (e.g.
+    `data/raw/ViFinQA/questions/questions.jsonl`): `{"id": int, "question":
+    str}`, nothing else -- no gold label exists for this release."""
+
+    id: StrictInt = Field(gt=0)
+    question: NonEmptyString
+
+
+_VARIABLE_NAME_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
+
+
+class SubmissionEvidence(_FrozenModel):
+    """Maps one DataFrame variable used in `pandas_query` to its packaged CSV."""
+
+    variable: NonEmptyString
+    csv_path: NonEmptyString
+
+    @field_validator("variable")
+    @classmethod
+    def validate_variable_name(cls, value: str) -> str:
+        if not re.match(_VARIABLE_NAME_PATTERN, value):
+            raise ValueError(f"variable must match {_VARIABLE_NAME_PATTERN!r}: {value!r}")
+        return value
+
+    @field_validator("csv_path")
+    @classmethod
+    def validate_safe_relative_csv_path(cls, value: str) -> str:
+        if "\\" in value:
+            raise ValueError("csv_path must use POSIX separators")
+        path = PurePosixPath(value)
+        if (
+            path.is_absolute()
+            or PureWindowsPath(value).drive
+            or ".." in path.parts
+            or path.parts[:1] != ("data",)
+        ):
+            raise ValueError(f"csv_path must be a safe relative path under data/: {value!r}")
+        return value
+
+
+class SubmissionItem(_FrozenModel):
+    """One row of `submission.json` -- plan.md §2.4's exact seven-field
+    contract. No internal field (`status`, `run_id`, `cell_ids`, `page`,
+    `bbox`, error detail) may appear here."""
+
+    id: StrictInt = Field(gt=0)
+    question: NonEmptyString
+    answer: float = Field(allow_inf_nan=False)
+    relevant_docs: tuple[NonEmptyString, ...]
+    relevant_tables: tuple[NonEmptyString, ...]
+    evidence: tuple[SubmissionEvidence, ...]
+    pandas_query: NonEmptyString
+
+    @field_validator("answer")
+    @classmethod
+    def validate_finite_answer(cls, value: float) -> float:
+        if not math.isfinite(value):
+            raise ValueError("answer must be finite")
+        return value
+
+    @field_validator("relevant_tables")
+    @classmethod
+    def validate_relevant_tables(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        for value in values:
+            report_id, sep, line_start = value.rpartition("|")
+            if not sep or not report_id:
+                raise ValueError(
+                    f"relevant_tables entry must be '<report_id>|<line_start>': {value!r}"
+                )
+            if not line_start.isdigit() or int(line_start) < 1:
+                raise ValueError(
+                    f"relevant_tables line_start must be a positive integer: {value!r}"
+                )
+        return values
+
+    @field_validator("evidence")
+    @classmethod
+    def validate_unique_evidence_variables(
+        cls, values: tuple[SubmissionEvidence, ...]
+    ) -> tuple[SubmissionEvidence, ...]:
+        variables = tuple(item.variable for item in values)
+        if len(set(variables)) != len(variables):
+            raise ValueError("evidence variable names must be unique within one item")
+        return values
+
+
+class QuestionOutcome(_FrozenModel):
+    """One question's outcome through the live submission pipeline (retrieval
+    -> plan -> execution -> verification). Mirrors
+    `pipeline.contracts.PipelineQuestionResult`'s stage/code discipline, but
+    against `RawQuestion` (no gold_table_ids exist for this release)."""
+
+    id: StrictInt = Field(gt=0)
+    question: NonEmptyString
+    status: Literal["answered", "abstained", "error"]
+    stage: PipelineStage | None
+    code: NonEmptyString | None
+
+    @model_validator(mode="after")
+    def validate_consistency(self) -> Self:
+        if self.status == "answered":
+            if self.stage is not None or self.code is not None:
+                raise ValueError("an answered outcome must not carry stage/code")
+        else:
+            if self.stage is None or self.code is None:
+                raise ValueError("a non-answered outcome requires stage and code")
+        return self
+
+
+class SubmissionExportReport(_FrozenModel):
+    """Coverage report written *outside* the ZIP (plan.md §2.4 rule 9): which
+    questions made it into `submission.json` and why the rest did not."""
+
+    dataset_fingerprint: Fingerprint
+    question_count: int = Field(ge=0)
+    answered_count: int = Field(ge=0)
+    stage_counts: dict[PipelineStage, int]
+    outcomes: tuple[QuestionOutcome, ...]
+
+    @model_validator(mode="after")
+    def validate_consistency(self) -> Self:
+        if self.question_count != len(self.outcomes):
+            raise ValueError("question_count must equal len(outcomes)")
+        ids = tuple(outcome.id for outcome in self.outcomes)
+        if ids != tuple(sorted(set(ids))):
+            raise ValueError("outcomes must be sorted and unique by id")
+        if self.answered_count > self.question_count:
+            raise ValueError("answered_count cannot exceed question_count")
+        actual_answered = sum(1 for outcome in self.outcomes if outcome.status == "answered")
+        if actual_answered != self.answered_count:
+            raise ValueError("answered_count must equal the number of answered outcomes")
+        return self
+
+
+class ValidationIssue(_FrozenModel):
+    """One offline-validator finding (plan.md §2.4 rule 9: validator runs
+    before upload, never as part of the exporter's own self-report)."""
+
+    code: NonEmptyString
+    message: NonEmptyString
+
+
+class ValidationReport(_FrozenModel):
+    valid: bool
+    item_count: int = Field(ge=0)
+    issues: tuple[ValidationIssue, ...]
+
+    @model_validator(mode="after")
+    def validate_consistency(self) -> Self:
+        if self.valid and self.issues:
+            raise ValueError("a report with issues cannot be valid")
+        if not self.valid and not self.issues:
+            raise ValueError("an invalid report must carry at least one issue")
+        return self
