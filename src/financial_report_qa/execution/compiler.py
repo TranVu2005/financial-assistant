@@ -1,11 +1,15 @@
-"""Day 18 compile_plan orchestrator: FinancialQueryPlan -> CompiledQuery.
+"""Day 18/19 compile_plan orchestrator: FinancialQueryPlan -> CompiledQuery.
 
 Ties together `cell_frame` (ADR 0007 A1/B1/C2), `locator` (D1), `operations`
-(E1), and `pandas_query` (F1). This is the one place all four modules meet, and
-the one place the F1 replay check actually runs: every `answered` result is
-re-derived independently through `replay_pandas_query` on a small evidence-only
-frame before it is returned, and a mismatch is a build-breaking bug
-(`ExecutionReplayMismatchError`), never a silently wrong answer.
+(E1), `pandas_query` (F1) and `sandbox` (ADR 0008 B2/C1/D3). This is the one
+place all five modules meet, and the one place the F1 replay check actually
+runs: every `answered` result is re-derived independently -- through
+`sandbox.replay_in_sandbox`, never by calling the `pandas_query` replayer
+directly (ADR 0008 decision B2) -- on a small evidence-only frame before it
+is returned, and a mismatch is a build-breaking bug
+(`ExecutionReplayMismatchError`), never a silently wrong answer. Before any
+of that, the plan is self-validated (ADR 0008 decision E1): compile_plan
+never trusts that a caller already ran `validate_plan_semantics`.
 """
 
 from __future__ import annotations
@@ -21,9 +25,11 @@ from financial_report_qa.execution import operations
 from financial_report_qa.execution.cell_frame import build_cell_frame
 from financial_report_qa.execution.contracts import CellMatch, CompiledQuery, ExecutionIssueCode
 from financial_report_qa.execution.locator import LocateResult, locate
-from financial_report_qa.execution.pandas_query import render_pandas_query, replay_pandas_query
+from financial_report_qa.execution.pandas_query import render_pandas_query
+from financial_report_qa.execution.sandbox import replay_in_sandbox
 from financial_report_qa.normalization.units import CanonicalUnit
 from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
+from financial_report_qa.planning.plan_validator import validate_plan_semantics
 
 
 class _CompileFailure(Exception):
@@ -79,6 +85,20 @@ def compile_plan(
 ) -> CompiledQuery:
     """Compile one plan against a locked release into a locked answer or a
     typed error. Never returns a guessed value (ADR 0007 decision D1)."""
+    # ADR 0008 decision E1: never trust that a caller already validated the
+    # plan's arity (Day 19 plan Sec 1.10 -- `top_k` arity was only enforced
+    # when a caller happened to call this). Validation must run before
+    # `render_pandas_query`, which itself assumes a well-formed plan and
+    # raises an uncaught AssertionError on e.g. a `rank` plan missing
+    # `top_k`. `candidate_table_ids` is treated as its own known set here:
+    # compile_plan operates only within a plan's own bounded (1-12, ADR 0007
+    # A1) candidate ids, so the release-existence check belongs to the
+    # router that produced the plan, not here.
+    issues = validate_plan_semantics(plan, known_table_ids=frozenset(plan.candidate_table_ids))
+    if issues:
+        message = "; ".join(f"{issue.code}: {issue.message}" for issue in issues)
+        return _error(plan.operation, "plan_rejected", message, "<plan rejected before rendering>")
+
     query = render_pandas_query(plan)
 
     if plan.operation not in execution_settings.allow_operations:
@@ -90,6 +110,14 @@ def compile_plan(
         )
 
     frame = build_cell_frame(release_dir, plan.candidate_table_ids)
+    if len(frame) > execution_settings.max_rows:
+        return _error(
+            plan.operation,
+            "row_limit_exceeded",
+            f"candidate frame has {len(frame)} rows, "
+            f"exceeding max_rows={execution_settings.max_rows}",
+            query,
+        )
     period = int(plan.periods[0]) if plan.periods else None
 
     try:
@@ -101,7 +129,19 @@ def compile_plan(
     except ZeroDivisionError as exc:
         return _error(plan.operation, "division_by_zero", str(exc), query)
 
-    replayed = replay_pandas_query(query, _replay_frame(replay_rows))
+    # ADR 0008 decisions B2/C1: replay only through the sandbox, which
+    # converts every exception the replayer can raise into a typed result
+    # instead of letting it propagate (Day 19 plan Sec 1.3 measured 5
+    # distinct uncaught exception types before this fix).
+    sandbox_result = replay_in_sandbox(
+        query, _replay_frame(replay_rows), timeout_seconds=execution_settings.timeout_seconds
+    )
+    if sandbox_result.error_code is not None:
+        assert sandbox_result.error_message is not None
+        return _error(
+            plan.operation, sandbox_result.error_code, sandbox_result.error_message, query
+        )
+    replayed = sandbox_result.value
     if replayed != answer:
         raise ExecutionReplayMismatchError(
             f"pandas_query replay {replayed!r} does not match compiled answer {answer!r} "

@@ -146,6 +146,29 @@ def test_replay_rank_matches_compiled_answer() -> None:
     assert replayed == Decimal("500")
 
 
+def test_replay_rejects_deeply_nested_expression_without_recursion_error() -> None:
+    """Day 19 plan Sec 1.8: a binop nested 1,000 levels deep raises Python's
+    own RecursionError (an uncaught, undocumented failure mode) before this
+    fix. The structural depth budget must reject it with a ValueError first."""
+    frame = _frame([_row(value="1", period=2023)])
+    nested = "1" + " + 1" * 1000
+    with pytest.raises(ValueError):
+        replay_pandas_query(nested, frame)
+
+
+def test_replay_rejects_query_over_max_length() -> None:
+    frame = _frame([_row(value="1", period=2023)])
+    huge = "df1.period.isin([" + ", ".join(["2021"] * 2000) + "])"
+    with pytest.raises(ValueError):
+        replay_pandas_query(huge, frame)
+
+
+def test_replay_accepts_query_within_budget() -> None:
+    frame = _frame([_row(value="1", period=2023)])
+    nested = "1" + " + 1" * 20
+    assert replay_pandas_query(nested, frame) == Decimal("21")
+
+
 def test_replay_rejects_unsupported_syntax() -> None:
     """The replayer must fail closed on anything outside its whitelist grammar,
     never fall back to `eval`/`exec` (ADR 0007 F1)."""
@@ -158,3 +181,57 @@ def test_replay_rejects_assignment_style_injection() -> None:
     frame = _frame([_row(value="1", period=2023)])
     with pytest.raises((ValueError, SyntaxError)):
         replay_pandas_query("df1['value'].iloc[0]; import os", frame)
+
+
+def test_render_and_replay_survive_real_corpus_label_with_quote() -> None:
+    """Day 19 plan Sec 1.1: this exact label exists on a numeric cell in the
+    locked release (PNJ, 2018). Naive f-string interpolation breaks Python
+    string-literal syntax on the embedded `"` and raises an uncaught
+    SyntaxError on valid data -- render must escape via json.dumps instead."""
+    label = 'Khấu hao tài sản cố định ("TSCĐ")'
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("PNJ",),
+        periods=("2018",),
+        candidate_table_ids=TABLE_IDS,
+        metric=MetricSelector(raw_text=label),
+    )
+    query = render_pandas_query(plan)
+    frame = _frame(
+        [
+            _row(
+                company_code="PNJ",
+                row_label_canonical=None,
+                row_label_raw=label,
+                value="42",
+                period=2018,
+            )
+        ]
+    )
+    replayed = replay_pandas_query(query, frame)
+    assert replayed == Decimal("42")
+
+
+def test_render_escapes_backslash_in_raw_text() -> None:
+    label = 'A\\B "C"'
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("PNJ",),
+        periods=("2018",),
+        candidate_table_ids=TABLE_IDS,
+        metric=MetricSelector(raw_text=label),
+    )
+    query = render_pandas_query(plan)
+    frame = _frame(
+        [
+            _row(
+                company_code="PNJ",
+                row_label_canonical=None,
+                row_label_raw=label,
+                value="7",
+                period=2018,
+            )
+        ]
+    )
+    replayed = replay_pandas_query(query, frame)
+    assert replayed == Decimal("7")

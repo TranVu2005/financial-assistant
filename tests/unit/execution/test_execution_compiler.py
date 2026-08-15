@@ -424,6 +424,77 @@ def test_compile_plan_compare_companies(tmp_path: Path) -> None:
     assert result.answer == Decimal("250")
 
 
+def test_compile_plan_rejects_rank_without_top_k(tmp_path: Path) -> None:
+    """Day 19 plan Sec 1.10: `top_k` arity was only enforced when a caller
+    happened to invoke `validate_plan_semantics`. `compile_plan` must not
+    trust the caller (ADR 0008 decision E1)."""
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="X",
+                row_label_canonical="profit_after_tax",
+                value_numeric="100",
+                period="2023",
+            )
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="rank",
+        companies=("ACB", "MBB"),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="profit_after_tax"),
+        top_k=None,
+    )
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "error"
+    assert result.error_code == "plan_rejected"
+
+
+def test_compile_plan_rejects_frame_over_max_rows(tmp_path: Path) -> None:
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="X",
+                row_label_canonical="profit_after_tax",
+                value_numeric="100",
+                period="2023",
+            ),
+            _cell(
+                "cell_" + "b" * 64,
+                TABLE_ID,
+                2,
+                1,
+                row_label_raw="Y",
+                row_label_canonical="total_assets",
+                value_numeric="200",
+                period="2023",
+            ),
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="profit_after_tax"),
+    )
+    tiny_limit = ExecutionSettings(timeout_seconds=5, max_rows=1, allow_operations=("lookup",))
+    result = compile_plan(plan, release_dir, execution_settings=tiny_limit)
+    assert result.status == "error"
+    assert result.error_code == "row_limit_exceeded"
+
+
 def test_compile_plan_is_deterministic(tmp_path: Path) -> None:
     release_dir = _write_release(
         tmp_path,

@@ -9,15 +9,27 @@ validator in `plan_validator.py`, not here — see ADR 0004 for why the split.
 from __future__ import annotations
 
 import re
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
-from pydantic import model_validator
+from pydantic import StringConstraints, model_validator
 
 from financial_report_qa.normalization.metrics import METRIC_ALIASES
 from financial_report_qa.retrieval.contracts import NonEmptyString, TableId, _FrozenModel
 
 CANONICAL_METRICS: frozenset[str] = frozenset(METRIC_ALIASES.values())
 _PERIOD_PATTERN = re.compile(r"^\d{4}$")
+
+# Day 19 plan Sec 1.2/1.10: these two fields are the only free-form strings that
+# survive plan validation to reach the execution sandbox. Bounds are measured,
+# not guessed: control chars ban costs 1/5,353,511 cells; 512-char cap costs 433
+# numeric cells (0.008%); the company allowlist costs 0/1,971 documents.
+RawMetricText = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=512, pattern=r"^[^\x00-\x1f]+$"
+    ),
+]
+CompanyCode = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9]{1,16}$")]
 
 PlanOperation = Literal[
     "lookup",
@@ -40,7 +52,7 @@ class MetricSelector(_FrozenModel):
     """
 
     canonical: NonEmptyString | None = None
-    raw_text: NonEmptyString | None = None
+    raw_text: RawMetricText | None = None
 
     @model_validator(mode="after")
     def validate_exactly_one_branch(self) -> Self:
@@ -55,7 +67,7 @@ class FinancialQueryPlan(_FrozenModel):
     """One deterministically-compilable Pandas computation over candidate tables."""
 
     operation: PlanOperation
-    companies: tuple[NonEmptyString, ...]
+    companies: tuple[CompanyCode, ...]
     periods: tuple[NonEmptyString, ...]
     candidate_table_ids: tuple[TableId, ...]
     metric: MetricSelector | None = None

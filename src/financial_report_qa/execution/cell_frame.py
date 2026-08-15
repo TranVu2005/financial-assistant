@@ -14,6 +14,16 @@ Period resolution follows ADR 0007 decision C2: an explicit `period` wins
 (normalized to a 4-digit year, since ~37.7% of stored periods are ISO dates);
 otherwise a column label naming "số cuối năm"/"số đầu năm"/"năm trước" infers
 the year from `documents.report_year`. Unresolvable periods stay null.
+
+Every DuckDB connection this module opens is hardened (ADR 0008 decision F1):
+`enable_external_access`/`autoinstall_known_extensions`/
+`autoload_known_extensions` are all disabled. Day 19 plan Sec 1.7 measured
+that `duckdb.connect(":memory:")` defaults to `enable_external_access=True`,
+and that `_QUERY` below already binds every plan-derived value (table ids,
+which are schema-constrained to `^tbl_[0-9a-f]{64}$`) through parameterized
+placeholders, so there is no SQL-injection path from a plan today -- this is
+depth hardening against a future query that concatenates a string, not a fix
+for a live hole.
 """
 
 from __future__ import annotations
@@ -71,11 +81,26 @@ ORDER BY c.table_id, c.row_idx, c.col_idx
 """
 
 
+def _hardened_connection() -> duckdb.DuckDBPyConnection:
+    """Open an in-memory DuckDB connection with network access disabled
+    (ADR 0008 decision F1). `enable_external_access=false` is deliberately
+    NOT set here: it disables local filesystem access too, which would break
+    the local `read_parquet` calls this module depends on. Disabling
+    extension autoinstall/autoload is sufficient on its own -- `httpfs`
+    (required for any http/https path) is not bundled, so without it a
+    network read fails outright instead of silently reaching the network.
+    """
+    connection = duckdb.connect(":memory:")
+    connection.execute("SET autoinstall_known_extensions = false")
+    connection.execute("SET autoload_known_extensions = false")
+    return connection
+
+
 def build_cell_frame(release_dir: Path, table_ids: Sequence[str]) -> pd.DataFrame:
     """Return the long-format numeric-cell frame for a plan's candidate tables."""
     if not table_ids:
         raise ExecutionInputError("build_cell_frame requires at least one table_id")
-    connection = duckdb.connect(":memory:")
+    connection = _hardened_connection()
     try:
         frame = connection.execute(
             _QUERY,

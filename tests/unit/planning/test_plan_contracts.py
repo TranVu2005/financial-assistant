@@ -45,6 +45,28 @@ def test_metric_selector_rejects_blank_raw_text() -> None:
         MetricSelector(raw_text="   ")
 
 
+def test_metric_selector_accepts_real_corpus_label_with_quote() -> None:
+    # Day 19 plan Sec 1.1: this exact label exists on a numeric cell in the
+    # locked release (PNJ, 2018) and must not be rejected by a naive quote ban.
+    selector = MetricSelector(raw_text='Khấu hao tài sản cố định ("TSCĐ")')
+    assert selector.raw_text == 'Khấu hao tài sản cố định ("TSCĐ")'
+
+
+def test_metric_selector_rejects_raw_text_with_control_character() -> None:
+    with pytest.raises(ValidationError):
+        MetricSelector(raw_text='a"\nimport os\n"b')
+
+
+def test_metric_selector_rejects_raw_text_over_512_chars() -> None:
+    with pytest.raises(ValidationError):
+        MetricSelector(raw_text="A" * 513)
+
+
+def test_metric_selector_accepts_raw_text_at_512_chars() -> None:
+    selector = MetricSelector(raw_text="A" * 512)
+    assert len(selector.raw_text) == 512
+
+
 def _plan(**overrides: object) -> FinancialQueryPlan:
     defaults: dict[str, object] = {
         "operation": "lookup",
@@ -117,3 +139,18 @@ def test_plan_accepts_twelve_candidate_table_ids() -> None:
     ids = tuple(_table_id(_HEX_DIGITS[i]) for i in range(12))
     plan = _plan(candidate_table_ids=ids)
     assert len(plan.candidate_table_ids) == 12
+
+
+def test_plan_rejects_company_code_with_lowercase_or_symbols() -> None:
+    with pytest.raises(ValidationError):
+        _plan(companies=('ACB") | (df1.company_code == "VCB',))
+
+
+def test_plan_rejects_company_code_over_sixteen_chars() -> None:
+    with pytest.raises(ValidationError):
+        _plan(companies=("A" * 17,))
+
+
+def test_plan_accepts_real_company_code() -> None:
+    plan = _plan(companies=("ACB",))
+    assert plan.companies == ("ACB",)

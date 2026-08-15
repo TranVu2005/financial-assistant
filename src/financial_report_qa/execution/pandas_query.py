@@ -17,11 +17,21 @@ just the evidence cells themselves), not the raw multi-unit corpus. Measured
 on gold70 (Day 18 plan §1.3), evidence cells for a single compiled answer
 share one unit in every observed case (0/82 slots spanned >1 unit), so this
 is a documented boundary, not an active correctness gap.
+
+**String literals are escaped via `json.dumps`, not f-string interpolation**
+(ADR 0008 decision A2). Day 19 plan §1.1 found 1,988 real corpus row labels
+containing `"` (e.g. `Khấu hao tài sản cố định ("TSCĐ")`) that crashed
+`compile_plan` with an uncaught `SyntaxError` under naive interpolation, and
+§1.4 found that unescaped `|`/`&`/`)` in a company code could silently change
+the rendered expression's operator precedence with no exception raised at
+all. `_lit()` closes both: a JSON string literal is a valid Python string
+literal for every non-control character.
 """
 
 from __future__ import annotations
 
 import ast
+import json
 from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
@@ -35,6 +45,28 @@ _ALLOWED_ATTRS = frozenset(
 )
 _ALLOWED_METHODS = frozenset({"isin", "sort_values", "mean", "sum"})
 
+# Day 19 plan Sec 1.8/2.D (ADR 0008 decision D3): structural budgets enforced
+# before evaluation, not a preemptive timeout (unavailable on win32 -- no
+# SIGALRM/setitimer/resource module). Measured: a 1,000-level-deep BinOp chain
+# raises Python's own RecursionError at the default limit of 1,000; an
+# isin([200_000 literals]) call parses to ~200,000 AST nodes. Real rendered
+# queries on gold70 are a few hundred characters and under 15 nodes deep.
+_MAX_QUERY_LENGTH = 4096
+_MAX_AST_NODES = 2000
+_MAX_AST_DEPTH = 50
+
+
+def _lit(value: str) -> str:
+    """Render `value` as a Python string literal via JSON escaping (Day 19 plan
+    Sec 1.1/2.A). A JSON string literal is a valid Python string literal for
+    every non-control character, so this survives real corpus labels
+    containing `"` or `\\` without breaking the surrounding expression's
+    syntax -- unlike naive f-string interpolation (`f'"{value}"'`), which both
+    crashes on embedded quotes and can silently change operator precedence
+    when `value` contains `)` `|` `&`.
+    """
+    return json.dumps(value, ensure_ascii=False)
+
 
 def _metric_column_and_value(selector: MetricSelector) -> tuple[str, str]:
     if selector.canonical is not None:
@@ -47,8 +79,8 @@ def _cell_expr(*, company: str | None, selector: MetricSelector, period: str) ->
     column, value = _metric_column_and_value(selector)
     clauses = []
     if company is not None:
-        clauses.append(f'(df1.company_code == "{company}")')
-    clauses.append(f'(df1.{column} == "{value}")')
+        clauses.append(f"(df1.company_code == {_lit(company)})")
+    clauses.append(f"(df1.{column} == {_lit(value)})")
     clauses.append(f"(df1.period == {int(period)})")
     condition = " & ".join(clauses)
     return f'df1[{condition}]["value"].iloc[0]'
@@ -60,8 +92,8 @@ def _aggregate_expr(
     column, value = _metric_column_and_value(selector)
     clauses = []
     if company is not None:
-        clauses.append(f'(df1.company_code == "{company}")')
-    clauses.append(f'(df1.{column} == "{value}")')
+        clauses.append(f"(df1.company_code == {_lit(company)})")
+    clauses.append(f"(df1.{column} == {_lit(value)})")
     period_list = ", ".join(str(int(period)) for period in periods)
     clauses.append(f"(df1.period.isin([{period_list}]))")
     condition = " & ".join(clauses)
@@ -117,10 +149,10 @@ def render_pandas_query(plan: FinancialQueryPlan) -> str:
     if plan.operation == "rank":
         assert plan.metric is not None and plan.top_k is not None
         column, value = _metric_column_and_value(plan.metric)
-        companies_list = ", ".join(f'"{company}"' for company in plan.companies)
+        companies_list = ", ".join(_lit(company) for company in plan.companies)
         condition = (
             f"(df1.company_code.isin([{companies_list}])) & "
-            f'(df1.{column} == "{value}") & '
+            f"(df1.{column} == {_lit(value)}) & "
             f"(df1.period == {int(period or '0')})"
         )
         index = plan.top_k - 1
@@ -129,17 +161,46 @@ def render_pandas_query(plan: FinancialQueryPlan) -> str:
     raise ValueError(f"unsupported operation for pandas_query rendering: {plan.operation}")
 
 
+def _ast_depth(node: ast.AST) -> int:
+    """Iterative (non-recursive) depth walk so a maliciously deep tree cannot
+    raise RecursionError while we are trying to reject it."""
+    max_depth = 0
+    stack: list[tuple[ast.AST, int]] = [(node, 1)]
+    while stack:
+        current, depth = stack.pop()
+        max_depth = max(max_depth, depth)
+        for child in ast.iter_child_nodes(current):
+            stack.append((child, depth + 1))
+    return max_depth
+
+
 def replay_pandas_query(query: str, frame: pd.DataFrame) -> Decimal:
     """Execute a rendered `pandas_query` string through a whitelist AST
-    interpreter and return its scalar result. Raises ValueError (or, for
-    malformed source, SyntaxError from `ast.parse`) on anything outside the
-    grammar `render_pandas_query` produces — deny by default, never eval/exec.
+    interpreter and return its scalar result. Raises ValueError on anything
+    outside the grammar `render_pandas_query` produces or outside the
+    structural budgets in ADR 0008 decision D3 (query length, AST node count,
+    AST depth) — deny by default, never eval/exec.
     """
+    if len(query) > _MAX_QUERY_LENGTH:
+        raise ValueError(f"query exceeds max length {_MAX_QUERY_LENGTH}: {len(query)} chars")
+
     tree = ast.parse(query, mode="eval")
+
+    node_count = sum(1 for _ in ast.walk(tree))
+    if node_count > _MAX_AST_NODES:
+        raise ValueError(f"query exceeds max AST node count {_MAX_AST_NODES}: {node_count} nodes")
+
+    depth = _ast_depth(tree.body)
+    if depth > _MAX_AST_DEPTH:
+        raise ValueError(f"query exceeds max AST depth {_MAX_AST_DEPTH}: {depth}")
+
     result = _eval_node(tree.body, frame)
     if isinstance(result, Decimal):
         return result
-    return Decimal(str(result))
+    try:
+        return Decimal(str(result))
+    except ArithmeticError as exc:
+        raise ValueError(f"result is not a valid scalar: {result!r}") from exc
 
 
 def _eval_node(node: ast.AST, frame: pd.DataFrame) -> Any:

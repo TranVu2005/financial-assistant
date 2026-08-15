@@ -1011,11 +1011,53 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 19 — Sandbox executor
 
-- [ ] Không dùng `eval`/`exec` trên chuỗi LLM.
-- [ ] Giới hạn số dòng, thời gian, bộ nhớ hợp lý và operation whitelist.
-- [ ] Cấm filesystem ngoài data path, network, subprocess và import tùy ý.
-- [ ] Viết security tests với prompt injection và plan độc hại.
+- [x] Không dùng `eval`/`exec` trên chuỗi LLM.
+- [x] Giới hạn số dòng, thời gian, bộ nhớ hợp lý và operation whitelist.
+- [x] Cấm filesystem ngoài data path, network, subprocess và import tùy ý.
+- [x] Viết security tests với prompt injection và plan độc hại.
 - **Đầu ra:** các payload độc hại bị từ chối có error code.
+
+> **⚠️ Chẩn đoán ngày 2026-08-15 (trước khi bắt đầu):** Ngày 19 **không** phải bọc thêm một lớp bảo
+> mật quanh thứ đang chạy tốt — nó phải đóng biên tin cậy mà Ngày 18 để hở, và biên đó đang rò rỉ
+> **lỗi correctness trước cả lỗi bảo mật**. `render_pandas_query` nội suy chuỗi tự do bằng f-string,
+> trong khi **1.988 nhãn dòng có thật** (1.790 bảng, 9.944 ô số) chứa dấu `"` theo đúng quy ước viết
+> tắt tiếng Việt (`Khấu hao tài sản cố định ("TSCĐ")`). Đưa một nhãn như thế vào `raw_text` — **đúng
+> thứ ADR 0004 phương án C bảo planner làm** — khiến `compile_plan` **ném `SyntaxError` không ai
+> bắt**, tái hiện 3/3 lần trên MBB/PNJ. Nên **cấm dấu `"` là phương án chết**, phải escape đúng.
+> Đo thêm: replay để thoát ra **5 loại exception** (`ValueError`, `SyntaxError`, `KeyError`,
+> `RecursionError`, `InvalidOperation`) trong khi compiler chỉ bắt 1, và lời gọi replay lại nằm
+> **ngoài** khối `try`; nội suy vào `companies` sinh được query **đúng cú pháp nhưng sai ngữ nghĩa**
+> (`|` nới rộng bộ lọc) — không exception nào để bắt. Về tài nguyên: trần tuyệt đối của mọi frame
+> hợp lệ là **4.002 dòng** (tổng 12 bảng lớn nhất corpus) trong khi `max_rows: 100000` — **gấp 25
+> lần**, tức trang trí chứ không phải giới hạn; `compile_plan` thật chỉ tốn p95 1,216 s / max 1,424 s.
+> Trên `win32` **không có** `SIGALRM`, `setitimer` hay module `resource` → timeout/memory preemptive
+> in-process **không khả thi**, phải chặn theo cấu trúc (độ dài/node/độ sâu/số dòng) thay vì giả vờ
+> ngắt. DuckDB mặc định bật `enable_external_access` + autoload extension (SQL thì đã tham số hoá,
+> không có lỗ injection). Và `timeout_seconds` + `max_rows` vẫn là **code chết** — lần thứ ba sau
+> khối `llm:` (trước Ngày 17) và `execution:` (trước Ngày 18).
+>
+> **Kế hoạch chi tiết:** [docs/plans/day19-sandbox-executor.md](docs/plans/day19-sandbox-executor.md).
+> ADR: [0008](docs/decisions/0008-execution-sandbox-contract.md).
+>
+> **Kết quả sau khi cài đặt xong (2026-08-15):** nhãn `Khấu hao tài sản cố định ("TSCĐ")` — nhãn
+> corpus thật từng gây `SyntaxError` không ai bắt — nay compile ra `answered` đúng. Chạy lại CLI
+> `compile-plans` trên gold70 sau toàn bộ thay đổi hardening: **vẫn đúng 30/51 (58,8 %)**, phân rã
+> lỗi không đổi (`metric_not_found` 11, `period_unresolved` 8, `cell_ambiguous` 2) — xác nhận Ngày 19
+> chỉ hardening, không đổi hành vi compile hợp lệ. 8/8 test bảo mật (`tests/security/`) xanh, phủ cả
+> tám lớp payload trong kế hoạch. Một hiệu chỉnh phát hiện giữa chừng: `enable_external_access=false`
+> — dự định ban đầu cho quyết định F1 — hoá ra chặn luôn `read_parquet` cục bộ (8/8 test `cell_frame`
+> đỏ ngay khi viết test TDD cho 19.7); sửa thành chỉ tắt autoinstall/autoload extension, vẫn chặn
+> được mạng (thiếu `httpfs`) mà không phá đọc file local — xem [ADR 0008 Quyết định
+> F](docs/decisions/0008-execution-sandbox-contract.md) để biết chi tiết hiệu chỉnh. Verification đầy
+> đủ: 1.020 test qua (4 skip do hạn chế quyền Windows), `ruff check`/`format --check` sạch trên 225
+> file, `mypy` sạch trên 104 file `src/`. Lệnh tái tạo:
+> ```
+> uv run --frozen --no-sync financial-report-qa execution compile-plans \
+>   --release-lock data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json \
+>   --gold-path data/qa/retrieval-gold-v1.jsonl \
+>   --output-dir artifacts/evaluations/day19 \
+>   --execution-config configs/base.yaml configs/local_rtx3050.yaml
+> ```
 
 #### Ngày 20 — Answer verifier và citation
 

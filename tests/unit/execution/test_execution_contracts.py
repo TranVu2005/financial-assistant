@@ -5,7 +5,11 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from financial_report_qa.execution.contracts import CellMatch, CompiledQuery
+from financial_report_qa.execution.contracts import (
+    CellMatch,
+    CompiledQuery,
+    ExecutionIssueCode,
+)
 
 
 def _cell_match(**overrides: object) -> CellMatch:
@@ -107,3 +111,11 @@ def test_compiled_query_answered_accepts_valid_result() -> None:
         }
     )
     assert result.answer == Decimal("100")
+
+
+def test_execution_issue_code_includes_day19_sandbox_codes() -> None:
+    """ADR 0008 decision G1: four new codes for the sandbox hardening layer."""
+    from typing import get_args
+
+    codes = set(get_args(ExecutionIssueCode))
+    assert {"plan_rejected", "query_rejected", "budget_exceeded", "row_limit_exceeded"} <= codes

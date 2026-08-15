@@ -13,7 +13,7 @@ retrieval:
 
 execution:
   timeout_seconds: 5
-  max_rows: 100000
+  max_rows: 20000
   allow_operations:
     - lookup
     - compare

@@ -954,3 +954,62 @@ code có kiểu cho cả hai, không nới `locate` để "cứu" thêm khe bằ
 
 `pytest -q`: 987 passed, 4 skipped (chỉ symlink/ACL Windows). `ruff check .` / `ruff format --check .`:
 sạch. `mypy`: 0 lỗi (103 file `src`).
+
+## Day 19 Sandbox Executor
+
+**Chẩn đoán trước khi viết code:** Ngày 19 không phải bọc thêm một lớp bảo mật quanh thứ đang chạy
+tốt — nó phải đóng một biên tin cậy đang rò rỉ **lỗi correctness**, không chỉ lỗi bảo mật giả định.
+`render_pandas_query` nội suy chuỗi tự do bằng f-string; **1.988 nhãn dòng có thật** trong corpus
+(1.790 bảng, 9.944 ô số) chứa dấu `"` theo đúng quy ước viết tắt tiếng Việt
+(`Khấu hao tài sản cố định ("TSCĐ")`). Đưa một nhãn như thế vào `MetricSelector.raw_text` — đúng thứ
+ADR 0004 phương án C bảo planner phải làm — khiến `compile_plan` ném `SyntaxError` không ai bắt, tái
+hiện 3/3 lần trên dữ liệu MBB/PNJ thật. Xem
+[docs/plans/day19-sandbox-executor.md](docs/plans/day19-sandbox-executor.md) và
+[ADR 0008](docs/decisions/0008-execution-sandbox-contract.md) (quyết định A2 escape đúng bằng
+`json.dumps` / B2 `sandbox.py` là cổng duy nhất tới replay / C1 bắt `Exception` rộng đổi thành mã lỗi
+có kiểu / D3 chặn theo cấu trúc, đo thời gian hậu nghiệm / E1 `compile_plan` tự validate / F1 hardening
+DuckDB / G1 bốn mã lỗi mới).
+
+### Kiến trúc: sandbox là cổng duy nhất tới replay, compiler tự gác biên
+
+```
+execution.compiler.compile_plan(plan, release_dir, execution_settings)
+  ├─ plan_validator.validate_plan_semantics   # ADR 0008 E1: tự validate, không tin caller — chạy
+  │                                            #   TRƯỚC render_pandas_query (nó giả định plan hợp lệ)
+  ├─ cell_frame.build_cell_frame              # kiểm max_rows ngay sau khi build (row_limit_exceeded)
+  ├─ locator / operations                     # không đổi so với Ngày 18
+  └─ sandbox.replay_in_sandbox                # ADR 0008 B2/C1/D3: gọi pandas_query.replay_pandas_query
+                                               #   bên trong, bắt MỌI Exception, đổi thành query_rejected;
+                                               #   đo thời gian, budget_exceeded nếu vượt timeout_seconds
+```
+
+`pandas_query.py` tự thêm ba ngân sách cấu trúc trước khi diễn giải AST (độ dài chuỗi ≤ 4.096, số node
+≤ 2.000, độ sâu ≤ 50) — chặn *trước khi chạy*, vì trên Windows (`win32`) **không tồn tại**
+`signal.SIGALRM`/`signal.setitimer`/module `resource`, nên không thể ngắt một phép tính đang chạy từ
+bên ngoài. `sandbox.py` chỉ đo thời gian *sau khi* replay xong và trả `budget_exceeded` nếu vượt
+`timeout_seconds` — đây là phát hiện hậu nghiệm, không phải preemptive timeout, ghi rõ trong ADR để
+không ai hiểu nhầm.
+
+### Một hiệu chỉnh phát hiện giữa chừng bởi chính TDD
+
+Kế hoạch ban đầu định tắt cả `enable_external_access` lẫn autoinstall/autoload extension cho mọi
+connection DuckDB. Viết test TDD cho việc này (nhiệm vụ 19.7) lộ ra ngay: `enable_external_access=false`
+chặn **toàn bộ** filesystem, kể cả `read_parquet` cục bộ mà `cell_frame` phụ thuộc — 8/8 test
+`cell_frame` đỏ với `PermissionException`. Sửa lại: chỉ tắt autoinstall/autoload là đủ để chặn mạng
+(thiếu extension `httpfs` thì không đọc được `http(s)://`), không cần và không được tắt
+`enable_external_access`. Đây là ví dụ cụ thể cho lý do TDD bắt buộc ở dự án này — một quyết định
+"hardening" tưởng vô hại suýt phá chức năng chính nếu không có test đỏ bắt được trước khi merge.
+
+### Kết quả sau khi cài đặt xong
+
+| Số đo | Giá trị |
+|---|---:|
+| Nhãn corpus thật có `"` compile ra `answered` đúng | có (trước đây `SyntaxError`) |
+| gold70 resolved rate sau toàn bộ hardening | **30/51 (58,8 %)** — không đổi so với Ngày 18 |
+| Phân rã lỗi gold70 | `metric_not_found` 11, `period_unresolved` 8, `cell_ambiguous` 2 — không đổi |
+| Test bảo mật (`tests/security/`, 8 lớp payload) | 8/8 xanh |
+| `ExecutionIssueCode` | 10 mã (6 cũ + `plan_rejected`, `query_rejected`, `budget_exceeded`, `row_limit_exceeded`) |
+| `max_rows` cấu hình | 20.000 (hạ từ 100.000 — trần tuyệt đối toàn corpus đo được chỉ 4.002) |
+
+`pytest -q`: 1.020 passed, 4 skipped (chỉ symlink/ACL Windows). `ruff check .` / `ruff format --check .`:
+sạch trên 225 file. `mypy`: 0 lỗi (104 file `src`).

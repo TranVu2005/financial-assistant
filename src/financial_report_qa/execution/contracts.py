@@ -23,6 +23,11 @@ ExecutionIssueCode = Literal[
     "cell_ambiguous",
     "unit_incompatible",
     "division_by_zero",
+    # Day 19 sandbox hardening codes (ADR 0008 decision G1).
+    "plan_rejected",
+    "query_rejected",
+    "budget_exceeded",
+    "row_limit_exceeded",
 ]
 
 CellId = Annotated[str, StringConstraints(pattern=r"^cell_[0-9a-f]{64}$")]

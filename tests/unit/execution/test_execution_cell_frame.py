@@ -285,6 +285,25 @@ def test_build_cell_frame_rejects_empty_table_ids(tmp_path: Path) -> None:
         build_cell_frame(release_dir, [])
 
 
+def test_hardened_connection_blocks_external_network_access() -> None:
+    """ADR 0008 decision F1: Day 19 plan Sec 1.7 measured that
+    `duckdb.connect(":memory:")` defaults to `enable_external_access=True`
+    and autoloads/autoinstalls extensions -- disable all three so the engine
+    that reads the release cannot reach the network, even though no plan
+    field ever reaches raw SQL (candidate_table_ids are placeholder-bound,
+    schema-constrained to `^tbl_[0-9a-f]{64}$`)."""
+    import duckdb
+
+    from financial_report_qa.execution.cell_frame import _hardened_connection
+
+    connection = _hardened_connection()
+    try:
+        with pytest.raises(duckdb.Error):
+            connection.execute("SELECT * FROM read_csv_auto('https://example.com/x.csv')")
+    finally:
+        connection.close()
+
+
 def test_build_cell_frame_carries_row_label_and_value_columns(tmp_path: Path) -> None:
     release_dir = _write_release(tmp_path)
     frame = build_cell_frame(release_dir, [TABLE_ID])
