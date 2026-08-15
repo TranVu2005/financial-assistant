@@ -424,6 +424,38 @@ def test_compile_plan_compare_companies(tmp_path: Path) -> None:
     assert result.answer == Decimal("250")
 
 
+def test_compile_plan_missing_unit_is_unit_missing_not_unit_incompatible(tmp_path: Path) -> None:
+    """Day 20 plan Sec 1.3: a cell with no recorded unit (20.7% of numeric
+    cells corpus-wide) must be reported as `unit_missing`, distinct from
+    `unit_incompatible` (a mixed-unit conversion failure) -- ADR 0009 C1."""
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="Thu nhap khac",
+                row_label_canonical="profit_after_tax",
+                value_numeric="100",
+                period="2023",
+                unit=None,
+            )
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="profit_after_tax"),
+    )
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "error"
+    assert result.error_code == "unit_missing"
+
+
 def test_compile_plan_rejects_rank_without_top_k(tmp_path: Path) -> None:
     """Day 19 plan Sec 1.10: `top_k` arity was only enforced when a caller
     happened to invoke `validate_plan_semantics`. `compile_plan` must not

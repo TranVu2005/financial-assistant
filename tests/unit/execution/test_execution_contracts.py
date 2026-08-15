@@ -119,3 +119,19 @@ def test_execution_issue_code_includes_day19_sandbox_codes() -> None:
 
     codes = set(get_args(ExecutionIssueCode))
     assert {"plan_rejected", "query_rejected", "budget_exceeded", "row_limit_exceeded"} <= codes
+
+
+def test_execution_issue_code_includes_unit_missing() -> None:
+    """ADR 0009 decision C1: a distinct code from `unit_incompatible` -- 'no
+    unit was recorded' is a different failure than 'units could not convert'."""
+    from typing import get_args
+
+    assert "unit_missing" in get_args(ExecutionIssueCode)
+
+
+def test_cell_match_rejects_fabricated_unit_string() -> None:
+    """Day 20 plan Sec 1.3: `str(float('nan'))` == 'nan' must never pass as a
+    unit -- ADR 0009 decision C1 constrains CellMatch.unit to the 6 real
+    CanonicalUnit values."""
+    with pytest.raises(ValidationError):
+        _cell_match(unit="nan")

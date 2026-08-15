@@ -13,6 +13,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, StringConstraints, model_validator
 
+from financial_report_qa.normalization.units import CanonicalUnit
 from financial_report_qa.planning.plan_contracts import ExpectedUnit, PlanOperation
 from financial_report_qa.retrieval.contracts import NonEmptyString, TableId, _FrozenModel
 
@@ -28,6 +29,8 @@ ExecutionIssueCode = Literal[
     "query_rejected",
     "budget_exceeded",
     "row_limit_exceeded",
+    # Day 20 answer-verification codes (ADR 0009 decision C1).
+    "unit_missing",
 ]
 
 CellId = Annotated[str, StringConstraints(pattern=r"^cell_[0-9a-f]{64}$")]
@@ -39,7 +42,11 @@ class CellMatch(_FrozenModel):
     table_id: TableId
     cell_ids: tuple[CellId, ...]
     value: Decimal
-    unit: NonEmptyString
+    # ADR 0009 decision C1: constrained to the 6 real CanonicalUnit values so
+    # a fabricated string (Day 20 plan Sec 1.3: `str(float('nan'))` == 'nan',
+    # produced when DuckDB's pandas conversion turns a NULL unit into NaN)
+    # can never pass as evidence.
+    unit: CanonicalUnit
     period: int = Field(ge=1900, le=2100)
     period_inferred: bool
 

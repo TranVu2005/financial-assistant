@@ -142,6 +142,18 @@ def test_locate_filters_by_company_code_for_compare_companies() -> None:
     assert result.match.cell_ids == (CELL_A,)
 
 
+def test_locate_returns_unit_missing_when_resolved_unit_is_null() -> None:
+    """Day 20 plan Sec 1.3 / ADR 0009 decision C1: a cell with no recorded
+    unit must be reported as `unit_missing`, not stringified into a
+    fabricated 'nan' CellMatch and misclassified as `unit_incompatible`
+    downstream."""
+    frame = _frame([_row(cell_id=CELL_A, value="100", unit=None)])  # type: ignore[arg-type]
+    result = locate(frame, MetricSelector(canonical="cash_and_cash_equivalents"), 2020)
+    assert result.match is None
+    assert result.error_code == "unit_missing"
+    assert result.error_message is not None
+
+
 def test_locate_marks_period_inferred_from_frame() -> None:
     frame = _frame([_row(cell_id=CELL_A, value="900", period_inferred=True)])
     result = locate(frame, MetricSelector(canonical="cash_and_cash_equivalents"), 2020)

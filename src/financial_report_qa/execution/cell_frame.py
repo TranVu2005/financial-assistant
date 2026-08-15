@@ -115,4 +115,10 @@ def build_cell_frame(release_dir: Path, table_ids: Sequence[str]) -> pd.DataFram
         connection.close()
     frame["period"] = frame["period"].astype("Int64")
     frame["period_inferred"] = frame["period_inferred"].astype(bool)
+    # Day 20 plan Sec 1.3 / ADR 0009 decision C1: when a table mixes a cell
+    # with an explicit unit and a cell with SQL NULL unit, DuckDB's pandas
+    # conversion for that column turns the null into a genuine float NaN
+    # rather than None -- `str(nan)` is the fabricated unit string `'nan'`.
+    # Force it back to a real missing value so `locator.py` can detect it.
+    frame["unit"] = frame["unit"].astype(object).where(frame["unit"].notna(), None)
     return frame.loc[:, list(CELL_FRAME_COLUMNS)]

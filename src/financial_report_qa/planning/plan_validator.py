@@ -219,7 +219,10 @@ def _validate_growth_rate(plan: FinancialQueryPlan) -> tuple[PlanValidationIssue
         *_check_chronological_periods(plan),
         *_check_single_metric(plan, required=True),
         *_check_forbidden_extras(plan),
-        *_check_expected_unit(plan, allowed=frozenset({"percent"})),
+        # ADR 0009 decision B1: `ratio` is the computed unit (executor
+        # hardcodes it), `percent` is its presentation form -- both are valid
+        # declarations, not a contradiction to resolve at validation time.
+        *_check_expected_unit(plan, allowed=frozenset({"percent", "ratio"})),
     )
 
 

@@ -279,6 +279,60 @@ def test_build_cell_frame_preserves_explicit_period_over_column_label_marker(
     assert bool(row["period_inferred"]) is False
 
 
+def test_build_cell_frame_keeps_null_unit_as_null_not_nan_string(tmp_path: Path) -> None:
+    """Day 20 plan Sec 1.3 / ADR 0009 decision C1: when a table mixes a cell
+    with an explicit unit and a cell with `unit IS NULL`, DuckDB's pandas
+    conversion turns the null cell's unit into a genuine float NaN rather
+    than None -- `str(nan)` is the string `'nan'`, a fabricated unit that
+    must never reach `CellMatch`. Reproduced with the minimal fixture below:
+    a single-unit table does NOT trigger it, only a mixed table does."""
+    release_dir = _write_release(
+        tmp_path,
+        cells=[
+            {
+                "cell_id": "cell_" + "a" * 64,
+                "table_id": TABLE_ID,
+                "row_idx": 0,
+                "col_idx": 1,
+                "row_label_raw": "X",
+                "row_label_canonical": None,
+                "row_group_context_raw": None,
+                "column_label_raw": "Năm 2020",
+                "column_label_canonical": None,
+                "value_raw": "5",
+                "value_numeric": Decimal("5"),
+                "period": "2020",
+                "unit": "VND",
+                "source_line_start": 1,
+                "source_line_end": 1,
+                "extraction_confidence": 0.9,
+            },
+            {
+                "cell_id": "cell_" + "b" * 64,
+                "table_id": TABLE_ID,
+                "row_idx": 1,
+                "col_idx": 1,
+                "row_label_raw": "Y",
+                "row_label_canonical": None,
+                "row_group_context_raw": None,
+                "column_label_raw": "Năm 2020",
+                "column_label_canonical": None,
+                "value_raw": "7",
+                "value_numeric": Decimal("7"),
+                "period": "2020",
+                "unit": None,
+                "source_line_start": 2,
+                "source_line_end": 2,
+                "extraction_confidence": 0.9,
+            },
+        ],
+    )
+    frame = build_cell_frame(release_dir, [TABLE_ID])
+    row = frame.set_index("cell_id").loc["cell_" + "b" * 64]
+    assert pd.isna(row["unit"])
+    assert str(row["unit"]) != "nan"
+
+
 def test_build_cell_frame_rejects_empty_table_ids(tmp_path: Path) -> None:
     release_dir = _write_release(tmp_path)
     with pytest.raises(ExecutionInputError):

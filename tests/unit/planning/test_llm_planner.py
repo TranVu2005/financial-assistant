@@ -126,15 +126,16 @@ def test_schema_invalid_plan_twice_abstains_with_llm_plan_invalid() -> None:
 
 
 def test_semantically_invalid_plan_twice_abstains_with_llm_plan_invalid() -> None:
-    """growth_rate forbids `expected_unit` values other than "percent" —
-    valid JSON, valid `LLMPlanOutput`, but rejected by `validate_plan_semantics`."""
+    """growth_rate forbids `expected_unit` values other than "percent"/"ratio"
+    (ADR 0009 decision B1) — valid JSON, valid `LLMPlanOutput`, but rejected
+    by `validate_plan_semantics`."""
     bad_unit = json.dumps(
         {
             "operation": "growth_rate",
             "companies": ["NVL"],
             "periods": ["2022", "2023"],
             "metric": {"canonical": "net_revenue"},
-            "expected_unit": "ratio",
+            "expected_unit": "VND",
         }
     )
 

@@ -15,10 +15,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import cast
 
 import pandas as pd
 
 from financial_report_qa.execution.contracts import CellMatch, ExecutionIssueCode
+from financial_report_qa.normalization.units import CanonicalUnit
 from financial_report_qa.planning.plan_contracts import MetricSelector
 
 
@@ -85,12 +87,26 @@ def locate(
             ),
         )
 
+    resolved_unit = distinct["unit"].iloc[0]
+    if pd.isna(resolved_unit):
+        # ADR 0009 decision C1: a missing unit is a different failure than an
+        # incompatible one. `str(resolved_unit)` here would be either 'None'
+        # or the fabricated 'nan' (Day 20 plan Sec 1.3) -- neither is a real
+        # CanonicalUnit, so this must be caught before CellMatch construction.
+        return LocateResult(
+            match=None,
+            error_code="unit_missing",
+            error_message=(
+                f"metric '{_selector_label(selector)}' at period {period} has no recorded unit"
+            ),
+        )
+
     return LocateResult(
         match=CellMatch(
             table_id=str(period_rows["table_id"].iloc[0]),
             cell_ids=tuple(period_rows["cell_id"].tolist()),
             value=Decimal(str(distinct["value"].iloc[0])),
-            unit=str(distinct["unit"].iloc[0]),
+            unit=cast(CanonicalUnit, str(resolved_unit)),
             period=period,
             period_inferred=bool(period_rows["period_inferred"].iloc[0]),
         ),

@@ -95,6 +95,16 @@ def test_growth_rate_expected_unit_mismatch_is_rejected() -> None:
     assert "expected_unit_mismatch" in _codes(plan)
 
 
+def test_growth_rate_accepts_ratio_as_expected_unit() -> None:
+    """Day 20 plan Sec 1.2 / ADR 0009 decision B1: `compile_growth_rate`
+    hardcodes its return unit to 'ratio', so a plan declaring 'ratio' must be
+    just as valid as one declaring 'percent' -- before this fix, no valid
+    growth_rate plan could ever declare the unit the executor actually
+    returns."""
+    plan = _plan(operation="growth_rate", periods=("2022", "2023"), expected_unit="ratio")
+    assert _codes(plan) == ()
+
+
 def test_valid_ratio_plan_has_no_issues() -> None:
     plan = _plan(
         operation="ratio",

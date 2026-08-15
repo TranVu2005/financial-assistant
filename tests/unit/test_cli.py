@@ -68,6 +68,34 @@ def test_execution_cli_does_not_hide_unexpected_programming_errors(
         )
 
 
+def test_verification_cli_does_not_hide_unexpected_programming_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Would fail if the product boundary turns programmer bugs into exit code 2."""
+    import financial_report_qa.verification.cli as verification_cli
+
+    def unexpected_resolver(*_: object, **__: object) -> object:
+        raise ValueError("programmer bug")
+
+    monkeypatch.setattr(verification_cli, "resolve_retrieval_release", unexpected_resolver)
+
+    with pytest.raises(ValueError, match="programmer bug"):
+        main(
+            [
+                "verification",
+                "verify-answers",
+                "--release-lock",
+                "lock.json",
+                "--gold-path",
+                "gold.jsonl",
+                "--output-dir",
+                "out",
+                "--execution-config",
+                "execution.yaml",
+            ]
+        )
+
+
 def test_retrieval_cli_does_not_hide_unexpected_programming_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

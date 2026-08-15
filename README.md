@@ -1013,3 +1013,58 @@ chặn **toàn bộ** filesystem, kể cả `read_parquet` cục bộ mà `cell_
 
 `pytest -q`: 1.020 passed, 4 skipped (chỉ symlink/ACL Windows). `ruff check .` / `ruff format --check .`:
 sạch trên 225 file. `mypy`: 0 lỗi (104 file `src`).
+
+## Day 20 Answer Verifier và Citation
+
+**Chẩn đoán trước khi viết code:** phát hiện lớn nhất không nằm trong bốn gạch đầu dòng của plan.md —
+**bộ QA không có một đáp án số nào được gán nhãn** (`GoldRetrievalQuestion` không có trường "answer"),
+nên cổng Ngày 21 ("answer accuracy ≥ 0,85") hiện không tính được. May là gán nhãn khả thi: 33/33 ô
+evidence trên gold70 truy ngược được 100% tới đường dẫn tài liệu + số dòng nguồn. Đo thêm hai chốt
+chặn: `expected_unit` NULL 30/30 plan **và** mâu thuẫn không thể thoả mãn (`_validate_growth_rate`
+chỉ cho `percent`, `compile_growth_rate` hardcode trả `ratio`) — vô hình vì rule planner bỏ trống
+trường này, nhưng prompt LLM Ngày 17 đang dạy model đặt `"percent"`; và 20,7% ô số toàn corpus không
+có đơn vị, NULL biến thành chuỗi bịa `'nan'` lọt vào `CellMatch.unit`, quy oan thành
+`unit_incompatible`. Xem [docs/plans/day20-answer-verifier-citation.md](docs/plans/day20-answer-verifier-citation.md)
+và [ADR 0009](docs/decisions/0009-answer-package-contract.md) (quyết định A2 gán nhãn tay từ dòng
+nguồn / B1 `ratio`↔`percent` là cùng đơn vị / C1 mã lỗi `unit_missing` riêng / D1 hai phép so dung
+sai khác nhau / E1 `AnswerPackage` tự chứa / F1 template trước LLM tuỳ chọn / G1 package
+`verification/` mới).
+
+### Kiến trúc: builder gộp checks + templates thành AnswerPackage tự kiểm được
+
+```
+verification.builder.build_answer_package(plan, compiled, retrieved_table_ids, citation_lookup)
+  ├─ templates.render_answer/render_sentence   # F1: template tiếng Việt, không cần LLM
+  ├─ checks.check_recompute_mismatch           # tính lại từ evidence qua operations.py, so tuyệt đối
+  ├─ checks.check_unit_not_presentable         # B1: bảng tương đương ratio<->percent
+  ├─ checks.check_evidence_outside_retrieval   # E1: evidence phải ⊆ retrieved_table_ids
+  ├─ checks.check_display_roundtrip_mismatch   # D1: dung sai = độ chính xác hiển thị đã khai báo
+  └─ checks.check_period_inferred_warning      # cảnh báo, không chặn — 6/30 đáp án dựa kỳ suy diễn
+```
+
+`numeric_guard.py` là hàng rào riêng cho nhánh LLM diễn đạt tuỳ chọn: mọi token số trong văn bản sinh
+ra phải nằm trong danh sách trắng {đáp án đã khoá, `plan.periods`/`top_k`, giá trị ô evidence} — token
+lạ thì **từ chối** bản diễn đạt và rơi về template, không phải cảnh báo rồi vẫn dùng.
+
+### Một bug thật bị bắt bởi chính vòng chạy end-to-end
+
+Sau khi cài xong, chạy CLI `verify-answers` thật trên gold70 lần đầu cho ra **17/30 đáp án bị
+`rejected` oan** với mã `display_roundtrip_mismatch`. Nguyên nhân: regex kiểm tra trong `checks.py`
+chỉ đọc được **nhóm dấu phẩy đầu tiên** của số định dạng hàng nghìn — `"84,420,878 VND"` bị đọc thành
+`84420` thay vì `84420878`. Viết test đỏ tái hiện đúng chuỗi thật lấy từ báo cáo gold70, sửa regex,
+chạy lại: 0/30 bị ảnh hưởng. Đây đúng lý do dự án này bắt buộc TDD và chạy end-to-end thật trước khi
+báo cáo xong việc, không chỉ tin vào test tổng hợp.
+
+### Kết quả sau khi cài đặt xong
+
+| Số đo | Giá trị |
+|---|---:|
+| `data/qa/answer-gold-v1.jsonl` | 30 nhãn gán tay từ dòng nguồn — lần đầu tồn tại |
+| Đối chiếu tự động 51 ô evidence với dòng nguồn | 27/30 khớp tuyệt đối, 3/30 lệch ~2×10⁻³ VND (artifact float ingestion, đã ghi rõ) |
+| gold70: answered → verified | **30/30** đều `verified`, 0 `rejected` |
+| Accuracy so với answer-gold-v1 | **0,9** (27/30) |
+| gold70 resolved rate | **30/51 (58,8 %)** — không đổi so với Ngày 19 |
+| `ExecutionIssueCode` | 11 mã (10 cũ + `unit_missing`) |
+
+`pytest -q`: 1.083 passed, 4 skipped (chỉ symlink/ACL Windows). `ruff check .` / `ruff format --check .`:
+sạch trên 240 file. `mypy`: 0 lỗi (112 file `src`).

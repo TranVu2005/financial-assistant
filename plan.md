@@ -1061,11 +1061,61 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 20 — Answer verifier và citation
 
-- [ ] Kiểm tra answer numeric với kết quả executor và tolerance.
-- [ ] Chuẩn hóa scale/unit; phát hiện trộn nghìn/triệu/tỷ và phần trăm/tỷ lệ.
-- [ ] Xác nhận mọi input cell đều thuộc bảng đã retrieve.
-- [ ] Sinh câu trả lời theo template; LLM chỉ được diễn đạt khi số đã khóa.
+- [x] Kiểm tra answer numeric với kết quả executor và tolerance.
+- [x] Chuẩn hóa scale/unit; phát hiện trộn nghìn/triệu/tỷ và phần trăm/tỷ lệ.
+- [x] Xác nhận mọi input cell đều thuộc bảng đã retrieve.
+- [x] Sinh câu trả lời theo template; LLM chỉ được diễn đạt khi số đã khóa.
 - **Đầu ra:** không có số mới do LLM tự thêm vào câu trả lời.
+
+> **⚠️ Chẩn đoán ngày 2026-08-15 (trước khi bắt đầu):** phát hiện lớn nhất không nằm trong bốn gạch
+> đầu dòng trên — **bộ QA hiện không có một đáp án số nào được gán nhãn**. `GoldRetrievalQuestion`
+> chỉ có `gold_table_ids`/`gold_evidence`, **0 trường chứa "answer"**, và `data/qa/` không có file
+> đáp án. Nên "kiểm tra answer numeric" ở Ngày 20 chỉ có thể là **nhất quán nội bộ**, không phải độ
+> chính xác — và **cổng Ngày 21 ("answer accuracy ≥ 0,85") hiện không tính được**. Ngày 20 phải sinh
+> `data/qa/answer-gold-v1.jsonl`, nếu không Ngày 21 bị chặn. May là gán nhãn khả thi: **33/33 ô
+> evidence truy ngược được 100 %** tới `relative_path` + `source_line_start/end` + tiêu đề bảng —
+> khác hẳn Ngày 18 (`tables.csv_path` NULL 146.011/146.011). Đo thêm ba chốt chặn: (1) `expected_unit`
+> **NULL 30/30 plan** (rule planner không bao giờ đặt — lần thứ **tư** lặp mô hình code chết sau `llm:`,
+> `execution:`, `timeout_seconds`/`max_rows`), **và tệ hơn là mâu thuẫn không thể thoả mãn**:
+> `_validate_growth_rate` chỉ cho `percent` trong khi `compile_growth_rate` hardcode trả `ratio`, nên
+> một plan `growth_rate` hợp lệ **không bao giờ** khai đúng đơn vị executor trả về — hiện vô hình chỉ
+> vì rule planner bỏ trống trường này, nhưng prompt LLM Ngày 17 **đang dạy model đặt `"percent"`.**
+> (2) **20,7 % ô số toàn corpus (532.901/2.579.383, 36.677 bảng) không có đơn vị**, và NULL biến thành
+> chuỗi bịa `'nan'` lọt vào `CellMatch.unit`, rồi bị quy oan thành `unit_incompatible` thay vì "thiếu
+> đơn vị" — 416 ô như vậy nằm trong 11 bảng ứng viên gold70. (3) **15/30 đáp án có > 15 chữ số có
+> nghĩa** (13 `growth_rate` trả `ratio` 28 chữ số, ví dụ `-0.01932846513079090948136258551`) nên cần
+> hợp đồng hiển thị + **hai** phép so dung sai khác nhau, không gộp. Và **6/30 đáp án (10/51 ô
+> evidence) dựa trên kỳ suy diễn** — đúng món nợ n = 10 mà ADR 0007 C2 ghi nhận, nay chiếm 20 % kết
+> quả. Provenance evidence ⊆ bảng ứng viên hiện **đúng 0 vi phạm nhưng không ai kiểm**, và
+> `CompiledQuery` không mang `candidate_table_ids` nên answer package **không tự chứng minh được**.
+>
+> **Kế hoạch chi tiết:** [docs/plans/day20-answer-verifier-citation.md](docs/plans/day20-answer-verifier-citation.md).
+> ADR: [0009](docs/decisions/0009-answer-package-contract.md).
+>
+> **Kết quả sau khi cài đặt xong (2026-08-15):** `data/qa/answer-gold-v1.jsonl` — 30 nhãn đáp án gán
+> tay từ dòng nguồn (đọc độc lập, sau đó mới đối chiếu, đúng ADR A2) — lần đầu tồn tại trong dự án.
+> Đối chiếu tự động 51/51 ô evidence với dòng nguồn thật: 27/30 khớp tuyệt đối, 3/30 (cùng một ô VGT)
+> lệch ~2×10⁻³ VND do artifact float ở tầng ingestion — đã ghi rõ nguyên nhân trong
+> `data/qa/answer-gold-v1.provenance.md`, không sửa nhãn cho khớp máy. CLI `verify-answers` chạy
+> trên gold70: **30/30 đáp án `answered` đều `verified`, 0 bị `rejected`**, accuracy so với nhãn tay
+> = **0,9** (27/30, đúng bằng số khớp tuyệt đối đo được). Một bug thật được bắt bởi chính vòng chạy
+> end-to-end này: regex kiểm `display_roundtrip_mismatch` chỉ đọc được nhóm dấu phẩy đầu tiên của số
+> có định dạng hàng nghìn (`"84,420,878 VND"` bị đọc thành `84420`), khiến 17/30 đáp án đúng bị từ
+> chối oan — sửa bằng TDD (test đỏ tái hiện đúng chuỗi thật từ gold70), sau đó 0/30 bị ảnh hưởng.
+> `growth_rate` giờ chấp nhận cả `percent` lẫn `ratio` làm `expected_unit` (trước đó mâu thuẫn không
+> thể thoả mãn); `unit_missing` là mã lỗi mới, tách khỏi `unit_incompatible`, và `'nan'` không còn
+> lọt được vào `CellMatch.unit`. gold70 vẫn đúng 30/51 (58,8 %) — không đổi so với Ngày 19, xác nhận
+> các sửa lỗi trên không đổi hành vi compile hợp lệ. Verification đầy đủ: 1.083 test qua (4 skip do
+> hạn chế quyền Windows), `ruff check`/`format --check` sạch trên 240 file, `mypy` sạch trên 112 file
+> `src/`. Lệnh tái tạo:
+> ```
+> uv run --frozen --no-sync financial-report-qa verification verify-answers \
+>   --release-lock data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json \
+>   --gold-path data/qa/retrieval-gold-v1.jsonl \
+>   --answer-gold-path data/qa/answer-gold-v1.jsonl \
+>   --output-dir artifacts/evaluations/day20 \
+>   --execution-config configs/base.yaml configs/local_rtx3050.yaml
+> ```
 
 #### Ngày 21 — E2E và review cổng tuần 3
 
