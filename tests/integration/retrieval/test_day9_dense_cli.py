@@ -98,7 +98,7 @@ def _fixture_release(tmp_path: Path) -> ResolvedRetrievalRelease:
 def _write_fixture_gold(path: Path) -> None:
     filters = RetrievalFilters(company_codes=("VCB",))
     records: list[dict[str, object]] = []
-    for number in range(70):
+    for number in range(120):
         question = f"Doanh thu VCB cau hoi {number:02d}?"
         gold_ids = (_TABLE_IDS[0],)
         records.append(

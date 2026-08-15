@@ -1068,3 +1068,90 @@ báo cáo xong việc, không chỉ tin vào test tổng hợp.
 
 `pytest -q`: 1.083 passed, 4 skipped (chỉ symlink/ACL Windows). `ruff check .` / `ruff format --check .`:
 sạch trên 240 file. `mypy`: 0 lỗi (112 file `src`).
+
+## Day 21 E2E và Review Cổng Tuần 3
+
+**Chẩn đoán trước khi viết code:** "E2E" của Ngày 20 nạp thẳng `gold_table_ids` vào cả
+`candidate_table_ids` lẫn `retrieved_table_ids` — retriever bị bỏ qua hoàn toàn. Thay bằng ranking
+BM25 v4 thật (Ngày 14): answered 30 → 9/70, accuracy 0,900 → 0,667. Nguyên nhân không phải retrieval
+kém — 6/6 ca đã soi có bảng gold nằm trong top-10 — mà là `statement_scope` (báo cáo riêng/hợp nhất)
+chưa được `FinancialQueryPlan` mô hình hoá, dù trường đó đã có sẵn trong release khoá. Xem
+[docs/plans/day21-e2e-week3-gate.md](docs/plans/day21-e2e-week3-gate.md) và
+[ADR 0010](docs/decisions/0010-statement-scope-contract.md) (A1 `statement_scope` là trường plan /
+B1 suy diễn có mặc định + `scope_inferred` chặn / C1 khử nhập nhằng đơn vị NULL / D1 nợ nhập nhằng
+loại bảng, chưa sửa / E1 harness `pipeline/` retrieval trong vòng lặp / F1 mở rộng QA sửa lệch phân
+bố / G1 báo cáo bảng biên 3 chính sách, không một con số).
+
+### Kiến trúc: pipeline/ chạy retrieval thật trong vòng lặp, không còn tắt qua gold table
+
+```
+pipeline.evaluation.run_e2e_pipeline(questions, rankings, release_dir, execution_settings)
+  với mỗi câu hỏi:
+    retrieved = rankings.get(question_id, ())        # BM25 v4 đã lưu, KHÔNG dùng gold_table_ids
+    plan = build_plan(entities, candidate_table_ids=retrieved)   # abstain được GHI LẠI, không nuốt
+    compiled = compile_plan(plan, ...)                # scope_filter lọc theo statement_scope
+    package = build_answer_package(...)                # scope_inferred chặn nếu suy diễn
+  -> PipelineQuestionResult(stage=None nếu verified, else stage∈{retrieval,planning,normalization,execution,verification})
+```
+
+Quy tắc quy tầng (ADR 0010 E1): `cell_ambiguous` **không** tự động là lỗi retrieval — chỉ khi gold
+⊄ retrieved. Đo được 22/24 ca `cell_ambiguous` dưới retrieval thật có gold nằm trong top-10 → quy về
+`planning` (plan thiếu chiều scope), không phải `retrieval`. `execution/scope_filter.py` lọc
+`candidate_table_ids` theo `plan.statement_scope` (nếu plan khai) hoặc
+`ExecutionSettings.default_statement_scope` (nếu không, và đánh dấu `scope_inferred=True`).
+
+### Một bug locator thật, đo được bán kính 859 ca
+
+`locator.py` dùng `drop_duplicates(subset=["value","unit"])`, đếm `(X, None)` và `(X, "VND")` là hai
+cặp phân biệt → báo `cell_ambiguous` ở nơi giá trị **giống hệt nhau** (ca OCB:
+`2582236224358.0 None` vs `… VND`). Đo toàn corpus: 868 nhóm một-giá-trị bị báo nhập nhằng oan,
+**859/868 (99,0 %)** do một ô thiếu đơn vị, chỉ 9/868 do hai đơn vị thật khác nhau. Sửa: khi tập ứng
+viên rút về đúng một giá trị và đơn vị chỉ khác ở NULL-hay-không, lấy đơn vị đã biết — vẫn giữ
+`cell_ambiguous` khi có ≥2 đơn vị thật khác nhau.
+
+### Không chính sách scope nào "thắng" — cổng phải báo cáo bảng biên, không một số
+
+Đo thật cả ba chính sách trên retrieval thật, 120 câu, đủ nhãn đáp án:
+
+| Chính sách | Answered | Scored | Correct | Sai tự tin | Accuracy |
+|---|---:|---:|---:|---:|---:|
+| `none` (mặc định) | 39/120 | 39 | 33 | 6 (15,4 %) | **0,846** |
+| `default_consolidated` | 71/120 | 53 | 40 | 13 (24,5 %) | 0,755 |
+| `abstain_when_unstated` | 28/120 | 28 | 25 | 3 (10,7 %) | 0,893 |
+
+`default_consolidated` gần gấp đôi answered nhưng **accuracy tệ đi** và tăng gấp đôi tỷ lệ sai tự
+tin — đúng cái bẫy đo được ở kế hoạch § 1.5. Hệ thống giữ nguyên `none` làm mặc định sản xuất;
+`scope_inferred` (mã lỗi verification mới, **chặn**, khác `period_inferred_warning`) đảm bảo một
+câu trả lời suy diễn scope không bao giờ được trình bày như chắc chắn.
+
+### Mở rộng bộ QA 70 → 120, sửa lệch phân bố scope
+
+`retrieval-gold-v1.jsonl` thêm 50 câu (giữ nguyên 70 bản ghi gốc **byte-for-byte**, cùng 5 quy tắc
+chống rò rỉ Ngày 13: chọn bảng theo metadata trước khi viết câu hỏi, không mở ranked list, evidence
+từ `cells.parquet`, `stable_question_id`, sắp theo id). Tỷ lệ nêu scope: 22,9 % → 33,3 % (mục tiêu đo
+được là 37,7 % của đề chính thức; không đạt hẳn vì 70 bản ghi gốc không được sửa lời). Retrieval thật
+trên 120 câu: Recall@10 **0,9458**, F2@R **0,5085** — cả hai cao hơn mốc 70 câu (0,9143 / 0,4836).
+`answer-gold-v1.jsonl` 30 → 58 nhãn: 28 câu mới `verified` được gán tay theo đúng phương pháp ADR
+0009 A2 (đọc `cells.parquet` độc lập với executor, đối chiếu 4/28 trực tiếp với dòng nguồn
+`_extracted.txt`) — 28/28 khớp ở lớp 1, 4/4 khớp ở lớp 2.
+
+### Kết quả sau khi cài đặt xong
+
+| Số đo | Giá trị |
+|---|---:|
+| `retrieval-gold-v1.jsonl` | 70 → **120 câu** |
+| `answer-gold-v1.jsonl` | 30 → **58 nhãn** |
+| Recall@10 / F2@R (120 câu, BM25 v4 thật) | 0,9458 / 0,5085 |
+| Answer accuracy (chính sách `none`, retrieval thật) | **0,846** (chưa đạt 0,85, sát cổng) |
+| Invalid plan (`plan_rejected`) | **0/120 = 0 %** — đạt (< 5 %) |
+| Answered có nguồn đầy đủ | **100 %** — đạt, đúng cấu trúc `AnswerPackage` |
+| Lỗi theo tầng | retrieval 6 (5 %), planning 60 (50 %), normalization 15 (12,5 %), verification 0 |
+| Bug locator sửa (nhập nhằng oan do đơn vị NULL) | 859/868 ca |
+
+Retrieval **không phải** lỗi chủ đạo (5 % số lỗi) — đúng nhánh xử lý plan.md: không fine-tune planner
+bằng retrieval. Nợ kỹ thuật thật chuyển sang ngày sau: `multi_metric_unsupported`/`entity_ambiguous`
+(19/120, giới hạn rule planner một-chỉ-tiêu) và nhập nhằng do loại bảng ngoài scope (ADR 0010 D1,
+`statement_type` NULL 78,8 % nên chưa có bộ lọc rẻ).
+
+`pytest -q`: 1.141 passed, 4 skipped (chỉ symlink/ACL Windows). `ruff check .` / `ruff format --check .`:
+sạch trên 250 file. `mypy`: 0 lỗi (117 file `src`).

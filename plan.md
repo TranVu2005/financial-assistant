@@ -1119,10 +1119,103 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 21 — E2E và review cổng tuần 3
 
-- [ ] Nâng bộ QA lên ít nhất 120 câu.
-- [ ] Chạy câu hỏi từ text → retrieval → plan → execution → answer package.
-- [ ] Phân lỗi thành retrieval, planning, normalization, execution, verification.
+- [x] Nâng bộ QA lên ít nhất 120 câu.
+- [x] Chạy câu hỏi từ text → retrieval → plan → execution → answer package.
+- [x] Phân lỗi thành retrieval, planning, normalization, execution, verification.
 - **Cổng:** answer và execution accuracy ≥ 0,85; invalid plan < 5%; 100% answered có source. Nếu retrieval sai là lỗi chủ đạo, không fine-tune planner.
+
+> **⚠️ Chẩn đoán ngày 2026-08-15 (trước khi bắt đầu):** phát hiện lớn nhất — **đường ống chưa bao
+> giờ chạy end-to-end**. Cái gọi là "E2E" của Ngày 20 nạp thẳng `gold_table_ids` vào planner làm
+> `candidate_table_ids` **và** truyền chính tập đó vào `retrieved_table_ids`, nên retriever bị bỏ
+> qua hoàn toàn và `check_evidence_outside_retrieval` được thoả mãn tầm thường. Thay bằng top-10
+> thật của BM25 v4 (ranking Ngày 14 đã lưu sẵn): **answered 30 → 9 (−70 %)**, accuracy 0,900 →
+> 0,667, phủ 42,9 % → 12,9 %. **0 câu đổi từ đúng sang sai** — hệ thống hỏng an toàn, nhưng con số
+> cổng đang được báo cáo trên một đường ống không có retrieval. Và **nguyên nhân không phải
+> retrieval kém**: 21/21 câu mất đi đều rơi vào `cell_ambiguous` (2 → 24), planner không đổi hành vi
+> (abstain y hệt 19 câu), và **6/6 ca đã soi đều có bảng gold nằm trong top-10**. Thủ phạm là một
+> chiều dữ liệu mà `FinancialQueryPlan` không mô hình hoá: báo cáo **riêng** (`separate`) và **hợp
+> nhất** (`consolidated`) cùng doanh nghiệp/kỳ/chỉ tiêu có **giá trị khác nhau thật**. Đây là lần
+> lặp **thứ năm** của mô hình "trường có sẵn ở thượng nguồn, chết ở hạ nguồn" (sau `llm:`,
+> `execution:`, `timeout_seconds`/`max_rows`, `expected_unit`): `documents.parquet.statement_scope`
+> (957 consolidated / 954 separate) **đã có trong release khoá** và có **0 tham chiếu** trong
+> `planning/`, `execution/`, `verification/`; `entity_parser` cũng không bắt `riêng`/`công ty mẹ`/
+> `hợp nhất`. Scope là **cấu trúc chủ đạo**, không phải ca biên: **64,9 %** nhóm (company, period,
+> metric) có mặt ở cả hai scope, **92,8 %** trong số đó bất đồng giá trị, và **84,6 %** nhóm bất đồng
+> tách sạch một-giá-trị-một-scope. **Nhưng không chính sách scope nào vượt cổng** — đo thật cả ba:
+> `none` (hiện tại) 9/70 answered, accuracy 0,667, 3 câu sai; `default_consolidated` **25/70** nhưng
+> accuracy **tệ đi 0,583** và **10 câu sai tự tin = 40 % số câu trả lời** (vi phạm ràng buộc cứng
+> `< 5 %`); `abstain_when_unstated` accuracy **1,000**, 0 câu sai, nhưng chỉ **3/70 = 4,3 % phủ**.
+> Phủ và đúng đắn đi ngược chiều nhau, nên **answer accuracy ≥ 0,85 không đạt được trong một ngày**
+> — Ngày 21 phải là ngày **đo và review cổng** theo khuôn mẫu Ngày 14. Đo thêm bốn chốt: (1) **gold70
+> không đại diện cho đề thật đúng ở chiều này** — đề chính thức 1.012 câu nêu scope **37,7 %** và
+> nghiêng hẳn về `separate` (36,4 % so với 1,3 % `consolidated`), trong khi gold70 chỉ nêu 22,9 % và
+> bảng gold nghiêng ngược về `consolidated` (45 so với 21); nên mặc định `consolidated` sẽ còn **sai
+> hướng hơn** trên đề thật, và việc "nâng lên ≥ 120 câu" phải sửa lệch phân bố chứ không phải thêm
+> số lượng. (2) **Một bug locator thật, 859 nhóm bị từ chối oan**: `drop_duplicates(subset=["value",
+> "unit"])` đếm `(X, None)` và `(X, "VND")` là hai cặp phân biệt, nên báo `cell_ambiguous` ở nơi giá
+> trị **giống hệt nhau** (ca OCB `2582236224358.0 None` vs `… VND`) — 859/868 ca nhập nhằng oan là do
+> đơn vị NULL, chỉ 9 ca là xung đột đơn vị thật. (3) Ba nguyên nhân nhập nhằng còn lại **không phải
+> scope** (bảng báo cáo bộ phận, bảng biến động vốn chủ) và **không sửa rẻ được**: `statement_type`
+> NULL **78,8 %** nên không dùng làm bộ lọc — phải ghi thành nợ có mã lỗi và số đo. (4) **Harness
+> nuốt abstain**: `evaluate_answer_packages_on_gold` gặp `plan is None` thì `continue` không ghi
+> `failures`, nên 19 câu abstain vô hình và chỉ số cổng "invalid plan < 5 %" **hiện không tính
+> được**. Hai tin tốt đã đo để khỏi sửa nhầm: **0 câu có scope nêu trong đề mâu thuẫn với bảng gold**
+> (nhãn sạch), và **latency p95 = 0,73 s** so với cổng 15 s (không tối ưu gì hôm nay).
+>
+> **Kế hoạch chi tiết:** [docs/plans/day21-e2e-week3-gate.md](docs/plans/day21-e2e-week3-gate.md).
+> ADR: [0010](docs/decisions/0010-statement-scope-contract.md).
+>
+> **Kết quả sau khi cài đặt xong (2026-08-15):** sửa bug locator (859/868 ca `cell_ambiguous` oan do
+> đơn vị NULL — § 1.7); thêm `statement_scope` vào `FinancialQueryPlan` + `entity_parser` bắt được
+> `riêng`/`công ty mẹ`/`hợp nhất` (đo lại đúng 37,6 % trên 1.012 câu đề chính thức, khớp số đo chẩn
+> đoán); lọc bảng ứng viên theo scope trong `execution/` với `ExecutionSettings.
+> default_statement_scope` cấu hình được; `scope_inferred` là mã lỗi verification **chặn** (khác
+> `period_inferred_warning`). Dựng package `pipeline/` mới (`contracts.py`, `evaluation.py`,
+> `cli.py`) chạy **thật** retrieval → plan → execution → verification, ghi lại mọi abstain, và phân
+> lỗi 5 tầng theo quy tắc `cell_ambiguous` có gold trong tập ứng viên ⇒ `planning`, không phải
+> `retrieval` (đúng phát hiện § 1.2). Mở rộng `retrieval-gold-v1.jsonl` 70 → **120 câu** (giữ nguyên
+> 70 bản ghi gốc byte-for-byte, quy tắc chống rò rỉ y hệt Ngày 13), kéo tỷ lệ nêu scope từ 22,9 % lên
+> 33,3 % (chưa đạt hẳn 37,7 % vì 70 bản ghi gốc không được sửa lời). Chạy retrieval **thật** trên cả
+> 120 câu (`retrieval evaluate-v2`, BM25 v4): Recall@10 0,9458, F2@R 0,5085 — cả hai đều cao hơn mốc
+> 70 câu (0,9143 / 0,4836). Gán nhãn tay thêm 28 đáp án cho các câu vừa `verified` được nhờ retrieval
+> thật (đều thuộc 50 câu mới; 0 câu trong 70 câu gốc), nâng `answer-gold-v1.jsonl` 30 → **58 nhãn**.
+>
+> **Phán quyết cổng (đo trên retrieval thật, không phải gold table — đúng tinh thần § 1.1):**
+>
+> | Chính sách scope | Answered | Scored | Correct | Sai tự tin | Accuracy |
+> |---|---:|---:|---:|---:|---:|
+> | `none` (mặc định hiện tại) | 39/120 | 39 | 33 | 6 (15,4 %) | **0,846** |
+> | `default_consolidated` | 71/120 | 53 | 40 | 13 (24,5 %) | 0,755 |
+> | `abstain_when_unstated` | 28/120 | 28 | 25 | 3 (10,7 %) | 0,893 |
+>
+> **Answer accuracy: 0,846 < 0,85 — CHƯA đạt**, nhưng sát cổng (thiếu đúng 1 câu đúng trong 39 câu đã
+> chấm) và **không đổi chính sách để "đạt"**: `default_consolidated` có accuracy thấp hơn hẳn
+> (0,755) dù answered cao gấp 1,8 lần — đúng cái bẫy đã đo ở § 1.5, không chọn. **Invalid plan
+> (`plan_rejected`) = 0/120 = 0 % — đạt** (< 5 %): rule planner chưa bao giờ trả một plan bị
+> `validate_plan_semantics` từ chối, kể cả dưới retrieval thật trên 120 câu — đúng bất biến ADR 0005.
+> **100 % answered có nguồn — đạt**, đúng theo cấu trúc (`AnswerPackage.evidence` không được rỗng).
+> **Retrieval không phải lỗi chủ đạo** (retrieval 6/120 = 5 % số lỗi, so với planning 60/120 = 50 % và
+> normalization 15/120 = 12,5 %) — đúng nhánh xử lý plan.md đã định: **không fine-tune planner bằng
+> retrieval**, mà nợ kỹ thuật thật nằm ở (a) `multi_metric_unsupported`/`entity_ambiguous` (19/120,
+> giới hạn rule planner một-chỉ-tiêu) và (b) nhập nhằng do loại bảng ngoài scope (ADR 0010 quyết định
+> D1, chưa sửa, có mã lỗi riêng để đo). Chuyển hai khoản nợ này sang ngày sau, không sửa hôm nay đúng
+> tinh thần "đo trước khi sửa" đã giữ suốt dự án. Verification đầy đủ: 1.141 test qua (4 skip do hạn
+> chế quyền Windows), `ruff check`/`format --check` sạch trên 250 file, `mypy` sạch trên 117 file
+> `src/`. Lệnh tái tạo:
+> ```
+> uv run --frozen --no-sync financial-report-qa retrieval evaluate-v2 \
+>   --release-lock data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json \
+>   --gold-path data/qa/retrieval-gold-v1.jsonl \
+>   --index-dir data/indexes/bm25-v4/422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a \
+>   --output-dir artifacts/evaluations/day21/retrieval
+> uv run --frozen --no-sync financial-report-qa pipeline scope-policy-report \
+>   --release-lock data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json \
+>   --gold-path data/qa/retrieval-gold-v1.jsonl \
+>   --rankings-path artifacts/evaluations/day21/retrieval/retrieval-v2-422df141c935.json \
+>   --answer-gold-path data/qa/answer-gold-v1.jsonl \
+>   --output-dir artifacts/evaluations/day21 \
+>   --execution-config configs/base.yaml configs/local_rtx3050.yaml
+> ```
 
 ### Tuần 4 — Sản phẩm, tối ưu, kiểm thử và nộp bài
 

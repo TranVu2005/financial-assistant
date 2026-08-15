@@ -27,6 +27,10 @@ from financial_report_qa.execution.contracts import CellMatch, CompiledQuery, Ex
 from financial_report_qa.execution.locator import LocateResult, locate
 from financial_report_qa.execution.pandas_query import render_pandas_query
 from financial_report_qa.execution.sandbox import replay_in_sandbox
+from financial_report_qa.execution.scope_filter import (
+    filter_table_ids_by_scope,
+    resolve_statement_scope,
+)
 from financial_report_qa.normalization.units import CanonicalUnit
 from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
 from financial_report_qa.planning.plan_validator import validate_plan_semantics
@@ -109,7 +113,24 @@ def compile_plan(
             query,
         )
 
-    frame = build_cell_frame(release_dir, plan.candidate_table_ids)
+    effective_scope, scope_inferred = resolve_statement_scope(
+        plan_scope=plan.statement_scope,
+        default_scope=execution_settings.default_statement_scope,
+    )
+    candidate_table_ids = plan.candidate_table_ids
+    if effective_scope is not None:
+        candidate_table_ids = filter_table_ids_by_scope(
+            release_dir, plan.candidate_table_ids, effective_scope
+        )
+        if not candidate_table_ids:
+            return _error(
+                plan.operation,
+                "candidate_table_ids_scope_empty",
+                f"no candidate table has statement_scope={effective_scope!r}",
+                query,
+            )
+
+    frame = build_cell_frame(release_dir, candidate_table_ids)
     if len(frame) > execution_settings.max_rows:
         return _error(
             plan.operation,
@@ -157,6 +178,7 @@ def compile_plan(
         pandas_query=query,
         error_code=None,
         error_message=None,
+        scope_inferred=scope_inferred,
     )
 
 

@@ -140,6 +140,26 @@ def test_build_answer_package_carries_period_inferred_warning_but_stays_verified
     assert "period_inferred_warning" in codes
 
 
+def test_build_answer_package_rejected_when_scope_inferred() -> None:
+    """Day 21 plan §1.5/ADR 0010 decision B1: unlike a merely-inferred period,
+    a `CompiledQuery.scope_inferred=True` result must block, not just warn --
+    the compiler resolved a real value conflict using a default the plan
+    never stated."""
+    plan = _plan()
+    compiled = _compiled(scope_inferred=True)
+    package = build_answer_package(
+        question_id=QUESTION_ID,
+        question="Tra cứu tiền mặt của ACB năm 2023.",
+        plan=plan,
+        compiled=compiled,
+        retrieved_table_ids=frozenset({TABLE_ID}),
+        citation_lookup=_CITATION_LOOKUP,
+    )
+    assert package.verification_status == "rejected"
+    codes = {issue.code for issue in package.verification_issues}
+    assert "scope_inferred" in codes
+
+
 def test_build_answer_package_raises_on_non_answered_compiled_query() -> None:
     plan = _plan()
     compiled = CompiledQuery.model_validate(

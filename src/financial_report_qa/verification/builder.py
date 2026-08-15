@@ -79,6 +79,7 @@ def build_answer_package(
                 compiled.answer, display, display_precision=display_precision
             ),
             checks.check_period_inferred_warning(compiled),
+            checks.check_scope_inferred(compiled),
         )
         if issue is not None
     ]

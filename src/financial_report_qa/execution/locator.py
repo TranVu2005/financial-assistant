@@ -74,20 +74,28 @@ def locate(
         )
 
     distinct = period_rows.drop_duplicates(subset=["value", "unit"])
+    known_units = distinct["unit"].dropna().drop_duplicates()
     if len(distinct) > 1:
-        candidates = ", ".join(
-            f"{row.value} {row.unit} (cell_id={row.cell_id})" for row in distinct.itertuples()
-        )
-        return LocateResult(
-            match=None,
-            error_code="cell_ambiguous",
-            error_message=(
-                f"metric '{_selector_label(selector)}' at period {period} "
-                f"has conflicting values: {candidates}"
-            ),
-        )
+        distinct_values = distinct["value"].drop_duplicates()
+        # ADR 0010 decision C1: `(X, None)` and `(X, "VND")` are not a real
+        # conflict when every row agrees on the value -- the NULL just means
+        # one physical cell didn't record its unit. Only >=2 *known* units
+        # disagreeing is a genuine conflict (measured: 859/868 false
+        # positives were this NULL-split case, 9/868 were real).
+        if not (len(distinct_values) == 1 and len(known_units) <= 1):
+            candidates = ", ".join(
+                f"{row.value} {row.unit} (cell_id={row.cell_id})" for row in distinct.itertuples()
+            )
+            return LocateResult(
+                match=None,
+                error_code="cell_ambiguous",
+                error_message=(
+                    f"metric '{_selector_label(selector)}' at period {period} "
+                    f"has conflicting values: {candidates}"
+                ),
+            )
 
-    resolved_unit = distinct["unit"].iloc[0]
+    resolved_unit = known_units.iloc[0] if len(known_units) == 1 else distinct["unit"].iloc[0]
     if pd.isna(resolved_unit):
         # ADR 0009 decision C1: a missing unit is a different failure than an
         # incompatible one. `str(resolved_unit)` here would be either 'None'

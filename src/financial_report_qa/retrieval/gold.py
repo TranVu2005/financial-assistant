@@ -14,7 +14,10 @@ from financial_report_qa.core.errors import RetrievalGoldError
 from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion, RetrievalFilters
 from financial_report_qa.retrieval.release import EXPECTED_FINGERPRINT, ResolvedRetrievalRelease
 
-REQUIRED_GOLD_QUESTION_COUNT = 70
+# Day 21 plan §1.9/ADR 0010 decision F1: expanded 70 -> 120 to satisfy the
+# Ngày 21 gate ("nâng bộ QA lên ít nhất 120 câu") and to correct gold70's
+# statement-scope wording skew (§1.6).
+REQUIRED_GOLD_QUESTION_COUNT = 120
 
 
 def stable_question_id(

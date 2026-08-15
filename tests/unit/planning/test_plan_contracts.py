@@ -25,6 +25,55 @@ def test_minimal_lookup_plan_constructs() -> None:
     assert plan.metric == MetricSelector(canonical="revenue")
 
 
+def test_plan_defaults_statement_scope_to_none() -> None:
+    """Day 21 plan §1.3 / ADR 0010 decision A1: plans that don't state a scope
+    (the pre-Day-21 majority) must remain valid -- this field is additive."""
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("NVL",),
+        periods=("2023",),
+        metric=MetricSelector(canonical="revenue"),
+        candidate_table_ids=(_table_id("a"),),
+    )
+    assert plan.statement_scope is None
+
+
+def test_plan_accepts_separate_statement_scope() -> None:
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("NVL",),
+        periods=("2023",),
+        metric=MetricSelector(canonical="revenue"),
+        candidate_table_ids=(_table_id("a"),),
+        statement_scope="separate",
+    )
+    assert plan.statement_scope == "separate"
+
+
+def test_plan_accepts_consolidated_statement_scope() -> None:
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("NVL",),
+        periods=("2023",),
+        metric=MetricSelector(canonical="revenue"),
+        candidate_table_ids=(_table_id("a"),),
+        statement_scope="consolidated",
+    )
+    assert plan.statement_scope == "consolidated"
+
+
+def test_plan_rejects_unknown_statement_scope() -> None:
+    with pytest.raises(ValidationError):
+        FinancialQueryPlan(
+            operation="lookup",
+            companies=("NVL",),
+            periods=("2023",),
+            metric=MetricSelector(canonical="revenue"),
+            candidate_table_ids=(_table_id("a"),),
+            statement_scope="both",
+        )
+
+
 def test_metric_selector_rejects_both_canonical_and_raw_text() -> None:
     with pytest.raises(ValidationError, match="exactly one of"):
         MetricSelector(canonical="revenue", raw_text="Doanh thu thuần")

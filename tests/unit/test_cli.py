@@ -118,3 +118,33 @@ def test_retrieval_cli_does_not_hide_unexpected_programming_errors(
                 "gold.jsonl",
             ]
         )
+
+
+def test_pipeline_cli_does_not_hide_unexpected_programming_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Would fail if the product boundary turns programmer bugs into exit code 2."""
+    import financial_report_qa.pipeline.cli as pipeline_cli
+
+    def unexpected_resolver(*_: object, **__: object) -> object:
+        raise ValueError("programmer bug")
+
+    monkeypatch.setattr(pipeline_cli, "resolve_retrieval_release", unexpected_resolver)
+
+    with pytest.raises(ValueError, match="programmer bug"):
+        main(
+            [
+                "pipeline",
+                "run-e2e",
+                "--release-lock",
+                "lock.json",
+                "--gold-path",
+                "gold.jsonl",
+                "--rankings-path",
+                "rankings.json",
+                "--output-dir",
+                "out",
+                "--execution-config",
+                "execution.yaml",
+            ]
+        )

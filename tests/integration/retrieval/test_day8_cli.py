@@ -82,7 +82,7 @@ def _fixture_release(tmp_path: Path) -> ResolvedRetrievalRelease:
 def _write_fixture_gold(path: Path, *, include_failure: bool = False) -> None:
     filters = RetrievalFilters(company_codes=("VCB",))
     records: list[dict[str, object]] = []
-    for number in range(70):
+    for number in range(120):
         question = (
             "zzzz-no-index-token"
             if include_failure and number == 0
@@ -245,7 +245,7 @@ def test_retrieval_cli_evaluate_v2_and_failure_export_are_offline_and_replayable
         == (second_output / f"retrieval-v2-{_FINGERPRINT[:12]}.json").read_bytes()
     )
     v2_payload = json.loads(v2_json.read_text(encoding="utf-8"))
-    assert v2_payload["question_count"] == len(v2_payload["per_question"]) == 70
+    assert v2_payload["question_count"] == len(v2_payload["per_question"]) == 120
     assert "by_statement_filter" in v2_payload
 
     legacy_output = tmp_path / "legacy"
@@ -293,7 +293,7 @@ def test_retrieval_cli_evaluate_v2_and_failure_export_are_offline_and_replayable
             encoding="utf-8"
         )
     )
-    assert system_payload["question_count"] == len(system_payload["per_question"]) == 70
+    assert system_payload["question_count"] == len(system_payload["per_question"]) == 120
     assert set(system_payload["by_intent"]) == {"compare", "growth", "lookup"}
 
     annotations = tmp_path / "failure-annotations.jsonl"
@@ -330,7 +330,7 @@ def test_retrieval_cli_evaluate_v2_and_failure_export_are_offline_and_replayable
         (failure_output / f"failures-{_FINGERPRINT[:12]}.json").read_text(encoding="utf-8")
     )
     assert failure_payload["failure_count"] == len(failure_rows)
-    assert failure_payload["evaluated_question_count"] == 70
+    assert failure_payload["evaluated_question_count"] == 120
 
     annotations.write_text("\n", encoding="utf-8")
     assert (

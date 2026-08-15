@@ -37,6 +37,19 @@ def test_gold30_reference_can_be_selected_byte_exactly_from_current_gold70() -> 
     assert resolved.selected_jsonl_sha256 == resolved.descriptor.gold_sha256
 
 
+def test_gold70_reference_can_be_selected_byte_exactly_from_current_gold120() -> None:
+    """Day 21 plan §1.9: retrieval-gold-v1.jsonl grew 70 -> 120 (new questions
+    appended, the original 70 byte-identical). gold70 must remain resolvable
+    as a subset of the live file, the same way gold30 already is -- not
+    require the live file to equal the old 70-record content exactly."""
+    resolved = resolve_gold_reference(_CURRENT_GOLD, version="gold70")
+
+    assert resolved.descriptor.version == "gold70"
+    assert resolved.descriptor is CURRENT_BM25_REFERENCE
+    assert len(resolved.selected_question_ids) == 70
+    assert resolved.selected_jsonl_sha256 == resolved.descriptor.gold_sha256
+
+
 def test_current_reference_rejects_a_truncated_report(tmp_path: Path) -> None:
     payload = json.loads(_CURRENT_REPORT.read_text(encoding="utf-8"))
     payload["per_question"] = []

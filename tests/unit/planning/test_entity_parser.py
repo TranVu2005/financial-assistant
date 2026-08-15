@@ -166,6 +166,55 @@ def test_statement_type_is_only_set_when_named_explicitly() -> None:
     assert with_statement.statement_types == ("balance_sheet",)
 
 
+def test_statement_scope_is_unstated_when_not_mentioned() -> None:
+    """Day 21 plan §1.6: 62.3% of official ViFinQA questions state neither
+    scope keyword -- must remain None, not a guess."""
+    entities = parse_query_entities("Tra cứu tổng tài sản của DBC năm 2023.")
+    assert entities.statement_scope is None
+    assert entities.ambiguity == ()
+
+
+def test_statement_scope_resolves_separate_from_cong_ty_me() -> None:
+    """Real corpus example (questions.jsonl id=1): 'công ty mẹ' is the most
+    common scope phrase (36.4% of official questions), meaning `separate`."""
+    entities = parse_query_entities(
+        "Lãi tiền gửi năm 2018 của công ty mẹ CTCP Hàng không Vietjet (VJC) là bao nhiêu?"
+    )
+    assert entities.statement_scope == "separate"
+
+
+def test_statement_scope_resolves_separate_from_rieng() -> None:
+    entities = parse_query_entities("Tổng tài sản riêng của GEG năm 2022 là bao nhiêu?")
+    assert entities.statement_scope == "separate"
+
+
+def test_statement_scope_resolves_consolidated_from_hop_nhat() -> None:
+    entities = parse_query_entities("Tổng tài sản hợp nhất của ACB năm 2023 là bao nhiêu?")
+    assert entities.statement_scope == "consolidated"
+
+
+def test_statement_scope_resolves_consolidated_from_toan_tap_doan() -> None:
+    entities = parse_query_entities("Doanh thu toàn tập đoàn của FIT năm 2024 là bao nhiêu?")
+    assert entities.statement_scope == "consolidated"
+
+
+def test_statement_scope_both_keywords_left_unstated_not_guessed() -> None:
+    """A question naming both scopes wants a cross-scope comparison the
+    compiler does not support yet (Day 21 plan §1.6: 1/1012 official
+    questions) -- fall through to `unstated` (visible via `scope_inferred`
+    downstream) rather than silently pick one."""
+    entities = parse_query_entities("So sánh doanh thu riêng và hợp nhất của MPC năm 2017.")
+    assert entities.statement_scope is None
+
+
+def test_statement_scope_span_points_back_at_literal_text() -> None:
+    question = "Tổng tài sản hợp nhất của ACB năm 2023 là bao nhiêu?"
+    entities = parse_query_entities(question)
+    scope_spans = [span for span in entities.spans if span.field == "statement_scope"]
+    assert len(scope_spans) == 1
+    assert question[scope_spans[0].start : scope_spans[0].end] == scope_spans[0].surface
+
+
 def test_spans_point_back_at_the_literal_question_text() -> None:
     question = "Tra cứu tổng tài sản của DBC năm 2023."
     entities = parse_query_entities(question)

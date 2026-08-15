@@ -154,6 +154,42 @@ def test_locate_returns_unit_missing_when_resolved_unit_is_null() -> None:
     assert result.error_message is not None
 
 
+def test_locate_ignores_null_unit_duplicate_when_value_and_known_unit_agree() -> None:
+    """Day 21 plan §1.7 / ADR 0010 decision C1: `drop_duplicates(subset=["value",
+    "unit"])` counted (X, None) and (X, "VND") as two distinct pairs, reporting
+    `cell_ambiguous` where the value is identical (measured OCB case:
+    2582236224358.0 None vs 2582236224358.0 VND). When exactly one distinct
+    value exists and the unit split is only NULL-vs-known, resolve using the
+    known unit -- this is not a real conflict."""
+    frame = _frame(
+        [
+            _row(cell_id=CELL_A, value="2582236224358", unit=None),  # type: ignore[arg-type]
+            _row(cell_id=CELL_B, value="2582236224358", unit="VND"),
+        ]
+    )
+    result = locate(frame, MetricSelector(canonical="cash_and_cash_equivalents"), 2020)
+    assert result.error_code is None
+    assert result.match is not None
+    assert result.match.value == Decimal("2582236224358")
+    assert result.match.unit == "VND"
+    assert set(result.match.cell_ids) == {CELL_A, CELL_B}
+
+
+def test_locate_still_ambiguous_when_two_known_units_disagree_alongside_null() -> None:
+    """The NULL-unit rescue (previous test) must not swallow real unit
+    conflicts: when >=2 *known* units are present, still cell_ambiguous."""
+    frame = _frame(
+        [
+            _row(cell_id=CELL_A, value="100", unit=None),  # type: ignore[arg-type]
+            _row(cell_id=CELL_B, value="100", unit="VND"),
+            _row(cell_id="cell_" + "c" * 64, value="100", unit="VND_million"),
+        ]
+    )
+    result = locate(frame, MetricSelector(canonical="cash_and_cash_equivalents"), 2020)
+    assert result.match is None
+    assert result.error_code == "cell_ambiguous"
+
+
 def test_locate_marks_period_inferred_from_frame() -> None:
     frame = _frame([_row(cell_id=CELL_A, value="900", period_inferred=True)])
     result = locate(frame, MetricSelector(canonical="cash_and_cash_equivalents"), 2020)

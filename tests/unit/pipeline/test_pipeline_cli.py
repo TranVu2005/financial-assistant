@@ -1,9 +1,8 @@
-"""Tests for the Day 18 `compile-plans` CLI."""
+"""Tests for the Day 21 `run-e2e` CLI (pipeline/cli.py)."""
 
 from __future__ import annotations
 
 import json
-import os
 from decimal import Decimal
 from pathlib import Path
 
@@ -13,7 +12,7 @@ from pytest import MonkeyPatch
 
 from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
 from financial_report_qa.evaluation.week1_release import ReleaseLock
-from financial_report_qa.execution.cli import main
+from financial_report_qa.pipeline.cli import main
 from financial_report_qa.retrieval.contracts import RetrievalFilters
 from financial_report_qa.retrieval.gold import stable_question_id
 from financial_report_qa.retrieval.release import ResolvedRetrievalRelease
@@ -110,11 +109,9 @@ def _fixture_release(tmp_path: Path) -> ResolvedRetrievalRelease:
 
 
 def _patch_release_resolver(monkeypatch: MonkeyPatch, release: ResolvedRetrievalRelease) -> None:
-    import financial_report_qa.execution.cli as execution_cli
+    import financial_report_qa.pipeline.cli as pipeline_cli
 
-    monkeypatch.setattr(
-        execution_cli, "resolve_retrieval_release", lambda *_args, **_kwargs: release
-    )
+    monkeypatch.setattr(pipeline_cli, "resolve_retrieval_release", lambda *_a, **_k: release)
 
 
 def _write_fixture_gold(path: Path) -> None:
@@ -154,82 +151,132 @@ def _write_fixture_gold(path: Path) -> None:
     )
 
 
+def _write_fixture_rankings(path: Path, question_ids: list[str]) -> None:
+    """Mirror the shape of a real `retrieval-v2-*.json` report -- only
+    `question_id`/`predicted_table_ids` are read by `load_rankings`."""
+    document = {
+        "per_question": [
+            {"question_id": qid, "predicted_table_ids": [_TABLE_ID]} for qid in question_ids
+        ]
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+
 def _write_execution_config(path: Path) -> None:
     path.write_text(
-        "execution:\n"
-        "  timeout_seconds: 5\n"
-        "  max_rows: 100000\n"
-        "  allow_operations:\n"
-        "    - lookup\n"
-        "    - difference\n"
-        "    - growth_rate\n"
-        "    - compare\n"
-        "    - compare_companies\n"
-        "    - ratio\n"
-        "    - average\n"
-        "    - sum\n"
-        "    - rank\n",
+        "execution:\n  timeout_seconds: 5\n  max_rows: 100000\n  allow_operations:\n    - lookup\n",
         encoding="utf-8",
     )
 
 
-def test_compile_plans_cli_writes_report(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+def test_run_e2e_cli_writes_report(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
     release = _fixture_release(tmp_path)
     _patch_release_resolver(monkeypatch, release)
     gold_path = tmp_path / "gold.jsonl"
     _write_fixture_gold(gold_path)
+    question_ids = [
+        json.loads(line)["question_id"]
+        for line in gold_path.read_text(encoding="utf-8").splitlines()
+    ]
+    rankings_path = tmp_path / "rankings.json"
+    _write_fixture_rankings(rankings_path, question_ids)
     config_path = tmp_path / "execution.yaml"
     _write_execution_config(config_path)
     output_dir = tmp_path / "out"
 
-    original_cwd = Path.cwd()
-    os.chdir(tmp_path)
-    try:
-        exit_code = main(
-            [
-                "compile-plans",
-                "--release-lock",
-                str(release.lock_path),
-                "--gold-path",
-                str(gold_path),
-                "--output-dir",
-                str(output_dir),
-                "--execution-config",
-                str(config_path),
-            ]
-        )
-    finally:
-        os.chdir(original_cwd)
+    exit_code = main(
+        [
+            "run-e2e",
+            "--release-lock",
+            "lock.json",
+            "--gold-path",
+            str(gold_path),
+            "--rankings-path",
+            str(rankings_path),
+            "--output-dir",
+            str(output_dir),
+            "--execution-config",
+            str(config_path),
+        ]
+    )
 
     assert exit_code == 0
-    assert len(list(output_dir.glob("compiled-plans-*.json"))) == 1
-    assert len(list(output_dir.glob("compiled-plans-*.md"))) == 1
+    json_files = list(output_dir.glob("e2e-pipeline-*.json"))
+    md_files = list(output_dir.glob("e2e-pipeline-*.md"))
+    assert len(json_files) == 1
+    assert len(md_files) == 1
+    report = json.loads(json_files[0].read_text(encoding="utf-8"))
+    assert report["question_count"] == 120
+    assert report["verified_count"] == 120
+    assert report["rankings_source"] == str(rankings_path)
 
 
-def test_compile_plans_cli_requires_execution_config(
+def test_scope_policy_report_cli_writes_report(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    gold_path = tmp_path / "gold.jsonl"
+    _write_fixture_gold(gold_path)
+    question_ids = [
+        json.loads(line)["question_id"]
+        for line in gold_path.read_text(encoding="utf-8").splitlines()
+    ]
+    rankings_path = tmp_path / "rankings.json"
+    _write_fixture_rankings(rankings_path, question_ids)
+    config_path = tmp_path / "execution.yaml"
+    _write_execution_config(config_path)
+    output_dir = tmp_path / "out"
+
+    exit_code = main(
+        [
+            "scope-policy-report",
+            "--release-lock",
+            "lock.json",
+            "--gold-path",
+            str(gold_path),
+            "--rankings-path",
+            str(rankings_path),
+            "--output-dir",
+            str(output_dir),
+            "--execution-config",
+            str(config_path),
+        ]
+    )
+
+    assert exit_code == 0
+    json_files = list(output_dir.glob("scope-policy-tradeoff-*.json"))
+    md_files = list(output_dir.glob("scope-policy-tradeoff-*.md"))
+    assert len(json_files) == 1
+    assert len(md_files) == 1
+    report = json.loads(json_files[0].read_text(encoding="utf-8"))
+    assert report["question_count"] == 120
+    assert {p["policy"] for p in report["policies"]} == {
+        "none",
+        "default_consolidated",
+        "abstain_when_unstated",
+    }
+
+
+def test_run_e2e_cli_missing_execution_config_is_error(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     release = _fixture_release(tmp_path)
     _patch_release_resolver(monkeypatch, release)
     gold_path = tmp_path / "gold.jsonl"
     _write_fixture_gold(gold_path)
-    output_dir = tmp_path / "out"
+    rankings_path = tmp_path / "rankings.json"
+    rankings_path.write_text(json.dumps({"per_question": []}), encoding="utf-8")
 
-    original_cwd = Path.cwd()
-    os.chdir(tmp_path)
-    try:
-        exit_code = main(
-            [
-                "compile-plans",
-                "--release-lock",
-                str(release.lock_path),
-                "--gold-path",
-                str(gold_path),
-                "--output-dir",
-                str(output_dir),
-            ]
-        )
-    finally:
-        os.chdir(original_cwd)
-
+    exit_code = main(
+        [
+            "run-e2e",
+            "--release-lock",
+            "lock.json",
+            "--gold-path",
+            str(gold_path),
+            "--rankings-path",
+            str(rankings_path),
+            "--output-dir",
+            str(tmp_path / "out"),
+        ]
+    )
     assert exit_code == 2

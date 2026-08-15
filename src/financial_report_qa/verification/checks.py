@@ -167,3 +167,21 @@ def check_period_inferred_warning(compiled: CompiledQuery) -> VerificationIssue 
             message="one or more evidence cells rely on an inferred period",
         )
     return None
+
+
+def check_scope_inferred(compiled: CompiledQuery) -> VerificationIssue | None:
+    """Blocking (Day 21 plan §1.5/ADR 0010 decision B1), unlike
+    `check_period_inferred_warning`: `CompiledQuery.scope_inferred` is True
+    only when the plan left `statement_scope` unset and
+    `ExecutionSettings.default_statement_scope` resolved the candidate frame
+    instead -- 92.8% of two-scope groups disagree in VALUE, so presenting
+    such an answer as certain would be wrong far more often than a
+    one-year-off inferred period."""
+    if compiled.status != "answered":
+        return None
+    if compiled.scope_inferred:
+        return VerificationIssue(
+            code="scope_inferred",
+            message="statement_scope was inferred from a default, not stated in the plan",
+        )
+    return None

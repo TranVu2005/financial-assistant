@@ -37,6 +37,21 @@ def test_single_company_single_period_single_metric_is_lookup() -> None:
     assert validate_plan_semantics(result.plan, known_table_ids=_KNOWN_TABLES) == ()
 
 
+def test_plan_defaults_statement_scope_to_none_when_unstated() -> None:
+    result = _plan_for("Tra cứu doanh thu thuần của NVL năm 2023.")
+    assert result.plan is not None
+    assert result.plan.statement_scope is None
+
+
+def test_plan_carries_statement_scope_parsed_from_question() -> None:
+    """Day 21 plan §1.3/ADR 0010 decision A1: the entity parser resolves
+    'công ty mẹ' to `separate`; that value must reach the plan, not be
+    dropped between parser output and plan construction."""
+    result = _plan_for("Tra cứu doanh thu thuần của công ty mẹ NVL năm 2023.")
+    assert result.plan is not None
+    assert result.plan.statement_scope == "separate"
+
+
 def test_growth_wording_over_two_periods_is_growth_rate() -> None:
     result = _plan_for("Tính tốc độ tăng trưởng doanh thu thuần của NVL từ năm 2022 đến năm 2023.")
     assert result.plan is not None

@@ -54,6 +54,12 @@ def _parser() -> argparse.ArgumentParser:
         add_help=False,
         help="Verify and cite compiled answers, template-first (Day 20).",
     )
+    commands.add_parser(
+        "pipeline",
+        add_help=False,
+        help="Run the real text -> retrieval -> plan -> execution -> "
+        "verification E2E chain (Day 21).",
+    )
     return parser
 
 
@@ -90,6 +96,10 @@ def main(
         from financial_report_qa.verification.cli import main as verification_main
 
         return verification_main(remaining)
+    if parsed.command == "pipeline":
+        from financial_report_qa.pipeline.cli import main as pipeline_main
+
+        return pipeline_main(remaining)
     raise AssertionError("argparse accepted an unknown command")
 
 

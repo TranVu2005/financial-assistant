@@ -103,6 +103,30 @@ def test_load_execution_settings_merges_layered_yaml_files(tmp_path: Path) -> No
     assert settings.allow_operations == ("lookup", "difference")
 
 
+def test_execution_settings_default_statement_scope_defaults_to_none() -> None:
+    """Day 21 plan §1.5/ADR 0010 decision B1: pre-Day-21 config files never
+    set this key and must keep validating -- the field is additive, and no
+    scope filtering happens unless a config opts in."""
+    settings = ExecutionSettings.model_validate(
+        {"timeout_seconds": 5, "max_rows": 100000, "allow_operations": ["lookup"]}
+    )
+    assert settings.default_statement_scope is None
+
+
+def test_load_execution_settings_reads_default_statement_scope(tmp_path: Path) -> None:
+    base = tmp_path / "base.yaml"
+    base.write_text(
+        "execution:\n"
+        "  timeout_seconds: 5\n"
+        "  max_rows: 100000\n"
+        "  allow_operations:\n    - lookup\n"
+        "  default_statement_scope: consolidated\n",
+        encoding="utf-8",
+    )
+    settings = load_execution_settings((base,))
+    assert settings.default_statement_scope == "consolidated"
+
+
 def test_load_execution_settings_rejects_missing_required_field(tmp_path: Path) -> None:
     """A config missing `allow_operations` must fail loudly rather than silently
     allow every operation, which would defeat the whitelist's purpose."""

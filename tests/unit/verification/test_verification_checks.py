@@ -16,6 +16,7 @@ from financial_report_qa.verification.checks import (
     check_evidence_outside_retrieval,
     check_period_inferred_warning,
     check_recompute_mismatch,
+    check_scope_inferred,
     check_unit_not_presentable,
 )
 
@@ -222,3 +223,22 @@ def test_period_inferred_warning_flags_inferred_evidence() -> None:
     issue = check_period_inferred_warning(compiled)
     assert issue is not None
     assert issue.code == "period_inferred_warning"
+
+
+# --- check_scope_inferred ----------------------------------------------
+
+
+def test_scope_inferred_none_when_compiled_scope_not_inferred() -> None:
+    compiled = _compiled(scope_inferred=False)
+    assert check_scope_inferred(compiled) is None
+
+
+def test_scope_inferred_flags_when_compiled_scope_was_inferred() -> None:
+    """Day 21 plan §1.5/ADR 0010 decision B1: `CompiledQuery.scope_inferred`
+    (set in compiler.py when `ExecutionSettings.default_statement_scope`
+    resolved a plan that left `statement_scope` unset) must surface as a
+    blocking verification issue, not silently pass through."""
+    compiled = _compiled(scope_inferred=True)
+    issue = check_scope_inferred(compiled)
+    assert issue is not None
+    assert issue.code == "scope_inferred"

@@ -31,6 +31,8 @@ ExecutionIssueCode = Literal[
     "row_limit_exceeded",
     # Day 20 answer-verification codes (ADR 0009 decision C1).
     "unit_missing",
+    # Day 21 statement-scope codes (ADR 0010 decision A1).
+    "candidate_table_ids_scope_empty",
 ]
 
 CellId = Annotated[str, StringConstraints(pattern=r"^cell_[0-9a-f]{64}$")]
@@ -70,6 +72,11 @@ class CompiledQuery(_FrozenModel):
     pandas_query: NonEmptyString
     error_code: ExecutionIssueCode | None
     error_message: NonEmptyString | None
+    # Day 21 plan §1.5/ADR 0010 decision B1: True only when the plan itself
+    # left `statement_scope` unset and `ExecutionSettings.
+    # default_statement_scope` resolved the candidate frame instead --
+    # verification must not present such an answer as certain.
+    scope_inferred: bool = False
 
     @model_validator(mode="after")
     def validate_status_consistency(self) -> Self:

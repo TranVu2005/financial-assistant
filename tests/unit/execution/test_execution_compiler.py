@@ -17,7 +17,9 @@ DOC_ID_ACB = "doc_" + "a" * 64
 DOC_ID_MBB = "doc_" + "b" * 64
 
 
-def _document(doc_id: str, company: str, year: int) -> dict[str, object]:
+def _document(
+    doc_id: str, company: str, year: int, *, statement_scope: str = "consolidated"
+) -> dict[str, object]:
     return {
         "doc_id": doc_id,
         "repo_id": "repo",
@@ -25,7 +27,7 @@ def _document(doc_id: str, company: str, year: int) -> dict[str, object]:
         "relative_path": f"{company}/{year}/report.txt",
         "company_code": company,
         "report_year": year,
-        "statement_scope": "consolidated",
+        "statement_scope": statement_scope,
         "sha256": "0" * 64,
         "file_size_bytes": 10,
         "encoding": "utf-8",
@@ -85,11 +87,21 @@ def _cell(
     }
 
 
-def _write_release(tmp_path: Path, cells: list[dict[str, object]]) -> Path:
+def _write_release(
+    tmp_path: Path,
+    cells: list[dict[str, object]],
+    *,
+    extra_documents: list[dict[str, object]] | None = None,
+    extra_tables: list[dict[str, object]] | None = None,
+) -> Path:
     release_dir = tmp_path / "release"
     release_dir.mkdir(exist_ok=True)
-    documents = [_document(DOC_ID_ACB, "ACB", 2023), _document(DOC_ID_MBB, "MBB", 2023)]
-    tables = [_table(TABLE_ID, DOC_ID_ACB), _table(TABLE_ID_MBB, DOC_ID_MBB)]
+    documents = [
+        _document(DOC_ID_ACB, "ACB", 2023),
+        _document(DOC_ID_MBB, "MBB", 2023),
+        *(extra_documents or ()),
+    ]
+    tables = [_table(TABLE_ID, DOC_ID_ACB), _table(TABLE_ID_MBB, DOC_ID_MBB), *(extra_tables or ())]
     pq.write_table(  # type: ignore[no-untyped-call]
         pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet"
     )
@@ -553,3 +565,159 @@ def test_compile_plan_is_deterministic(tmp_path: Path) -> None:
     first = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
     second = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
     assert first == second
+
+
+TABLE_ID_ACB_SEPARATE = "tbl_" + "3" * 64
+DOC_ID_ACB_SEPARATE = "doc_" + "c" * 64
+
+
+def _write_dual_scope_release(tmp_path: Path) -> Path:
+    """Day 21 plan §1.2/§1.4: same company/metric/period, two real values
+    split by statement_scope -- the exact shape measured on gold70 (e.g.
+    CTG operating cash flow 2022: 84,420,878 separate vs 84,463,729
+    consolidated)."""
+    return _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="LNST",
+                row_label_canonical="profit_after_tax",
+                value_numeric="100",
+                period="2023",
+            ),
+            _cell(
+                "cell_" + "b" * 64,
+                TABLE_ID_ACB_SEPARATE,
+                1,
+                1,
+                row_label_raw="LNST",
+                row_label_canonical="profit_after_tax",
+                value_numeric="200",
+                period="2023",
+            ),
+        ],
+        extra_documents=[_document(DOC_ID_ACB_SEPARATE, "ACB", 2023, statement_scope="separate")],
+        extra_tables=[_table(TABLE_ID_ACB_SEPARATE, DOC_ID_ACB_SEPARATE)],
+    )
+
+
+def _dual_scope_plan(*, statement_scope: str | None) -> FinancialQueryPlan:
+    return FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID, TABLE_ID_ACB_SEPARATE),
+        metric=MetricSelector(canonical="profit_after_tax"),
+        statement_scope=statement_scope,  # type: ignore[arg-type]
+    )
+
+
+def test_compile_plan_without_scope_is_ambiguous_across_separate_and_consolidated(
+    tmp_path: Path,
+) -> None:
+    """Baseline: without any scope information, two real candidate tables
+    with genuinely different values must still abstain -- this is the
+    Day 21 §1.1/§1.2 regression, and scope filtering must not silently
+    resolve a real conflict."""
+    release_dir = _write_dual_scope_release(tmp_path)
+    plan = _dual_scope_plan(statement_scope=None)
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "error"
+    assert result.error_code == "cell_ambiguous"
+
+
+def test_compile_plan_filters_candidates_by_plan_statement_scope(tmp_path: Path) -> None:
+    """ADR 0010 decision A1: a plan that states its own scope resolves
+    deterministically to that scope's value, with `scope_inferred=False`."""
+    release_dir = _write_dual_scope_release(tmp_path)
+    plan = _dual_scope_plan(statement_scope="separate")
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "answered"
+    assert result.answer == Decimal("200")
+    assert result.scope_inferred is False
+
+
+def test_compile_plan_applies_default_statement_scope_when_plan_unset(tmp_path: Path) -> None:
+    """ADR 0010 decision B1: when the plan is silent, `ExecutionSettings.
+    default_statement_scope` resolves the conflict but is flagged
+    `scope_inferred=True` so verification can block it from being presented
+    as a certain answer."""
+    release_dir = _write_dual_scope_release(tmp_path)
+    plan = _dual_scope_plan(statement_scope=None)
+    settings = ExecutionSettings(
+        timeout_seconds=5,
+        max_rows=100000,
+        allow_operations=("lookup",),
+        default_statement_scope="consolidated",
+    )
+    result = compile_plan(plan, release_dir, execution_settings=settings)
+    assert result.status == "answered"
+    assert result.answer == Decimal("100")
+    assert result.scope_inferred is True
+
+
+def test_compile_plan_scope_filter_that_removes_every_candidate_is_an_error(
+    tmp_path: Path,
+) -> None:
+    """When a plan states a scope no candidate table has, this must be a
+    typed error, never a silent fall-through to the unfiltered set."""
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="LNST",
+                row_label_canonical="profit_after_tax",
+                value_numeric="100",
+                period="2023",
+            )
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="profit_after_tax"),
+        statement_scope="separate",
+    )
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "error"
+    assert result.error_code == "candidate_table_ids_scope_empty"
+
+
+def test_compile_plan_answered_result_has_scope_inferred_false_by_default(tmp_path: Path) -> None:
+    """No scope stated and no default configured: unfiltered behavior is
+    preserved exactly (pre-Day-21 tests all rely on this)."""
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="X",
+                row_label_canonical="profit_after_tax",
+                value_numeric="100",
+                period="2023",
+            )
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="profit_after_tax"),
+    )
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "answered"
+    assert result.scope_inferred is False

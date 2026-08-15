@@ -45,6 +45,13 @@ PlanOperation = Literal[
 
 ExpectedUnit = Literal["VND", "VND_thousand", "VND_million", "VND_billion", "percent", "ratio"]
 
+# Day 21 plan §1.3/§1.4: `documents.statement_scope` distinguishes separate
+# ("riêng"/"công ty mẹ") from consolidated ("hợp nhất") reports; 64.9% of
+# (company, period, metric) groups exist in both with 92.8% disagreeing in
+# value. ADR 0010 decision A1: this must be a plan field, not an implicit
+# filter applied downstream where no validator or audit trail can see it.
+StatementScope = Literal["separate", "consolidated"]
+
 
 class MetricSelector(_FrozenModel):
     """Locate one row across candidate tables: a canonical metric, or a verbatim
@@ -77,6 +84,7 @@ class FinancialQueryPlan(_FrozenModel):
     denominator_metric: MetricSelector | None = None
     top_k: int | None = None
     expected_unit: ExpectedUnit | None = None
+    statement_scope: StatementScope | None = None
 
     @model_validator(mode="after")
     def validate_shared_structure(self) -> Self:

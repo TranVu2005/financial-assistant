@@ -58,6 +58,12 @@ class ExecutionSettings(BaseModel):
     timeout_seconds: float
     max_rows: int
     allow_operations: tuple[str, ...]
+    # Day 21 plan §1.5/ADR 0010 decision B1: applied only when a plan's own
+    # `statement_scope` is unset. Measured: no single policy clears the gate
+    # (default `consolidated` triples coverage but raises the overconfident-
+    # wrong rate to 40%) so this stays config-controlled, not hardcoded, and
+    # `None` (the default) disables scope filtering entirely.
+    default_statement_scope: Literal["separate", "consolidated"] | None = None
 
     @model_validator(mode="after")
     def validate_allow_operations_non_empty(self) -> Self:

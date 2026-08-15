@@ -66,3 +66,39 @@ for these 30 questions on this locked release, the compiler's arithmetic and loc
 source report in every case except one immaterial float-precision residue traceable to ingestion,
 not to `execution/`. The sample is 30 of 70 gold70 questions (43%); Day 21's mandate to expand the QA
 set to ≥120 questions is the place to grow this, not this task.
+
+## Day 21 (task 21.10): 30 → 58
+
+Task 21.10 ([docs/plans/day21-e2e-week3-gate.md](../../docs/plans/day21-e2e-week3-gate.md) §3)
+labeled 28 additional answers for questions that became `verified` only after the E2E pipeline
+(task 21.7) replaced `gold_table_ids` with real BM25 v4 retrieval rankings over the full
+120-question set (`financial-report-qa retrieval evaluate-v2`, `artifacts/evaluations/day21/retrieval/`)
+— all 28 are from the 50 questions added in task 21.9; 0 previously-unlabeled questions among the
+original 70 became newly verified.
+
+Method, adapted from ADR 0009 decision A2 for scale (28 questions vs. 30):
+
+1. **Layer 1** (all 28): each evidence cell's `value_numeric` was read from `cells.parquet` by
+   `(table_id, row_label_canonical, period)` — upstream of `pandas_query`/`operations.py` dispatch,
+   so this is not the executor's derived answer, the same distinction Day 20 relied on. All 28 agreed
+   exactly with the pipeline's computed answer (or matched within the same float-drift magnitude as
+   the Day 20 VGT case, e.g. `2164998913301.9998` vs. the true `2164998913302`).
+2. **Layer 2 spot-check** (4/28, chosen for diversity of operation and metric — DLG lookup, VGC
+   lookup, VPI lookup with a float-drift case, POW two-period difference, SHB two-period growth_rate
+   with an unusually small absolute value worth double-checking): the immutable `_extracted.txt` line
+   was read directly and matched Layer 1 exactly in all 4, including confirming the VPI float-drift
+   case (`Doanh thu thuần` = `2.164.998.913.302` in source, no `.9998` residue — same artifact class
+   as Day 20's VGT case, not a new bug) and confirming the SHB figure is genuinely `triệu VND`
+   (million VND, per the column header), not an extraction error.
+3. Given 28/28 Layer-1 agreement and 4/4 Layer-2 confirmation, the remaining 24 were not
+   individually re-verified against raw text — this is a lighter-weight pass than Day 20's full
+   51/51 cross-check, made defensible by 100% Layer-1 agreement across the whole batch. Documented
+   here rather than silently presented as equally rigorous.
+4. All labels use the Layer-1 (source-derived) value, not the pipeline's computed float, for the
+   same reason as the Day 20 VGT case: never adjust a label to match machine output.
+
+Re-running `verify-answers`/`pipeline run-e2e` with the expanded 58-label set and the real 120-question
+BM25 v4 ranking gives the first accuracy measurement with every currently-verified answer scored: **39/39
+verified questions scored, 33 correct, 6 overconfident-wrong, accuracy 0.846** (`none` scope policy —
+see [docs/decisions/0010-statement-scope-contract.md](../../docs/decisions/0010-statement-scope-contract.md)
+for why this is reported as one line of a 3-policy tradeoff table, not a single number).

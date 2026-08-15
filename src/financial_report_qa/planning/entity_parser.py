@@ -28,7 +28,12 @@ from financial_report_qa.normalization.statements import (
     _STATEMENT_FAMILIES,
     normalize_statement_type,
 )
-from financial_report_qa.planning.entity_contracts import AmbiguityCode, ParsedSpan, QueryEntities
+from financial_report_qa.planning.entity_contracts import (
+    AmbiguityCode,
+    ParsedSpan,
+    QueryEntities,
+    StatementScope,
+)
 from financial_report_qa.retrieval.index import tokenize_text
 
 _ROMAN_QUARTERS = {"i": 1, "ii": 2, "iii": 3, "iv": 4, "1": 1, "2": 2, "3": 3, "4": 4}
@@ -50,6 +55,11 @@ _BARE_YEAR_AFTER_CONNECTOR_RE = re.compile(
 _RELATIVE_PERIOD_RE = re.compile(
     r"năm\s+(?:nay|hiện\s*hành|trước(?:\s+đó)?)|quý\s+(?:này|trước|vừa\s+rồi)", re.IGNORECASE
 )
+# Day 21 plan §1.6/ADR 0010 decision A1: measured 37.7% of official ViFinQA
+# questions state a scope, overwhelmingly "công ty mẹ"/"riêng" (36.4%) over
+# "hợp nhất" (1.3%).
+_SEPARATE_SCOPE_RE = re.compile(r"\briêng\b|\bcông\s+ty\s+mẹ\b", re.IGNORECASE)
+_CONSOLIDATED_SCOPE_RE = re.compile(r"\bhợp\s+nhất\b|\btoàn\s+tập\s+đoàn\b", re.IGNORECASE)
 
 
 def _normalize_question(question: str) -> str:
@@ -317,6 +327,35 @@ def _parse_statement_type(
     return (decision.value,), (), ((span,) if span is not None else ())
 
 
+def _parse_statement_scope(
+    question: str,
+) -> tuple[StatementScope | None, tuple[ParsedSpan, ...]]:
+    """Never guesses: a question naming both scopes wants a cross-scope
+    comparison no compiler operation supports yet (Day 21 plan §1.6, 1/1012
+    official questions) -- left unstated rather than picking one silently."""
+    separate_match = _SEPARATE_SCOPE_RE.search(question)
+    consolidated_match = _CONSOLIDATED_SCOPE_RE.search(question)
+    if separate_match is not None and consolidated_match is not None:
+        return None, ()
+    if separate_match is not None:
+        span = ParsedSpan(
+            field="statement_scope",
+            surface=separate_match.group(0),
+            start=separate_match.start(),
+            end=separate_match.end(),
+        )
+        return "separate", (span,)
+    if consolidated_match is not None:
+        span = ParsedSpan(
+            field="statement_scope",
+            surface=consolidated_match.group(0),
+            start=consolidated_match.start(),
+            end=consolidated_match.end(),
+        )
+        return "consolidated", (span,)
+    return None, ()
+
+
 def parse_query_entities(question: str) -> QueryEntities:
     """Extract company, period, metric, and statement-type entities from a question.
 
@@ -330,6 +369,7 @@ def parse_query_entities(question: str) -> QueryEntities:
     metrics, metric_ambiguity, metric_spans = _parse_metric(normalized_question)
     statement_result = _parse_statement_type(normalized_question)
     statement_types, statement_ambiguity, statement_spans = statement_result
+    statement_scope, scope_spans = _parse_statement_scope(normalized_question)
 
     ambiguity = tuple(
         sorted(
@@ -341,7 +381,7 @@ def parse_query_entities(question: str) -> QueryEntities:
     )
     spans = tuple(
         sorted(
-            company_spans + period_spans + metric_spans + statement_spans,
+            company_spans + period_spans + metric_spans + statement_spans + scope_spans,
             key=lambda span: (span.start, span.end, span.field),
         )
     )
@@ -351,6 +391,7 @@ def parse_query_entities(question: str) -> QueryEntities:
         periods=periods,
         metrics=metrics,
         statement_types=statement_types,
+        statement_scope=statement_scope,
         ambiguity=ambiguity,
         spans=spans,
     )

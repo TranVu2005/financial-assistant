@@ -120,6 +120,7 @@ def build_plan(
             periods=periods,
             candidate_table_ids=candidate_table_ids,
             metric=metric_selector,
+            statement_scope=entities.statement_scope,
         )
     except ValueError:
         return _abstain("operation_unknown")

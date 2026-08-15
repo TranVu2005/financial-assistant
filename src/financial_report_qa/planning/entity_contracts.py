@@ -17,7 +17,12 @@ from financial_report_qa.retrieval.contracts import (
     _FrozenModel,
 )
 
-EntityField = Literal["company", "period", "metric", "statement_type"]
+EntityField = Literal["company", "period", "metric", "statement_type", "statement_scope"]
+
+# Day 21 plan §1.6/ADR 0010 decision A1: "riêng"/"công ty mẹ" -> separate,
+# "hợp nhất"/"toàn tập đoàn" -> consolidated. Distinct from `statement_type`
+# (balance sheet vs. income statement vs. ...), a different corpus dimension.
+StatementScope = Literal["separate", "consolidated"]
 
 # Reuses `financial_report_qa.schemas.normalization.NormalizationIssueCode` names
 # where the same evidence conflict applies to free-text questions
@@ -80,6 +85,7 @@ class QueryEntities(_FrozenModel):
     periods: tuple[str, ...] = ()
     metrics: tuple[str, ...] = ()
     statement_types: tuple[str, ...] = ()
+    statement_scope: StatementScope | None = None
     ambiguity: tuple[AmbiguityCode, ...] = ()
     spans: tuple[ParsedSpan, ...] = ()
 

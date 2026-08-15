@@ -34,18 +34,25 @@ VerificationIssueCode = Literal[
     "evidence_outside_retrieval",
     "display_roundtrip_mismatch",
     "period_inferred_warning",
+    "scope_inferred",
 ]
 
 # Day 20 plan Sec 3 (task 20.5): four checks block verification, one is a
 # non-blocking warning -- 6/30 gold70 answers rely on an inferred period
 # (Day 20 plan Sec 1.5), so treating that as blocking would reject 20% of
 # otherwise-correct answers.
+#
+# Day 21 plan §1.5/ADR 0010 decision B1: `scope_inferred` joins the blocking
+# set, unlike `period_inferred_warning` -- an inferred statement_scope can
+# flip the answer's VALUE (92.8% of two-scope groups disagree in value,
+# Day 21 plan §1.4), not just shift a period by one year.
 _BLOCKING_ISSUE_CODES = frozenset(
     {
         "recompute_mismatch",
         "unit_not_presentable",
         "evidence_outside_retrieval",
         "display_roundtrip_mismatch",
+        "scope_inferred",
     }
 )
 

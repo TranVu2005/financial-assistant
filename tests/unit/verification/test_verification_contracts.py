@@ -17,6 +17,7 @@ from financial_report_qa.verification.contracts import (
     AnswerPackage,
     Citation,
     VerificationIssue,
+    is_blocking_issue,
 )
 
 TABLE_ID = "tbl_" + "a" * 64
@@ -133,3 +134,34 @@ def test_answer_package_verified_status_allows_period_inferred_warning() -> None
     )
     assert package.verification_status == "verified"
     assert len(package.verification_issues) == 1
+
+
+def test_scope_inferred_is_a_blocking_issue_code() -> None:
+    """Day 21 plan §1.5/ADR 0010 decision B1: unlike `period_inferred_warning`
+    (sign flip, small magnitude), an inferred statement_scope can flip the
+    answer's VALUE (92.8% of two-scope groups disagree) -- must block."""
+    assert is_blocking_issue("scope_inferred") is True
+
+
+def test_answer_package_verified_status_forbids_scope_inferred_issue() -> None:
+    with pytest.raises(ValidationError):
+        _package(
+            verification_status="verified",
+            verification_issues=(
+                VerificationIssue(
+                    code="scope_inferred", message="statement_scope was inferred, not stated"
+                ),
+            ),
+        )
+
+
+def test_answer_package_rejected_status_accepts_scope_inferred_issue() -> None:
+    package = _package(
+        verification_status="rejected",
+        verification_issues=(
+            VerificationIssue(
+                code="scope_inferred", message="statement_scope was inferred, not stated"
+            ),
+        ),
+    )
+    assert package.verification_status == "rejected"

@@ -11,6 +11,7 @@ from financial_report_qa.core.errors import RetrievalGoldError
 from financial_report_qa.evaluation.week1_release import ReleaseLock
 from financial_report_qa.retrieval.contracts import RetrievalFilters
 from financial_report_qa.retrieval.gold import (
+    REQUIRED_GOLD_QUESTION_COUNT,
     load_gold_questions,
     load_reviewed_gold,
     stable_question_id,
@@ -42,6 +43,12 @@ def _record(question_id: str = "retq_001") -> dict[str, object]:
         "reviewed_at": "2026-08-08T00:00:00+00:00",
         "dataset_fingerprint": EXPECTED_FINGERPRINT,
     }
+
+
+def test_required_gold_question_count_matches_day21_expansion() -> None:
+    """Day 21 plan §1.9/task 21.9: retrieval-gold-v1.jsonl expanded 70 -> 120
+    to satisfy the plan.md gate ('nâng bộ QA lên ít nhất 120 câu')."""
+    assert REQUIRED_GOLD_QUESTION_COUNT == 120
 
 
 def test_load_reviewed_gold_rejects_duplicate_question_ids(tmp_path: Path) -> None:
