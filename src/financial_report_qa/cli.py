@@ -44,6 +44,11 @@ def _parser() -> argparse.ArgumentParser:
         add_help=False,
         help="Generate and evaluate the deterministic Day 10 entity parser.",
     )
+    commands.add_parser(
+        "execution",
+        add_help=False,
+        help="Compile financial query plans to scalar answers (Day 18).",
+    )
     return parser
 
 
@@ -72,6 +77,10 @@ def main(
         from financial_report_qa.planning.cli import main as planning_main
 
         return planning_main(remaining)
+    if parsed.command == "execution":
+        from financial_report_qa.execution.cli import main as execution_main
+
+        return execution_main(remaining)
     raise AssertionError("argparse accepted an unknown command")
 
 

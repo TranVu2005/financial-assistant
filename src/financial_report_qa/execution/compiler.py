@@ -1,0 +1,268 @@
+"""Day 18 compile_plan orchestrator: FinancialQueryPlan -> CompiledQuery.
+
+Ties together `cell_frame` (ADR 0007 A1/B1/C2), `locator` (D1), `operations`
+(E1), and `pandas_query` (F1). This is the one place all four modules meet, and
+the one place the F1 replay check actually runs: every `answered` result is
+re-derived independently through `replay_pandas_query` on a small evidence-only
+frame before it is returned, and a mismatch is a build-breaking bug
+(`ExecutionReplayMismatchError`), never a silently wrong answer.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from pathlib import Path
+
+import pandas as pd
+
+from financial_report_qa.core.config import ExecutionSettings
+from financial_report_qa.core.errors import ExecutionReplayMismatchError
+from financial_report_qa.execution import operations
+from financial_report_qa.execution.cell_frame import build_cell_frame
+from financial_report_qa.execution.contracts import CellMatch, CompiledQuery, ExecutionIssueCode
+from financial_report_qa.execution.locator import LocateResult, locate
+from financial_report_qa.execution.pandas_query import render_pandas_query, replay_pandas_query
+from financial_report_qa.normalization.units import CanonicalUnit
+from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
+
+
+class _CompileFailure(Exception):
+    def __init__(self, code: ExecutionIssueCode, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def _error(operation: str, code: ExecutionIssueCode, message: str, query: str) -> CompiledQuery:
+    return CompiledQuery(
+        operation=operation,  # type: ignore[arg-type]
+        status="error",
+        answer=None,
+        unit=None,
+        evidence=(),
+        pandas_query=query,
+        error_code=code,
+        error_message=message,
+    )
+
+
+def _require(result: LocateResult) -> CellMatch:
+    if result.match is None:
+        assert result.error_code is not None and result.error_message is not None
+        raise _CompileFailure(result.error_code, result.error_message)
+    return result.match
+
+
+def _replay_row(
+    *, company_code: str, selector: MetricSelector, period: int, value: Decimal
+) -> dict[str, object]:
+    return {
+        "company_code": company_code,
+        "row_label_canonical": selector.canonical,
+        "row_label_raw": selector.raw_text,
+        "period": period,
+        "value": value,
+    }
+
+
+def _replay_frame(rows: list[dict[str, object]]) -> pd.DataFrame:
+    frame = pd.DataFrame(rows)
+    frame["period"] = frame["period"].astype("Int64")
+    return frame
+
+
+def compile_plan(
+    plan: FinancialQueryPlan,
+    release_dir: Path,
+    *,
+    execution_settings: ExecutionSettings,
+) -> CompiledQuery:
+    """Compile one plan against a locked release into a locked answer or a
+    typed error. Never returns a guessed value (ADR 0007 decision D1)."""
+    query = render_pandas_query(plan)
+
+    if plan.operation not in execution_settings.allow_operations:
+        return _error(
+            plan.operation,
+            "operation_not_allowed",
+            f"operation '{plan.operation}' is not in the execution allowlist",
+            query,
+        )
+
+    frame = build_cell_frame(release_dir, plan.candidate_table_ids)
+    period = int(plan.periods[0]) if plan.periods else None
+
+    try:
+        evidence, replay_rows, answer, unit = _dispatch(plan, frame, period)
+    except _CompileFailure as failure:
+        return _error(plan.operation, failure.code, failure.message, query)
+    except ValueError as exc:
+        return _error(plan.operation, "unit_incompatible", str(exc), query)
+    except ZeroDivisionError as exc:
+        return _error(plan.operation, "division_by_zero", str(exc), query)
+
+    replayed = replay_pandas_query(query, _replay_frame(replay_rows))
+    if replayed != answer:
+        raise ExecutionReplayMismatchError(
+            f"pandas_query replay {replayed!r} does not match compiled answer {answer!r} "
+            f"for operation '{plan.operation}': {query}"
+        )
+
+    return CompiledQuery(
+        operation=plan.operation,
+        status="answered",
+        answer=answer,
+        unit=unit,
+        evidence=evidence,
+        pandas_query=query,
+        error_code=None,
+        error_message=None,
+    )
+
+
+def _dispatch(
+    plan: FinancialQueryPlan, frame: pd.DataFrame, period: int | None
+) -> tuple[tuple[CellMatch, ...], list[dict[str, object]], Decimal, CanonicalUnit]:
+    company = plan.companies[0]
+
+    if plan.operation == "lookup":
+        assert plan.metric is not None and period is not None
+        cell = _require(locate(frame, plan.metric, period, company_code=company))
+        answer, unit = operations.compile_lookup(cell)
+        rows = [
+            _replay_row(company_code=company, selector=plan.metric, period=period, value=answer)
+        ]
+        return (cell,), rows, answer, unit
+
+    if plan.operation in ("difference", "growth_rate"):
+        assert plan.metric is not None
+        start_period, end_period = int(plan.periods[0]), int(plan.periods[-1])
+        start = _require(locate(frame, plan.metric, start_period, company_code=company))
+        end = _require(locate(frame, plan.metric, end_period, company_code=company))
+        if plan.operation == "difference":
+            answer, unit = operations.compile_difference(end, start)
+        else:
+            answer, unit = operations.compile_growth_rate(end, start)
+        start_converted = _reconvert(start, end.unit)
+        rows = [
+            _replay_row(
+                company_code=company,
+                selector=plan.metric,
+                period=start_period,
+                value=start_converted,
+            ),
+            _replay_row(
+                company_code=company, selector=plan.metric, period=end_period, value=end.value
+            ),
+        ]
+        return (start, end), rows, answer, unit
+
+    if plan.operation == "compare":
+        assert plan.metric_a is not None and plan.metric_b is not None and period is not None
+        metric_a = _require(locate(frame, plan.metric_a, period, company_code=company))
+        metric_b = _require(locate(frame, plan.metric_b, period, company_code=company))
+        answer, unit = operations.compile_compare(metric_a, metric_b)
+        rows = [
+            _replay_row(
+                company_code=company, selector=plan.metric_a, period=period, value=metric_a.value
+            ),
+            _replay_row(
+                company_code=company,
+                selector=plan.metric_b,
+                period=period,
+                value=_reconvert(metric_b, metric_a.unit),
+            ),
+        ]
+        return (metric_a, metric_b), rows, answer, unit
+
+    if plan.operation == "compare_companies":
+        assert plan.metric is not None and period is not None
+        company_a, company_b = plan.companies[0], plan.companies[1]
+        cell_a = _require(locate(frame, plan.metric, period, company_code=company_a))
+        cell_b = _require(locate(frame, plan.metric, period, company_code=company_b))
+        answer, unit = operations.compile_compare_companies(cell_a, cell_b)
+        rows = [
+            _replay_row(
+                company_code=company_a, selector=plan.metric, period=period, value=cell_a.value
+            ),
+            _replay_row(
+                company_code=company_b,
+                selector=plan.metric,
+                period=period,
+                value=_reconvert(cell_b, cell_a.unit),
+            ),
+        ]
+        return (cell_a, cell_b), rows, answer, unit
+
+    if plan.operation == "ratio":
+        assert (
+            plan.numerator_metric is not None
+            and plan.denominator_metric is not None
+            and period is not None
+        )
+        numerator = _require(locate(frame, plan.numerator_metric, period, company_code=company))
+        denominator = _require(locate(frame, plan.denominator_metric, period, company_code=company))
+        answer, unit = operations.compile_ratio(numerator, denominator)
+        rows = [
+            _replay_row(
+                company_code=company,
+                selector=plan.numerator_metric,
+                period=period,
+                value=numerator.value,
+            ),
+            _replay_row(
+                company_code=company,
+                selector=plan.denominator_metric,
+                period=period,
+                value=_reconvert(denominator, numerator.unit),
+            ),
+        ]
+        return (numerator, denominator), rows, answer, unit
+
+    if plan.operation in ("average", "sum"):
+        assert plan.metric is not None
+        cells = tuple(
+            _require(locate(frame, plan.metric, int(p), company_code=company)) for p in plan.periods
+        )
+        answer, unit = (
+            operations.compile_average(cells)
+            if plan.operation == "average"
+            else operations.compile_sum(cells)
+        )
+        target_unit = cells[0].unit
+        rows = [
+            _replay_row(
+                company_code=company,
+                selector=plan.metric,
+                period=int(p),
+                value=_reconvert(cell, target_unit),
+            )
+            for p, cell in zip(plan.periods, cells, strict=True)
+        ]
+        return cells, rows, answer, unit
+
+    if plan.operation == "rank":
+        assert plan.metric is not None and plan.top_k is not None and period is not None
+        cells = tuple(
+            _require(locate(frame, plan.metric, period, company_code=c)) for c in plan.companies
+        )
+        answer, unit = operations.compile_rank(cells, top_k=plan.top_k)
+        target_unit = cells[0].unit
+        rows = [
+            _replay_row(
+                company_code=c,
+                selector=plan.metric,
+                period=period,
+                value=_reconvert(cell, target_unit),
+            )
+            for c, cell in zip(plan.companies, cells, strict=True)
+        ]
+        return cells, rows, answer, unit
+
+    raise _CompileFailure("operation_not_allowed", f"unsupported operation: {plan.operation}")
+
+
+def _reconvert(cell: CellMatch, target_unit: str) -> Decimal:
+    if cell.unit == target_unit:
+        return cell.value
+    return operations.convert_cell_value(cell.value, cell.unit, target_unit)

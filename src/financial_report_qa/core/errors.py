@@ -155,3 +155,15 @@ class LLMRequestError(LLMError):
 
 class LLMResponseError(LLMError):
     """The LLM endpoint returned 200 with a malformed OpenAI-style envelope."""
+
+
+class ExecutionError(FinancialReportQAError):
+    """Base class for Day 18 deterministic-compiler failures."""
+
+
+class ExecutionInputError(ExecutionError):
+    """A plan, release, or CLI input to the compiler is invalid."""
+
+
+class ExecutionReplayMismatchError(ExecutionError):
+    """A compiled `pandas_query` did not replay to the compiler's own answer."""

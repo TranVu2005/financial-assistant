@@ -974,11 +974,40 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 
 #### Ngày 18 — Deterministic compiler
 
-- [ ] Mỗi operation có một hàm compiler riêng.
-- [ ] Chỉ cho phép DataFrame đã chọn, cột đã whitelist và scalar operation.
-- [ ] Sinh `pandas_query` dễ đọc để nộp bài và audit.
-- [ ] Golden tests cho dấu âm, null, duplicate row, nhiều đơn vị và chia cho 0.
-- **Đầu ra:** cùng plan + dữ liệu luôn tạo cùng kết quả.
+- [x] Mỗi operation có một hàm compiler riêng.
+- [x] Chỉ cho phép DataFrame đã chọn, cột đã whitelist và scalar operation.
+- [x] Sinh `pandas_query` dễ đọc để nộp bài và audit.
+- [x] Golden tests cho dấu âm, null, duplicate row, nhiều đơn vị và chia cho 0.
+- **Đầu ra:** cùng plan + dữ liệu luôn tạo cùng kết quả — xác nhận bằng test tính tất định
+  (`compile_plan` gọi hai lần trên cùng plan + release → `CompiledQuery` giống hệt) và bằng replay
+  `pandas_query` bắt buộc (F1) trước khi trả bất kỳ đáp án `answered` nào.
+
+> **Kết quả đo (2026-08-15):** chạy `compile-plans` thật trên gold70 qua release đã khoá khớp đúng
+> dự đoán ở chẩn đoán: **30/51 plan (58,8 %) giải được tới ô số**, y hệt số đo trần lý thuyết ở § dưới.
+> Phân rã 21 plan không giải được: `metric_not_found` 11, `period_unresolved` 8, `cell_ambiguous` 2.
+> Toàn bộ 21 lỗi này đều trả về error code có kiểu — không có đáp án đoán nào lọt qua. Báo cáo đầy đủ:
+> `artifacts/evaluations/day18/compiled-plans-422df141c935.md` (gitignored, tái tạo bằng
+> `python -m financial_report_qa.cli execution compile-plans --release-lock
+> data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json --gold-path data/qa/retrieval-gold-v1.jsonl
+> --output-dir artifacts/evaluations/day18 --execution-config configs/base.yaml
+> configs/local_rtx3050.yaml`). ADR: [0007](docs/decisions/0007-deterministic-compiler-contract.md).
+
+> **⚠️ Chẩn đoán ngày 2026-08-15 (trước khi bắt đầu):** phần số học **không** phải chỗ khó — chỗ khó
+> là **locator** đi từ plan xuống một ô số. Đo trên 51 plan mà rule planner sinh ra cho gold70 (82
+> khe `plan × kỳ × selector`): chỉ **24/51 plan (47,1 %)** giải được trọn vẹn tới ô số. Nguyên nhân
+> gốc là kỳ: chỉ **15,4 %** ô có `period`, và **62,5 % bảng (91.266) không có `period` trên bất kỳ ô
+> nào** vì dùng bố cục `Số đầu năm`/`Số cuối năm` với năm nằm ở cấp tài liệu. Thêm quy tắc suy diễn
+> kỳ từ `documents.report_year` nâng lên **30/51 (58,8 %)** và nâng số ô `số + kỳ` toàn corpus từ
+> 822.679 lên **1.287.719 (+56,5 %)** — nhưng quy tắc này mới chỉ có **n = 10** ô đối chứng, phải ghi
+> là rủi ro. Hai bẫy khác đã đếm: **37,7 %** giá trị `period` là ngày ISO chứ không phải `YYYY` (schema
+> plan ép `^\d{4}$`), và **33.321 nhóm duplicate row có giá trị xung đột** — không được lấy dòng đầu.
+> 29 khe còn hỏng (16 `metric_label_absent`, 13 `period_unresolved`) **nằm ngoài tầm compiler**, phải
+> trả error code có kiểu. Ngoài ra `tables.csv_path` **NULL cho cả 146.011 bảng** nên hình chiếu
+> DataFrame mà `pandas_query` trỏ tới chưa tồn tại — Ngày 18 phải chốt nó, nếu không `pandas_query`
+> là chuỗi không thể phủ định. Khối `execution:` trong `configs/*.yaml` hiện là **code chết** (0 tham
+> chiếu Python), y hệt khối `llm:` trước Ngày 17.
+>
+> **Kế hoạch chi tiết:** [docs/plans/day18-deterministic-compiler.md](docs/plans/day18-deterministic-compiler.md).
 
 #### Ngày 19 — Sandbox executor
 

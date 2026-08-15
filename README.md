@@ -896,3 +896,61 @@ cứng vì chưa có số đo thật nào để đặt ngưỡng dựa trên đ�
 
 `pytest -q`: 916 passed, 4 skipped (chỉ symlink/ACL Windows). `ruff check .`: sạch. `mypy`: 0 lỗi
 (186 file, `src` + `tests`).
+
+## Day 18 Deterministic Compiler
+
+**Chẩn đoán trước khi viết code:** phần số học **không** phải chỗ khó — chỗ khó là **locator**: đi
+từ `FinancialQueryPlan` xuống một ô số trong `cells.parquet`. Đo trên 51 plan mà rule planner Ngày 16
+sinh ra cho gold70 (82 khe `plan × kỳ × selector`): chỉ **24/51 plan (47,1 %)** giải được trọn vẹn.
+Nguyên nhân gốc là kỳ, không phải metric — chỉ **15,4 %** ô có `period`, và **62,5 % bảng (91.266)
+không có `period` trên bất kỳ ô nào** vì dùng bố cục `Số đầu năm`/`Số cuối năm` với năm nằm ở cấp tài
+liệu (`documents.report_year`). Thêm quy tắc suy diễn kỳ nâng lên **30/51 (58,8 %)** — số này về sau
+khớp chính xác với kết quả CLI thật. Xem
+[docs/plans/day18-deterministic-compiler.md](docs/plans/day18-deterministic-compiler.md) và
+[ADR 0007](docs/decisions/0007-deterministic-compiler-contract.md) (quyết định A1 đọc thẳng
+`cells.parquet` / B1 hình chiếu dạng dài / C2 suy diễn kỳ / D1 không bao giờ đoán / E1 tái dùng
+`convert_scale` / F1 replay `pandas_query` là điều kiện DoD).
+
+### Kiến trúc: cell_frame → locator → operations → pandas_query, gộp bởi compiler
+
+```
+execution.compiler.compile_plan(plan, release_dir, execution_settings)
+  ├─ cell_frame.build_cell_frame     # ADR 0007 A1/B1/C2: hình chiếu dạng dài, kỳ đã chuẩn hoá/suy diễn
+  ├─ locator.locate                  # ADR 0007 D1: 4 nhánh — metric_not_found / period_unresolved /
+  │                                  #   khớp duy nhất / cell_ambiguous, không bao giờ đoán
+  ├─ operations.compile_*            # ADR 0007 E1: 9 hàm, một cho mỗi operation, dùng lại
+  │                                  #   normalization/units.py::convert_scale nguyên trạng
+  └─ pandas_query.render/replay      # ADR 0007 F1: sinh chuỗi Pandas dễ đọc + replay qua AST
+                                     #   whitelist (không eval/exec) trước khi trả `answered`
+```
+
+`build_cell_frame` đọc thẳng `cells.parquet` (không qua `data/table_frame.py`'s placement-join —
+đó là để dựng lại grid vị trí, không cần cho tra cứu giá trị) và áp hai bộ lọc bắt buộc:
+`col_idx > 0` (loại ô nhãn) và `value_numeric IS NOT NULL` (loại ô placeholder như `-`). `locate`
+không bao giờ lấy dòng đầu khi có xung đột: 33.321/35.766 nhóm duplicate-row toàn corpus (93,2 %) có
+giá trị khác nhau, và nhóm cùng giá trị vẫn phải cùng đơn vị (100 VND ≠ 100 VND_million).
+
+### `pandas_query` phải replay được, không phải chuỗi trang trí
+
+`tables.csv_path` **NULL cho cả 146.011 bảng** trước Ngày 18 — hình chiếu mà `pandas_query` trỏ tới
+chưa từng tồn tại. `compile_plan` giờ luôn kiểm chứng: mọi kết quả `answered` phải replay đúng qua
+`replay_pandas_query` (một AST interpreter whitelist tự viết — không `eval`/`exec`, đúng tinh thần
+Ngày 19) trên một khung dữ liệu chỉ gồm các ô evidence, và một lệch số là `ExecutionReplayMismatchError`
+(hỏng build), không phải một đáp án sai âm thầm.
+
+### Kết quả đo trên gold70 (release đã khoá, CLI `execution compile-plans`)
+
+| Số đo | Giá trị |
+|---|---:|
+| Plan giải được tới ô số | **30/51 (58,8 %)** — khớp đúng trần lý thuyết đo trước khi code |
+| `metric_not_found` | 11 |
+| `period_unresolved` | 8 |
+| `cell_ambiguous` | 2 |
+| `unit_incompatible` / `division_by_zero` trên gold70 | 0 (bao phủ riêng bởi golden test) |
+
+29 plan không giải được đều nằm ngoài tầm compiler — thiếu `row_label_canonical` (chỉ phủ 0,9 % ô
+toàn corpus) hoặc bảng không có cả `period` tường minh lẫn dấu hiệu suy diễn được. Compiler trả error
+code có kiểu cho cả hai, không nới `locate` để "cứu" thêm khe bằng cách đoán.
+
+`pytest -q`: 987 passed, 4 skipped (chỉ symlink/ACL Windows). `ruff check .` / `ruff format --check .`:
+sạch. `mypy`: 0 lỗi (103 file `src`).
