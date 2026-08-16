@@ -215,6 +215,38 @@ def test_pipeline_records_abstain_as_planning_stage(tmp_path: Path) -> None:
     assert report.stage_counts.get("planning") == 1
 
 
+def test_pipeline_grounds_raw_metric_when_rule_planner_would_abstain(tmp_path: Path) -> None:
+    """Day 23 plan Step 1: `run_e2e_pipeline` must apply the same raw-metric
+    grounding fallback as the submission exporter, so gold accuracy measured
+    here reflects the fallback's real effect, not a stale rule-only path."""
+    cell = _cell(CELL_ID, TABLE_ID, value="70")
+    cell["row_label_raw"] = "Lãi tiền gửi"
+    cell["row_label_canonical"] = None
+    release_dir = _write_release(
+        tmp_path,
+        [_document(DOC_ID)],
+        [_table(TABLE_ID, DOC_ID)],
+        [cell],
+    )
+    qid = "retq_" + "9" * 64
+    question = _question(
+        qid, "Lãi tiền gửi của ACB năm 2023 là bao nhiêu?", gold_table_ids=(TABLE_ID,)
+    )
+    report = run_e2e_pipeline(
+        [question],
+        {qid: (TABLE_ID,)},
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        rankings_source="test-ranking.json",
+        rankings_sha256="deadbeef",
+        answer_gold={qid: Decimal("70")},
+    )
+    result = report.results[0]
+    assert result.stage is None
+    assert result.answer == Decimal("70")
+    assert report.correct_count == 1
+
+
 def test_pipeline_classifies_cell_ambiguous_as_planning_when_gold_is_retrieved(
     tmp_path: Path,
 ) -> None:

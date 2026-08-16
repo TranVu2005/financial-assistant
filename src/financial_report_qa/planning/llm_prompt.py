@@ -195,3 +195,36 @@ def build_system_prompt() -> str:
 def build_user_prompt(question: str) -> str:
     """Return the per-question user prompt."""
     return f"Câu hỏi: {question}\nJSON:"
+
+
+# Day 23 last-resort tier (`llm_planner.build_plan_grounded`): unlike the
+# vocabulary-free prompt above (deliberately no row labels, per the module
+# docstring), this tier is shown the actual candidate table content and is
+# explicitly told to copy row labels verbatim into `raw_text` -- Day 22
+# measured that without real table content, 23.4% of LLM plans invented a
+# plausible-sounding metric name that did not exist in any candidate table.
+_GROUNDED_ADDENDUM = textwrap.dedent(
+    """
+    Bạn sẽ được cung cấp NGUYÊN VĂN nội dung các bảng dữ liệu ứng viên bên
+    dưới câu hỏi. Khi dùng trường "raw_text" cho bất kỳ trường metric nào,
+    PHẢI copy chính xác nguyên văn một nhãn hàng (dòng) xuất hiện trong nội
+    dung bảng được cung cấp -- không được tự bịa, viết tắt, hay diễn giải
+    lại. Nếu bảng không chứa đúng dữ liệu cần thiết, hãy chọn phương án gần
+    đúng nhất có thể tính được từ chính nội dung bảng đã cho, vẫn dùng đúng
+    nguyên văn nhãn hàng đã thấy.
+    """
+).strip()
+
+
+def build_grounded_system_prompt() -> str:
+    """Same operation contract as `build_system_prompt`, plus the addendum
+    above. Not merged into `build_system_prompt` itself: that one stays the
+    fixed, cacheable prompt for the typed-planner tier that never sees table
+    content."""
+    return f"{_OPERATION_GUIDE}\n\n{_GROUNDED_ADDENDUM}\n\nVí dụ:\n\n{_render_few_shots()}"
+
+
+def build_grounded_user_prompt(question: str, table_context: str) -> str:
+    """Return the per-question user prompt for the grounded fallback tier,
+    embedding the real candidate table content alongside the question."""
+    return f"Nội dung bảng ứng viên:\n{table_context}\n\nCâu hỏi: {question}\nJSON:"

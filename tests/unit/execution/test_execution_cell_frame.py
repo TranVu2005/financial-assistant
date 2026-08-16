@@ -368,3 +368,157 @@ def test_build_cell_frame_carries_row_label_and_value_columns(tmp_path: Path) ->
     assert row["unit"] == "VND"
     assert row["table_id"] == TABLE_ID
     assert row["company_code"] == "ACB"
+
+
+def _period_marker_cells(labels: dict[str, str]) -> list[dict[str, object]]:
+    """One numeric cell per column label, all without an explicit period."""
+    return [
+        {
+            "cell_id": cell_id,
+            "table_id": TABLE_ID,
+            "row_idx": index,
+            "col_idx": 1,
+            "row_label_raw": "Tong tai san",
+            "row_label_canonical": "total_assets",
+            "row_group_context_raw": None,
+            "column_label_raw": label,
+            "column_label_canonical": None,
+            "value_raw": "1",
+            "value_numeric": Decimal("1"),
+            "period": None,
+            "unit": "VND",
+            "source_line_start": index + 1,
+            "source_line_end": index + 1,
+            "extraction_confidence": 0.9,
+        }
+        for index, (cell_id, label) in enumerate(labels.items())
+    ]
+
+
+def test_build_cell_frame_infers_current_year_from_nam_nay_column(tmp_path: Path) -> None:
+    """ "Năm nay" is the income-statement/cash-flow twin of the balance sheet's
+    "Số cuối năm": 12,391 numeric cells in the locked release carry it with no
+    explicit period, and ADR 0007 decision C2 already resolves the balance-sheet
+    wording. Same document year, same inference."""
+    release_dir = _write_release(
+        tmp_path, report_year=2020, cells=_period_marker_cells({"cell_nam_nay": "Năm nay"})
+    )
+    frame = build_cell_frame(release_dir, [TABLE_ID])
+    row = frame.set_index("cell_id").loc["cell_nam_nay"]
+    assert row["period"] == 2020
+    assert bool(row["period_inferred"]) is True
+
+
+def test_build_cell_frame_infers_period_from_bare_closing_and_opening_columns(
+    tmp_path: Path,
+) -> None:
+    """11,868 cells say "Cuối năm" and 10,177 say "Đầu năm" without the "Số "
+    prefix the existing patterns require, so they resolve to nothing today."""
+    release_dir = _write_release(
+        tmp_path,
+        report_year=2020,
+        cells=_period_marker_cells({"cell_bare_close": "Cuối năm", "cell_bare_open": "Đầu năm"}),
+    )
+    frame = build_cell_frame(release_dir, [TABLE_ID]).set_index("cell_id")
+    assert frame.loc["cell_bare_close", "period"] == 2020
+    assert frame.loc["cell_bare_open", "period"] == 2019
+
+
+def test_build_cell_frame_prefers_prior_year_marker_over_bare_closing_marker(
+    tmp_path: Path,
+) -> None:
+    """ "Số dư cuối năm trước" contains both "cuối năm" and "năm trước". The more
+    specific prior-year marker must win, or the value lands on the wrong year."""
+    release_dir = _write_release(
+        tmp_path,
+        report_year=2020,
+        cells=_period_marker_cells({"cell_prior": "Số dư cuối năm trước"}),
+    )
+    frame = build_cell_frame(release_dir, [TABLE_ID])
+    assert frame.set_index("cell_id").loc["cell_prior", "period"] == 2019
+
+
+def _row_with_statutory_code(code: str | None) -> list[dict[str, object]]:
+    """A statement row as the corpus stores it: the label in col 0, the
+    statutory "Mã số" in its own column, and the value in a later column.
+    The code cell carries no `value_numeric` (verified across the release:
+    0 of 187,207 "Mã số" cells do), so it never enters the numeric frame."""
+    cells: list[dict[str, object]] = []
+
+    def make(cell_id: str, col: int, column_label: str | None, raw: str, numeric: str | None):
+        return {
+            "cell_id": cell_id,
+            "table_id": TABLE_ID,
+            "row_idx": 0,
+            "col_idx": col,
+            "row_label_raw": "Doanh thu thuần về bán hàng và cung cấp dịch vụ",
+            "row_label_canonical": None,
+            "row_group_context_raw": None,
+            "column_label_raw": column_label,
+            "column_label_canonical": None,
+            "value_raw": raw,
+            "value_numeric": Decimal(numeric) if numeric is not None else None,
+            "period": "2020",
+            "unit": "VND",
+            "source_line_start": 1,
+            "source_line_end": 1,
+            "extraction_confidence": 0.9,
+        }
+
+    if code is not None:
+        cells.append(make("cell_code", 1, "Mã số", code, None))
+    cells.append(make("cell_value", 3, "Năm 2020", "40080", "40080"))
+    return cells
+
+
+def test_build_cell_frame_attaches_statutory_code_from_the_same_row(tmp_path: Path) -> None:
+    """Vietnamese statements carry a Circular 200 account code per row. It is
+    identical across all 100 companies and 10 years, so it is an exact join key
+    where the raw Vietnamese label is not: 146,027 distinct raw labels collapse
+    onto 55 canonical metrics, but 336,654 numeric cells carry a code."""
+    release_dir = _write_release(tmp_path, cells=_row_with_statutory_code("10"))
+    frame = build_cell_frame(release_dir, [TABLE_ID])
+    row = frame.set_index("cell_id").loc["cell_value"]
+    assert row["statutory_code"] == "10"
+
+
+def test_build_cell_frame_leaves_statutory_code_null_when_the_row_has_none(
+    tmp_path: Path,
+) -> None:
+    """Note tables have no "Mã số" column at all (only 8,449 of 146,011 tables
+    do), and a missing code must stay missing rather than borrow another row's."""
+    release_dir = _write_release(tmp_path, cells=_row_with_statutory_code(None))
+    frame = build_cell_frame(release_dir, [TABLE_ID])
+    assert frame.set_index("cell_id").loc["cell_value", "statutory_code"] is None
+
+
+def test_build_cell_frame_does_not_emit_the_statutory_code_cell_as_a_value(
+    tmp_path: Path,
+) -> None:
+    """The code is row metadata, not a data point; emitting it as a numeric
+    cell would let a lookup return the account number instead of the amount."""
+    release_dir = _write_release(tmp_path, cells=_row_with_statutory_code("10"))
+    frame = build_cell_frame(release_dir, [TABLE_ID])
+    assert "cell_code" not in frame["cell_id"].tolist()
+
+
+def test_build_cell_frame_reads_the_statutory_codes_once_per_release(tmp_path: Path) -> None:
+    """The statutory-code join was a SECOND `read_parquet` over the same 520 MB
+    `cells.parquet`, so adding it doubled the per-question scan cost -- and
+    `compile_plan` calls this once per question. The code table is small
+    (172,966 rows on the locked release), so materializing it once per release
+    removes the second scan without holding the 2.58M numeric cells in memory.
+    """
+    from financial_report_qa.execution.cell_frame import _statutory_code_connection
+
+    _statutory_code_connection.cache_clear()
+    release_dir = _write_release(tmp_path, cells=_row_with_statutory_code("10"))
+
+    first = build_cell_frame(release_dir, [TABLE_ID])
+    assert _statutory_code_connection.cache_info().misses == 1
+
+    second = build_cell_frame(release_dir, [TABLE_ID])
+    assert _statutory_code_connection.cache_info().misses == 1
+    assert _statutory_code_connection.cache_info().hits >= 1
+    assert second["statutory_code"].tolist() == first["statutory_code"].tolist()
+    _statutory_code_connection.cache_clear()

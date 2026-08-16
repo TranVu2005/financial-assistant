@@ -48,7 +48,13 @@ _QUARTER_RE = re.compile(
     r"quý\s*(iv|i{1,3}|[1-4])(?:\s*(?:năm|/|-)?\s*((?:19|20)\d{2}))?",
     re.IGNORECASE,
 )
-_YEAR_RE = re.compile(r"năm\s+((?:19|20)\d{2})", re.IGNORECASE)
+# Day 24 §4.1: an optional qualifier may sit between "năm" and the digits --
+# "năm tài chính 2017" is extremely common and previously resolved to no
+# period at all (measured: 61 questions carry a period ambiguity, 60 of them
+# with a 4-digit year present in the text). The qualifier slot is a closed
+# list, not `.*`, so a note reference ("Thuyết minh số 2023 ... năm 2022")
+# still cannot masquerade as a period.
+_YEAR_RE = re.compile(r"năm\s+(?:(?:tài\s+chính|dương\s+lịch)\s+)?((?:19|20)\d{2})", re.IGNORECASE)
 _BARE_YEAR_AFTER_CONNECTOR_RE = re.compile(
     r"(?:đến|và|với|tới|so\s+với|-|–)\s*((?:19|20)\d{2})\b", re.IGNORECASE
 )
@@ -261,6 +267,13 @@ def _metric_lexicon() -> tuple[tuple[tuple[str, ...], str, str], ...]:
 
 _METRIC_LEXICON = _metric_lexicon()
 
+# Reading-order recovery for `ordered_metric_canonicals`: multiple raw aliases
+# can map to the same canonical (many-to-one, already alias-table-validated),
+# so this is keyed by normalized alias text, not canonical.
+_CANONICAL_BY_ALIAS_KEY: dict[str, str] = {
+    normalized_key(raw_alias): canonical for _, canonical, raw_alias in _METRIC_LEXICON
+}
+
 
 def _parse_metric(
     question: str,
@@ -395,3 +408,22 @@ def parse_query_entities(question: str) -> QueryEntities:
         ambiguity=ambiguity,
         spans=spans,
     )
+
+
+def ordered_metric_canonicals(entities: QueryEntities) -> tuple[str, ...]:
+    """Distinct canonical metrics in left-to-right reading order.
+
+    `entities.metrics` is alphabetically sorted (`QueryEntities`'s
+    `_canonical_tuple` contract invariant), which loses which metric was
+    named first -- load-bearing for `ratio`, where "A trên B" means A/B, not
+    B/A (Day 23 plan Step 2). Derived from `entities.spans`, which already
+    preserves position.
+    """
+    ordered: dict[str, None] = {}
+    for span in entities.spans:
+        if span.field != "metric":
+            continue
+        canonical = _CANONICAL_BY_ALIAS_KEY.get(normalized_key(span.surface))
+        if canonical is not None:
+            ordered.setdefault(canonical, None)
+    return tuple(ordered)

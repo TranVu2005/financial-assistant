@@ -54,8 +54,19 @@ def build_answer_package(
     compiled: CompiledQuery,
     retrieved_table_ids: frozenset[str],
     citation_lookup: Mapping[str, Mapping[str, object]] | None = None,
+    allow_inferred_scope: bool = False,
 ) -> AnswerPackage:
     """Compile a verified `AnswerPackage` from one answered `CompiledQuery`.
+
+    `allow_inferred_scope=True` downgrades the `scope_inferred` block (ADR
+    0010 decision B1) to a recorded-but-non-blocking issue. Off by default,
+    because for internal quality measurement an answer whose statement scope
+    was guessed really is untrustworthy (92.8% of two-scope groups disagree
+    in value). A submission run may opt in: the organizers score
+    correct / TOTAL questions, so a scope-guessed answer costs exactly what
+    an abstention costs (0) while retaining a chance of being right. Scoped
+    to `scope_inferred` alone -- every genuine correctness block still
+    rejects.
 
     Raises `ValueError` if `compiled.status != "answered"` -- there is
     nothing to verify or cite for an error result (it is already a typed
@@ -84,7 +95,13 @@ def build_answer_package(
         if issue is not None
     ]
     status: Literal["verified", "rejected"] = (
-        "rejected" if any(is_blocking_issue(issue.code) for issue in issues) else "verified"
+        "rejected"
+        if any(
+            is_blocking_issue(issue.code)
+            and not (allow_inferred_scope and issue.code == "scope_inferred")
+            for issue in issues
+        )
+        else "verified"
     )
 
     return AnswerPackage.model_validate(
@@ -103,5 +120,7 @@ def build_answer_package(
             "period_inferred": any(cell.period_inferred for cell in compiled.evidence),
             "verification_status": status,
             "verification_issues": tuple(issues),
+            "inferred_scope_accepted": allow_inferred_scope
+            and any(issue.code == "scope_inferred" for issue in issues),
         }
     )

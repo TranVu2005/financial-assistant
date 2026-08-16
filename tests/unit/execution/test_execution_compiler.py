@@ -486,6 +486,88 @@ def test_compile_plan_compare_companies(tmp_path: Path) -> None:
     assert result.answer == Decimal("250")
 
 
+def test_compile_plan_average_varies_over_companies_not_only_first(tmp_path: Path) -> None:
+    """Regression (Day 23 plan Step 2): the average/sum dispatch always
+    iterated `plan.periods` at a fixed `companies[0]`, so a plan varying
+    over companies (>1 company, 1 period -- exactly what
+    `_validate_aggregate` already allows) silently averaged/summed just the
+    first company, ignoring the rest, instead of raising or producing a
+    length-1 no-op result that would at least be visibly wrong."""
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="X",
+                row_label_canonical="profit_after_tax",
+                value_numeric="1000",
+                period="2023",
+            ),
+            _cell(
+                "cell_" + "b" * 64,
+                TABLE_ID_MBB,
+                1,
+                1,
+                row_label_raw="X",
+                row_label_canonical="profit_after_tax",
+                value_numeric="750",
+                period="2023",
+            ),
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="average",
+        companies=("ACB", "MBB"),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID, TABLE_ID_MBB),
+        metric=MetricSelector(canonical="profit_after_tax"),
+    )
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "answered"
+    assert result.answer == Decimal("875")
+
+
+def test_compile_plan_sum_varies_over_companies_not_only_first(tmp_path: Path) -> None:
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="X",
+                row_label_canonical="profit_after_tax",
+                value_numeric="1000",
+                period="2023",
+            ),
+            _cell(
+                "cell_" + "b" * 64,
+                TABLE_ID_MBB,
+                1,
+                1,
+                row_label_raw="X",
+                row_label_canonical="profit_after_tax",
+                value_numeric="750",
+                period="2023",
+            ),
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="sum",
+        companies=("ACB", "MBB"),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID, TABLE_ID_MBB),
+        metric=MetricSelector(canonical="profit_after_tax"),
+    )
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "answered"
+    assert result.answer == Decimal("1750")
+
+
 def test_compile_plan_missing_unit_is_unit_missing_not_unit_incompatible(tmp_path: Path) -> None:
     """Day 20 plan Sec 1.3: a cell with no recorded unit (20.7% of numeric
     cells corpus-wide) must be reported as `unit_missing`, distinct from

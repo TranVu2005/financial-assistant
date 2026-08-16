@@ -339,6 +339,37 @@ _NON_METRIC_PATTERNS = {
 _ORDINAL_PREFIX_RE = re.compile(r"^\d+\.\s*(.*)$")
 _STRUCTURAL_TEXT_PREFIXES = ("cam kết cho vay không hủy ngang",)
 
+# Vietnamese financial statements number every line item ("1. Hàng tồn kho",
+# "I. Tiền và các khoản tương đương tiền", "B. Tài sản dài hạn") and mark
+# note references ("Tổng tài sản (1)", "Vay ngắn hạn (*)"). Both are
+# decoration around an otherwise exact alias, not part of the metric name.
+#
+# Day 23 measured the cost of not stripping them: 57,466 numeric cells
+# across 589 distinct labels -- 1.39x the entire canonical-labeled corpus --
+# were left `metric_unknown` purely because of this. `is_non_metric_label`
+# above already strips the numeric form to decide "is this a metric at all?"
+# (and answers yes); only the "*which* metric is it?" lookup below was
+# missing the same step.
+#
+# A separator (`.` or `)`) is required: a bare leading digit can belong to
+# the phrase itself (e.g. "3 tháng đầu năm"), so stripping it would corrupt
+# the name rather than clean it.
+_LABEL_ORDINAL_RE = re.compile(r"^(?:\d+|[ivxlcdm]+|[a-d])[.)]\s*", re.IGNORECASE)
+_LABEL_FOOTNOTE_RE = re.compile(r"(?:\s*\((?:\*+|[ivxlcdm]+|\d+)\)|\s*\*+)+$", re.IGNORECASE)
+
+
+def strip_label_decoration(key: str) -> str:
+    """Remove leading ordinals and trailing note markers from an already
+    `normalized_key`-ed label. Idempotent; loops because real labels stack
+    them (e.g. "2. Tổng nợ phải trả (2)")."""
+    previous = None
+    current = key
+    while previous != current:
+        previous = current
+        current = _LABEL_ORDINAL_RE.sub("", current).strip()
+        current = _LABEL_FOOTNOTE_RE.sub("", current).strip()
+    return current
+
 
 def is_non_metric_label(raw: str | None) -> bool:
     """Return true only for labels that are structurally not source metrics."""
@@ -372,6 +403,15 @@ def normalize_metric(raw: str | None, *, group_context: str | None = None) -> De
     canonical = METRIC_ALIASES.get(key)
     if canonical is not None:
         return Decision(value=canonical)
+
+    # Same key, minus ordinal/note decoration -- still an exact alias lookup,
+    # never a fuzzy or partial match, so this cannot turn an unknown phrase
+    # into a guess (see `strip_label_decoration`).
+    undecorated = strip_label_decoration(key)
+    if undecorated != key:
+        canonical = METRIC_ALIASES.get(undecorated)
+        if canonical is not None:
+            return Decision(value=canonical)
 
     if group_context is not None:
         contextual = CONTEXTUAL_METRIC_ALIASES.get(normalized_key(group_context))

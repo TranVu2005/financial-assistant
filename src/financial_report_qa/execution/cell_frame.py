@@ -12,8 +12,12 @@ Two lossy filters are applied unconditionally (Day 18 plan §1.4/§1.5):
 
 Period resolution follows ADR 0007 decision C2: an explicit `period` wins
 (normalized to a 4-digit year, since ~37.7% of stored periods are ISO dates);
-otherwise a column label naming "số cuối năm"/"số đầu năm"/"năm trước" infers
-the year from `documents.report_year`. Unresolvable periods stay null.
+otherwise a relative column label infers the year from `documents.report_year`.
+Prior-year markers ("năm trước", "kỳ trước", "đầu năm", "đầu kỳ") are matched
+before current-year ones ("năm nay", "kỳ này", "cuối năm", "cuối kỳ") because
+"Số dư cuối năm trước" carries both and only the prior-year reading is right.
+The bare forms subsume the "Số " variants and add 34,150 numeric cells that
+the original three patterns left unresolved. Unresolvable periods stay null.
 
 Every DuckDB connection this module opens is hardened (ADR 0008 decision F1):
 `enable_external_access`/`autoinstall_known_extensions`/
@@ -29,6 +33,7 @@ for a live hole.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from functools import lru_cache
 from pathlib import Path
 
 import duckdb
@@ -49,7 +54,18 @@ CELL_FRAME_COLUMNS = (
     "value",
     "period",
     "period_inferred",
+    "statutory_code",
 )
+
+# Circular 200/2014 numbers every statement row ("Mã số"), identically across
+# all 100 companies and 10 years, in its own column. The release stores it as
+# an ordinary cell rather than as row metadata, so it is invisible to the
+# locator until joined back onto the row. Measured on the locked release:
+# 175,198 cells carry this exact header, 172,966 rows get a code, and 336,654
+# numeric cells gain one -- 2.27x the 148,527 cells that have a canonical
+# metric label. None of them carry `value_numeric`, so the code column cannot
+# leak into the numeric frame as a data point.
+_STATUTORY_CODE_HEADER = "Mã số"
 
 _QUERY = """
 SELECT
@@ -65,15 +81,26 @@ SELECT
     c.value_numeric AS value,
     CASE
         WHEN c.period IS NOT NULL THEN TRY_CAST(LEFT(c.period, 4) AS INTEGER)
-        WHEN LOWER(COALESCE(c.column_label_raw, '')) LIKE '%số cuối năm%' THEN d.report_year
-        WHEN LOWER(COALESCE(c.column_label_raw, '')) LIKE '%số đầu năm%' THEN d.report_year - 1
+        -- Prior-year markers are tested first: "Số dư cuối năm trước" contains
+        -- both a closing and a prior-year marker, and only the prior-year
+        -- reading is correct. Bare forms subsume the "Số " variants.
         WHEN LOWER(COALESCE(c.column_label_raw, '')) LIKE '%năm trước%' THEN d.report_year - 1
+        WHEN LOWER(COALESCE(c.column_label_raw, '')) LIKE '%kỳ trước%' THEN d.report_year - 1
+        WHEN LOWER(COALESCE(c.column_label_raw, '')) LIKE '%đầu năm%' THEN d.report_year - 1
+        WHEN LOWER(COALESCE(c.column_label_raw, '')) LIKE '%đầu kỳ%' THEN d.report_year - 1
+        WHEN LOWER(COALESCE(c.column_label_raw, '')) LIKE '%năm nay%' THEN d.report_year
+        WHEN LOWER(COALESCE(c.column_label_raw, '')) LIKE '%kỳ này%' THEN d.report_year
+        WHEN LOWER(COALESCE(c.column_label_raw, '')) LIKE '%cuối năm%' THEN d.report_year
+        WHEN LOWER(COALESCE(c.column_label_raw, '')) LIKE '%cuối kỳ%' THEN d.report_year
         ELSE NULL
     END AS period,
-    (c.period IS NULL) AS period_inferred
+    (c.period IS NULL) AS period_inferred,
+    code.statutory_code
 FROM read_parquet(?) AS c
 JOIN read_parquet(?) AS t USING (table_id)
 JOIN read_parquet(?) AS d USING (doc_id)
+LEFT JOIN statutory_codes AS code
+    ON code.table_id = c.table_id AND code.row_idx = c.row_idx
 WHERE c.table_id IN (SELECT UNNEST(?))
   AND c.col_idx > 0
   AND c.value_numeric IS NOT NULL
@@ -96,23 +123,47 @@ def _hardened_connection() -> duckdb.DuckDBPyConnection:
     return connection
 
 
+_MATERIALIZE_CODES = """
+CREATE TABLE statutory_codes AS
+SELECT table_id, row_idx, MIN(TRIM(value_raw)) AS statutory_code
+FROM read_parquet(?)
+WHERE column_label_raw = ?
+  AND value_raw IS NOT NULL
+  AND TRIM(value_raw) <> ''
+GROUP BY table_id, row_idx
+"""
+
+
+@lru_cache(maxsize=2)
+def _statutory_code_connection(cells_path: str) -> duckdb.DuckDBPyConnection:
+    """One connection per release holding the statutory-code lookup in memory.
+
+    `compile_plan` builds a frame per question, so expressing the code join as
+    a second `read_parquet` meant scanning the same 520 MB `cells.parquet`
+    twice per question. The code table is small -- 172,966 rows on the locked
+    release, against 2.58M numeric cells -- so it is the half worth holding in
+    memory; the main scan stays a streaming parquet read. Releases are
+    immutable by contract (plan.md §3), so this cannot go stale in normal use.
+    """
+    connection = _hardened_connection()
+    connection.execute(_MATERIALIZE_CODES, [cells_path, _STATUTORY_CODE_HEADER])
+    return connection
+
+
 def build_cell_frame(release_dir: Path, table_ids: Sequence[str]) -> pd.DataFrame:
     """Return the long-format numeric-cell frame for a plan's candidate tables."""
     if not table_ids:
         raise ExecutionInputError("build_cell_frame requires at least one table_id")
-    connection = _hardened_connection()
-    try:
-        frame = connection.execute(
-            _QUERY,
-            [
-                str(release_dir / "cells.parquet"),
-                str(release_dir / "tables.parquet"),
-                str(release_dir / "documents.parquet"),
-                list(table_ids),
-            ],
-        ).fetchdf()
-    finally:
-        connection.close()
+    connection = _statutory_code_connection(str(release_dir / "cells.parquet"))
+    frame = connection.execute(
+        _QUERY,
+        [
+            str(release_dir / "cells.parquet"),
+            str(release_dir / "tables.parquet"),
+            str(release_dir / "documents.parquet"),
+            list(table_ids),
+        ],
+    ).fetchdf()
     frame["period"] = frame["period"].astype("Int64")
     frame["period_inferred"] = frame["period_inferred"].astype(bool)
     # Day 20 plan Sec 1.3 / ADR 0009 decision C1: when a table mixes a cell
@@ -121,4 +172,7 @@ def build_cell_frame(release_dir: Path, table_ids: Sequence[str]) -> pd.DataFram
     # rather than None -- `str(nan)` is the fabricated unit string `'nan'`.
     # Force it back to a real missing value so `locator.py` can detect it.
     frame["unit"] = frame["unit"].astype(object).where(frame["unit"].notna(), None)
+    frame["statutory_code"] = (
+        frame["statutory_code"].astype(object).where(frame["statutory_code"].notna(), None)
+    )
     return frame.loc[:, list(CELL_FRAME_COLUMNS)]

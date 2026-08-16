@@ -1,0 +1,8 @@
+# Day 24: the official 1.012-question set skews heavily SEPARATE -- Day 21
+# measured 36.4% of questions saying "riêng"/"công ty mẹ" against only 1.3%
+# saying "hợp nhất". Day 21 only ever benchmarked `none`/`consolidated`/
+# `abstain_when_unstated` because gold70/gold120 skewed the opposite way, so
+# `separate` as a default has never been measured. Paired with
+# `--allow-inferred-scope` this is the untested corner of that matrix.
+execution:
+  default_statement_scope: separate

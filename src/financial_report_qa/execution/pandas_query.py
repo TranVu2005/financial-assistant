@@ -100,6 +100,22 @@ def _aggregate_expr(
     return f'df1[{condition}]["value"].{method}()'
 
 
+def _aggregate_expr_over_companies(
+    *, companies: Sequence[str], selector: MetricSelector, period: str, method: str
+) -> str:
+    """Mirrors `_aggregate_expr`, but for the other arity `_validate_aggregate`
+    allows: >1 company, exactly 1 period (Day 23 plan Step 2)."""
+    column, value = _metric_column_and_value(selector)
+    companies_list = ", ".join(_lit(company) for company in companies)
+    clauses = [
+        f"(df1.company_code.isin([{companies_list}]))",
+        f"(df1.{column} == {_lit(value)})",
+        f"(df1.period == {int(period)})",
+    ]
+    condition = " & ".join(clauses)
+    return f'df1[{condition}]["value"].{method}()'
+
+
 def render_pandas_query(plan: FinancialQueryPlan) -> str:
     """Render a readable Pandas expression for one plan, per operation."""
     period = plan.periods[0] if plan.periods else None
@@ -142,6 +158,13 @@ def render_pandas_query(plan: FinancialQueryPlan) -> str:
     if plan.operation in ("average", "sum"):
         assert plan.metric is not None
         method = "mean" if plan.operation == "average" else "sum"
+        if len(plan.companies) > 1:
+            return _aggregate_expr_over_companies(
+                companies=plan.companies,
+                selector=plan.metric,
+                period=period or "",
+                method=method,
+            )
         return _aggregate_expr(
             company=plan.companies[0], selector=plan.metric, periods=plan.periods, method=method
         )

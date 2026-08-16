@@ -20,7 +20,11 @@ from financial_report_qa.retrieval.contracts import (
 )
 from financial_report_qa.retrieval.index import build_bm25_index
 from financial_report_qa.retrieval.service import RetrievalService
-from financial_report_qa.submission.contracts import RawQuestion
+from financial_report_qa.submission.contracts import (
+    RawQuestion,
+    SubmissionEvidence,
+    SubmissionItem,
+)
 from financial_report_qa.submission.exporter import export_submission, write_submission_zip
 from financial_report_qa.submission.validator import validate_submission_zip
 
@@ -164,6 +168,48 @@ def test_validate_submission_zip_rejects_tampered_answer(tmp_path: Path) -> None
     report = validate_submission_zip(tampered, expected_ids=[1])
     assert report.valid is False
     assert any(issue.code == "answer_mismatch" for issue in report.issues)
+
+
+def test_validate_submission_zip_replays_a_numeric_looking_raw_label(tmp_path: Path) -> None:
+    """Regression (Day 23 full-coverage strategy, found validating the real
+    1.012-question backstop export): a `row_label_raw` that looks like a
+    pure number (e.g. a footnote reference such as "2") round-trips through
+    the packaged CSV as pandas' *inferred* int64 dtype, not string --
+    `df1.row_label_raw == "2"` then compares an int column to a string and
+    silently matches zero rows, crashing `.iloc[0]` on replay. Confirmed
+    live: ids 468/486/513/546/564 all hit exactly this in the real export."""
+    item = SubmissionItem.model_validate(
+        {
+            "id": 1,
+            "question": "Câu hỏi bất kỳ.",
+            "answer": 4.0,
+            "relevant_docs": ("report",),
+            "relevant_tables": ("report|5",),
+            "evidence": (SubmissionEvidence(variable="df1", csv_path="data/q000001_df1.csv"),),
+            "pandas_query": (
+                'df1[(df1.company_code == "DLG") & (df1.row_label_raw == "2") '
+                '& (df1.period == 2021)]["value"].iloc[0]'
+            ),
+        }
+    )
+    csv_rows = {
+        "data/q000001_df1.csv": (
+            {
+                "company_code": "DLG",
+                "row_label_canonical": None,
+                "row_label_raw": "2",
+                "period": 2021,
+                "value": Decimal("4"),
+            },
+        )
+    }
+    zip_path = tmp_path / "submission.zip"
+    write_submission_zip([item], csv_rows, zip_path)
+
+    report = validate_submission_zip(zip_path, expected_ids=[1])
+
+    assert report.valid is True, report.issues
+    assert report.issues == ()
 
 
 def test_validate_submission_zip_rejects_orphan_csv(tmp_path: Path) -> None:

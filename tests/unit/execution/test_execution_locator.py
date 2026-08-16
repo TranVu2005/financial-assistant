@@ -22,6 +22,8 @@ def _row(
     unit: str = "VND",
     period: int = 2020,
     period_inferred: bool = False,
+    statutory_code: str | None = None,
+    column_label: str = "Năm 2020",
 ) -> dict[str, object]:
     return {
         "table_id": TABLE_ID,
@@ -31,11 +33,12 @@ def _row(
         "col_idx": 1,
         "row_label_raw": row_label_raw,
         "row_label_canonical": row_label_canonical,
-        "column_label": "Năm 2020",
+        "column_label": column_label,
         "unit": unit,
         "value": Decimal(value),
         "period": pd.array([period], dtype="Int64")[0],
         "period_inferred": period_inferred,
+        "statutory_code": statutory_code,
     }
 
 
@@ -127,6 +130,18 @@ def test_locate_uses_raw_text_branch_of_selector() -> None:
     assert result.match.value == Decimal("50")
 
 
+def test_locate_raw_text_match_is_case_and_whitespace_normalization_tolerant() -> None:
+    """The raw-text branch must match corpus labels that differ from the
+    selector only in casing or collapsible whitespace (e.g. Day 23 grounding
+    fallback labels sourced straight from `row_label_raw`), not require
+    byte-for-byte string equality."""
+    frame = _frame([_row(cell_id=CELL_A, row_label_raw="  Lãi   TIỀN GỬI ", value="50")])
+    result = locate(frame, MetricSelector(raw_text="lãi tiền gửi"), 2020)
+    assert result.error_code is None
+    assert result.match is not None
+    assert result.match.value == Decimal("50")
+
+
 def test_locate_filters_by_company_code_for_compare_companies() -> None:
     frame = _frame(
         [
@@ -195,3 +210,169 @@ def test_locate_marks_period_inferred_from_frame() -> None:
     result = locate(frame, MetricSelector(canonical="cash_and_cash_equivalents"), 2020)
     assert result.match is not None
     assert result.match.period_inferred is True
+
+
+def test_locate_canonical_matches_a_decorated_raw_label_in_the_locked_release() -> None:
+    """Day 23: the locked release baked `row_label_canonical` in at ingestion
+    time, so its 57,466 ordinal/footnote-decorated cells ("1. Hàng tồn kho",
+    "Tổng tài sản (1)") are still NULL there and unreachable by canonical
+    match alone. Re-deriving the canonical from `row_label_raw` at query
+    time recovers them without re-ingesting (which would change
+    dataset_fingerprint and invalidate every pinned baseline)."""
+    frame = _frame(
+        [
+            _row(
+                cell_id=CELL_A,
+                row_label_raw="1. Hàng tồn kho",
+                row_label_canonical=None,
+                value="700",
+            )
+        ]
+    )
+    result = locate(frame, MetricSelector(canonical="inventory"), 2020)
+    assert result.error_code is None
+    assert result.match is not None
+    assert result.match.value == Decimal("700")
+
+
+def test_locate_canonical_fallback_does_not_match_an_unrelated_raw_label() -> None:
+    frame = _frame(
+        [
+            _row(
+                cell_id=CELL_A,
+                row_label_raw="1. Một chỉ tiêu không có trong từ điển",
+                row_label_canonical=None,
+                value="700",
+            )
+        ]
+    )
+    result = locate(frame, MetricSelector(canonical="inventory"), 2020)
+    assert result.match is None
+    assert result.error_code == "metric_not_found"
+
+
+def test_locate_canonical_column_still_wins_when_already_populated() -> None:
+    """The existing canonical column stays authoritative; the raw-label
+    fallback only adds rows it never covered."""
+    frame = _frame(
+        [
+            _row(cell_id=CELL_A, row_label_canonical="inventory", value="500"),
+            _row(
+                cell_id=CELL_B,
+                row_label_raw="1. Hàng tồn kho",
+                row_label_canonical="inventory",
+                value="500",
+            ),
+        ]
+    )
+    result = locate(frame, MetricSelector(canonical="inventory"), 2020)
+    assert result.error_code is None
+    assert result.match is not None
+    assert set(result.match.cell_ids) == {CELL_A, CELL_B}
+
+
+def test_locate_prefers_the_statutory_statement_row_over_an_uncoded_note_row() -> None:
+    """A statement line and a note-table line can share a label and disagree.
+    Only the statement line carries a Circular 200 code (8,449 of 146,011
+    tables have the column at all), so the code identifies which one the
+    question means -- resolving a conflict that is otherwise `cell_ambiguous`."""
+    frame = _frame(
+        [
+            _row(
+                cell_id=CELL_A,
+                row_label_canonical="general_administration_expenses",
+                value="1000",
+                statutory_code="26",
+            ),
+            _row(
+                cell_id=CELL_B,
+                row_label_canonical="general_administration_expenses",
+                value="250",
+                statutory_code=None,
+            ),
+        ]
+    )
+    result = locate(frame, MetricSelector(canonical="general_administration_expenses"), 2020)
+    assert result.error_code is None
+    assert result.match is not None
+    assert result.match.value == Decimal("1000")
+    assert result.match.cell_ids == (CELL_A,)
+
+
+def test_locate_stays_ambiguous_when_two_statutory_rows_disagree() -> None:
+    """The rule narrows to the statement rows; it never picks among them.
+    Two coded rows disagreeing is a real conflict (consolidated vs separate,
+    measured at 92.8% of cross-scope groups), not a main-versus-note artifact."""
+    frame = _frame(
+        [
+            _row(cell_id=CELL_A, value="1000", statutory_code="26"),
+            _row(cell_id=CELL_B, value="250", statutory_code="26"),
+        ]
+    )
+    result = locate(frame, MetricSelector(canonical="cash_and_cash_equivalents"), 2020)
+    assert result.match is None
+    assert result.error_code == "cell_ambiguous"
+
+
+def test_locate_stays_ambiguous_when_no_row_carries_a_statutory_code() -> None:
+    """Note tables have no code column, so a conflict between two note rows
+    has no code signal to break it and must keep failing loudly."""
+    frame = _frame(
+        [
+            _row(cell_id=CELL_A, value="1000", statutory_code=None),
+            _row(cell_id=CELL_B, value="250", statutory_code=None),
+        ]
+    )
+    result = locate(frame, MetricSelector(canonical="cash_and_cash_equivalents"), 2020)
+    assert result.match is None
+    assert result.error_code == "cell_ambiguous"
+
+
+def test_locate_uses_the_column_selector_to_separate_same_named_columns() -> None:
+    """Real PC1 2025 tax table: one row "Thuế giá trị gia tăng" spans six
+    semantically distinct columns. Question 283 asks for the amount *payable*
+    at year end (60,792,014,797 under "Số phải nộp cuối năm"), but the closing
+    balance column also resolves to 2025, so filtering by period alone leaves
+    two conflicting cells and abstains. The column is the missing dimension."""
+    frame = _frame(
+        [
+            _row(cell_id=CELL_A, value="38137021285", column_label="Số cuối nămVND"),
+            _row(cell_id=CELL_B, value="60792014797", column_label="Số phải nộpcuối năm"),
+        ]
+    )
+    result = locate(
+        frame,
+        MetricSelector(canonical="cash_and_cash_equivalents", column_text="phải nộp cuối năm"),
+        2020,
+    )
+    assert result.error_code is None
+    assert result.match is not None
+    assert result.match.value == Decimal("60792014797")
+    assert result.match.cell_ids == (CELL_B,)
+
+
+def test_locate_without_a_column_selector_keeps_reporting_the_conflict() -> None:
+    """No column named in the question means no basis to choose; the two
+    columns still conflict and must stay `cell_ambiguous`, not pick the first."""
+    frame = _frame(
+        [
+            _row(cell_id=CELL_A, value="38137021285", column_label="Số cuối nămVND"),
+            _row(cell_id=CELL_B, value="60792014797", column_label="Số phải nộpcuối năm"),
+        ]
+    )
+    result = locate(frame, MetricSelector(canonical="cash_and_cash_equivalents"), 2020)
+    assert result.match is None
+    assert result.error_code == "cell_ambiguous"
+
+
+def test_locate_reports_metric_not_found_when_the_column_selector_matches_nothing() -> None:
+    """A column the table does not have is a typed failure, never a silent
+    fallback to whatever column happens to be present."""
+    frame = _frame([_row(cell_id=CELL_A, value="100", column_label="Số cuối năm")])
+    result = locate(
+        frame,
+        MetricSelector(canonical="cash_and_cash_equivalents", column_text="số đã thực nộp"),
+        2020,
+    )
+    assert result.match is None
+    assert result.error_code == "metric_not_found"

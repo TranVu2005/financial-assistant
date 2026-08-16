@@ -1,0 +1,8 @@
+llm:
+  base_url: http://127.0.0.1:11434/v1
+  model: qwen2.5:7b
+  timeout_seconds: 60
+  max_output_tokens: 220
+  temperature: 0.0
+  context_length: 32768
+  json_schema_constrained: true

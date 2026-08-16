@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from financial_report_qa.planning.entity_contracts import to_retrieval_filters
-from financial_report_qa.planning.entity_parser import parse_query_entities
+from financial_report_qa.planning.entity_parser import (
+    ordered_metric_canonicals,
+    parse_query_entities,
+)
 
 
 def test_bare_ticker_is_extracted() -> None:
@@ -155,6 +158,25 @@ def test_question_side_metric_lexicon_does_not_alter_normalization_alias_table()
     assert "lctt" not in METRIC_ALIASES
 
 
+def test_ordered_metric_canonicals_preserves_reading_order_for_ratio_phrasing() -> None:
+    """`entities.metrics` is sorted (contract invariant, `_canonical_tuple`),
+    which loses which metric was named first -- load-bearing for `ratio`,
+    where "A trên B" means A/B, not B/A. Day 23 plan Step 2: measured 25/26
+    real 2-metric questions are this exact 'X trên/trong Y' ratio shape."""
+    entities = parse_query_entities(
+        "Lợi nhuận sau thuế trên tổng tài sản cuối năm 2016 của CEO là bao nhiêu phần trăm?"
+    )
+    assert entities.metrics == ("profit_after_tax", "total_assets")  # sorted, order lost
+    assert ordered_metric_canonicals(entities) == ("profit_after_tax", "total_assets")
+
+
+def test_ordered_metric_canonicals_reverses_when_denominator_named_first() -> None:
+    entities = parse_query_entities(
+        "Tổng tài sản trên lợi nhuận sau thuế cuối năm 2016 của CEO là bao nhiêu lần?"
+    )
+    assert ordered_metric_canonicals(entities) == ("total_assets", "profit_after_tax")
+
+
 def test_statement_type_is_only_set_when_named_explicitly() -> None:
     without_statement = parse_query_entities("Tra cứu tổng tài sản của DBC năm 2023.")
     assert without_statement.statement_types == ()
@@ -228,3 +250,27 @@ def test_to_retrieval_filters_drops_ambiguous_fields() -> None:
     filters = to_retrieval_filters(entities)
     assert filters.company_codes == ("DBC",)
     assert filters.periods == ()  # period_relative_unresolved must not leak a guess
+
+
+def test_fiscal_year_phrasing_resolves_the_period() -> None:
+    """Day 24 §4.1: `_YEAR_RE` required `năm` immediately before the digits,
+    so the extremely common "năm tài chính YYYY" phrasing resolved to no
+    period at all. Measured: 61 questions carry a period ambiguity and 60 of
+    them have a 4-digit year sitting right there in the text."""
+    entities = parse_query_entities(
+        "Giá trị thuần phải thu ngắn hạn của HSG là bao nhiêu vào cuối năm tài chính 2017?"
+    )
+    assert entities.periods == ("2017",)
+    assert "period_missing" not in entities.ambiguity
+
+
+def test_plain_year_phrasing_still_resolves() -> None:
+    entities = parse_query_entities("Doanh thu thuần của DBC năm 2023 là bao nhiêu?")
+    assert entities.periods == ("2023",)
+
+
+def test_year_modifier_does_not_swallow_an_unrelated_number() -> None:
+    """The modifier slot must stay narrow: `năm <chữ> 2023` may not match an
+    arbitrary span, or a note reference would masquerade as a period."""
+    entities = parse_query_entities("Thuyết minh số 2023 của DBC năm 2022 là gì?")
+    assert entities.periods == ("2022",)

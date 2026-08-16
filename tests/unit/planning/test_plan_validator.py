@@ -186,6 +186,15 @@ def test_compare_companies_with_single_company_is_rejected() -> None:
     assert "companies_arity_invalid" in _codes(_plan(operation="compare_companies"))
 
 
+def test_compare_companies_with_three_companies_is_rejected() -> None:
+    """`compile_compare_companies` (execution/compiler.py) only ever reads
+    `companies[0]`/`companies[1]` -- a 3+-company plan (however it got
+    constructed, e.g. an LLM-planner output) must be rejected here too, not
+    only kept out by the rule planner's own routing (Day 23 plan Step 2)."""
+    plan = _plan(operation="compare_companies", companies=("NVL", "VHM", "VNM"))
+    assert "companies_arity_invalid" in _codes(plan)
+
+
 def test_compare_companies_with_two_periods_is_rejected() -> None:
     plan = _plan(operation="compare_companies", companies=("NVL", "VHM"), periods=("2022", "2023"))
     assert "periods_arity_invalid" in _codes(plan)

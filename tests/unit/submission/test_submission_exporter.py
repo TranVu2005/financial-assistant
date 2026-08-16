@@ -16,7 +16,12 @@ import pytest
 
 from financial_report_qa.core.config import ExecutionSettings, LLMSettings
 from financial_report_qa.core.errors import SubmissionInputError
-from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
+from financial_report_qa.data.dataset_builder import (
+    CELL_SCHEMA,
+    DOCUMENT_SCHEMA,
+    PLACEMENT_SCHEMA,
+    TABLE_SCHEMA,
+)
 from financial_report_qa.planning.llm_client import LLMClient
 from financial_report_qa.retrieval.contracts import (
     MetricLabelObservation,
@@ -114,6 +119,19 @@ def _write_release(tmp_path: Path) -> Path:
     pq.write_table(  # type: ignore[no-untyped-call]
         pa.Table.from_pylist(cells, schema=CELL_SCHEMA), release_dir / "cells.parquet"
     )
+    placements = [
+        {
+            "table_id": TABLE_ID,
+            "row_idx": cell["row_idx"],
+            "col_idx": cell["col_idx"],
+            "cell_id": cell["cell_id"],
+        }
+        for cell in cells
+    ]
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(placements, schema=PLACEMENT_SCHEMA),
+        release_dir / "placements.parquet",
+    )
     return release_dir
 
 
@@ -135,6 +153,114 @@ def _service() -> RetrievalService:
         metric_labels=(MetricLabelObservation(canonical="net_revenue", raw=None),),
     )
     return RetrievalService(build_bm25_index((document,), dataset_fingerprint="f" * 64))
+
+
+def test_export_submission_evidence_csv_contains_the_full_extracted_table(
+    tmp_path: Path,
+) -> None:
+    """Regression: the packaged evidence CSV must be the real extracted
+    table the compiler actually searched (every numeric cell of the source
+    table(s), via `execution.cell_frame.build_cell_frame`), not a single
+    synthesized row for just the one cell the answer used."""
+    release_dir = tmp_path / "release"
+    release_dir.mkdir(exist_ok=True)
+    documents = [
+        {
+            "doc_id": DOC_ID,
+            "repo_id": "repo",
+            "revision": "1",
+            "relative_path": "ACB/2023/ACB_financial_statements_2023_consolidated_extracted.txt",
+            "company_code": "ACB",
+            "report_year": 2023,
+            "statement_scope": "consolidated",
+            "sha256": "0" * 64,
+            "file_size_bytes": 10,
+            "encoding": "utf-8",
+            "inventory_status": "ready",
+            "ruleset_version": "1",
+            "normalization_fingerprint": "0" * 64,
+        }
+    ]
+    tables = [
+        {
+            "table_id": TABLE_ID,
+            "doc_id": DOC_ID,
+            "source_ordinal": 0,
+            "title_raw": "Bao cao ket qua kinh doanh",
+            "statement_type": "income_statement",
+            "unit_raw": "VND",
+            "unit_normalized": "vnd",
+            "line_start": 1,
+            "line_end": 10,
+            "row_count": 2,
+            "column_count": 2,
+            "quality_score": 0.9,
+            "csv_path": None,
+        }
+    ]
+    cells = [
+        {
+            "cell_id": CELL_ID,
+            "table_id": TABLE_ID,
+            "row_idx": 0,
+            "col_idx": 1,
+            "row_label_raw": "Doanh thu thuan",
+            "row_label_canonical": "net_revenue",
+            "row_group_context_raw": None,
+            "column_label_raw": "Năm 2023",
+            "column_label_canonical": None,
+            "value_raw": "100",
+            "value_numeric": Decimal("100"),
+            "period": "2023",
+            "unit": "VND",
+            "source_line_start": 5,
+            "source_line_end": 5,
+            "extraction_confidence": 0.9,
+        },
+        {
+            "cell_id": "cell_" + "b" * 64,
+            "table_id": TABLE_ID,
+            "row_idx": 1,
+            "col_idx": 1,
+            "row_label_raw": "Gia von hang ban",
+            "row_label_canonical": "cost_of_goods_sold",
+            "row_group_context_raw": None,
+            "column_label_raw": "Năm 2023",
+            "column_label_canonical": None,
+            "value_raw": "60",
+            "value_numeric": Decimal("60"),
+            "period": "2023",
+            "unit": "VND",
+            "source_line_start": 6,
+            "source_line_end": 6,
+            "extraction_confidence": 0.9,
+        },
+    ]
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(tables, schema=TABLE_SCHEMA), release_dir / "tables.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(cells, schema=CELL_SCHEMA), release_dir / "cells.parquet"
+    )
+    question = RawQuestion(id=1, question="Tra cứu doanh thu thuần của ACB năm 2023.")
+
+    report, items, csv_rows = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+    )
+
+    assert report.answered_count == 1
+    rows = csv_rows["data/q000001_df1.csv"]
+    assert len(rows) == 2
+    labels = {row["row_label_raw"] for row in rows}
+    assert labels == {"Doanh thu thuan", "Gia von hang ban"}
 
 
 def test_export_submission_answers_a_real_unseen_question(tmp_path: Path) -> None:
@@ -173,6 +299,7 @@ def test_export_submission_records_no_candidate_tables_as_abstained(tmp_path: Pa
         execution_settings=_ALLOW_LOOKUP,
         dataset_fingerprint="0" * 64,
         k=10,
+        apply_backstop=False,
     )
 
     assert report.answered_count == 0
@@ -185,7 +312,8 @@ def test_export_submission_rule_abstain_without_llm_client_stays_abstained(
 ) -> None:
     """Regression: `llm_client=None` (the default) must reproduce the exact
     pre-LLM-fallback behavior -- rule-planner abstain stays a `planning`
-    abstain, nothing tries to reach a network endpoint."""
+    abstain, nothing tries to reach a network endpoint. `apply_backstop=False`
+    isolates this from the Day 23 backstop tier, a separate concern."""
     release_dir = _write_release(tmp_path)
     question = RawQuestion(id=3, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
 
@@ -196,6 +324,7 @@ def test_export_submission_rule_abstain_without_llm_client_stays_abstained(
         execution_settings=_ALLOW_LOOKUP,
         dataset_fingerprint="0" * 64,
         k=10,
+        apply_backstop=False,
     )
 
     assert report.answered_count == 0
@@ -241,6 +370,200 @@ def test_export_submission_falls_back_to_llm_when_rule_planner_abstains(
     assert report.answered_count == 1
     assert items[0].answer == 100.0
     assert report.outcomes[0].plan_source == "llm"
+
+
+def test_export_submission_grounds_raw_metric_when_rule_planner_would_abstain(
+    tmp_path: Path,
+) -> None:
+    """Day 23 plan §1.1/Step 1: a question naming a metric that only exists
+    as a `row_label_raw` (no canonical alias) must not die with
+    `metric_unknown` when that exact label is the unambiguous match among
+    this question's own retrieved candidate tables."""
+    release_dir = tmp_path / "release"
+    release_dir.mkdir(exist_ok=True)
+    documents = [
+        {
+            "doc_id": DOC_ID,
+            "repo_id": "repo",
+            "revision": "1",
+            "relative_path": "ACB/2020/ACB_financial_statements_2020_consolidated_extracted.txt",
+            "company_code": "ACB",
+            "report_year": 2020,
+            "statement_scope": "consolidated",
+            "sha256": "0" * 64,
+            "file_size_bytes": 10,
+            "encoding": "utf-8",
+            "inventory_status": "ready",
+            "ruleset_version": "1",
+            "normalization_fingerprint": "0" * 64,
+        }
+    ]
+    tables = [
+        {
+            "table_id": TABLE_ID,
+            "doc_id": DOC_ID,
+            "source_ordinal": 0,
+            "title_raw": "Thuyet minh",
+            "statement_type": None,
+            "unit_raw": "VND",
+            "unit_normalized": "vnd",
+            "line_start": 1,
+            "line_end": 10,
+            "row_count": 1,
+            "column_count": 2,
+            "quality_score": 0.9,
+            "csv_path": None,
+        }
+    ]
+    cells = [
+        {
+            "cell_id": CELL_ID,
+            "table_id": TABLE_ID,
+            "row_idx": 0,
+            "col_idx": 1,
+            "row_label_raw": "Lãi tiền gửi",
+            "row_label_canonical": None,
+            "row_group_context_raw": None,
+            "column_label_raw": "Năm 2020",
+            "column_label_canonical": None,
+            "value_raw": "70",
+            "value_numeric": Decimal("70"),
+            "period": "2020",
+            "unit": "VND",
+            "source_line_start": 5,
+            "source_line_end": 5,
+            "extraction_confidence": 0.9,
+        }
+    ]
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(tables, schema=TABLE_SCHEMA), release_dir / "tables.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(cells, schema=CELL_SCHEMA), release_dir / "cells.parquet"
+    )
+
+    document = TableDocument(
+        table_id=TABLE_ID,
+        doc_id=DOC_ID,
+        text="company_code: ACB\nperiod: 2020\nLãi tiền gửi | 2020 | 70",
+        metadata=TableMetadata(
+            table_id=TABLE_ID,
+            doc_id=DOC_ID,
+            company_code="ACB",
+            periods=("2020",),
+            statement_type=None,
+            source_path="a.txt",
+            line_start=1,
+            line_end=3,
+        ),
+        metric_labels=(),
+    )
+    service = RetrievalService(build_bm25_index((document,), dataset_fingerprint="f" * 64))
+    question = RawQuestion(id=1, question="Lãi tiền gửi của ACB năm 2020 là bao nhiêu?")
+
+    report, items, csv_rows = export_submission(
+        [question],
+        service,
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+    )
+
+    assert report.answered_count == 1
+    assert items[0].answer == 70.0
+    assert report.outcomes[0].plan_source == "rule_raw_grounded"
+
+
+def test_export_submission_falls_to_grounded_llm_when_typed_llm_abstains(
+    tmp_path: Path,
+) -> None:
+    """Day 23 full-coverage strategy tier 3: when the typed, vocabulary-free
+    LLM planner (ADR 0006 B1) can't produce a valid plan, a second attempt
+    shown the real candidate-table content should succeed by copying the
+    real row label verbatim."""
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=3, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
+
+    invalid_typed_plan = json.dumps({"operation": "not_a_real_operation"})
+    grounded_valid_plan = json.dumps(
+        {
+            "operation": "lookup",
+            "companies": ["ACB"],
+            "periods": ["2023"],
+            "metric": {"raw_text": "Doanh thu thuan"},
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        user_message = body["messages"][1]["content"]
+        content = (
+            grounded_valid_plan if "Nội dung bảng ứng viên" in user_message else invalid_typed_plan
+        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
+
+    report, items, csv_rows = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        llm_client=llm_client,
+    )
+
+    assert report.answered_count == 1
+    assert report.outcomes[0].plan_source == "llm_grounded"
+    assert items[0].answer == 100.0
+
+
+def test_export_submission_backstop_fills_when_every_tier_fails(tmp_path: Path) -> None:
+    """Day 23 full-coverage strategy tier 4: plan.md §2.4 rule 1 fails the
+    *entire* ZIP if even one id is missing, so a question no reasoning tier
+    can answer must still produce a contract-valid item."""
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=5, question="Câu hỏi hoàn toàn không xác định được công ty nào.")
+
+    report, items, csv_rows = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+    )
+
+    assert report.question_count == 1
+    assert report.answered_count == 0
+    assert report.backstopped_count == 1
+    assert len(items) == 1
+    assert items[0].id == 5
+    assert report.outcomes[0].status == "backstopped"
+
+
+def test_export_submission_backstop_disabled_keeps_old_behavior(tmp_path: Path) -> None:
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=5, question="Câu hỏi hoàn toàn không xác định được công ty nào.")
+
+    report, items, csv_rows = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        apply_backstop=False,
+    )
+
+    assert report.backstopped_count == 0
+    assert len(items) == 0
+    assert report.outcomes[0].status == "abstained"
 
 
 def test_export_submission_rule_success_never_calls_llm(tmp_path: Path) -> None:

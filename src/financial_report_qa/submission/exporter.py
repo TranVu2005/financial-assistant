@@ -16,19 +16,35 @@ import zipfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
+from typing import Literal
+
+import pandas as pd
 
 from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.core.errors import SubmissionInputError
+from financial_report_qa.execution.cell_frame import build_cell_frame
 from financial_report_qa.execution.compiler import compile_plan
 from financial_report_qa.execution.contracts import CompiledQuery, ReplayRow
+from financial_report_qa.execution.sandbox import replay_in_sandbox
 from financial_report_qa.pipeline.contracts import PipelineStage
+from financial_report_qa.planning import llm_planner
+from financial_report_qa.planning.column_refinement import plan_with_column
+from financial_report_qa.planning.entity_contracts import QueryEntities
 from financial_report_qa.planning.entity_parser import parse_query_entities
+from financial_report_qa.planning.llm_cell_grounding import choose_column_label, choose_row_label
 from financial_report_qa.planning.llm_client import ChatCompletionClient
 from financial_report_qa.planning.plan_router import route_plan
+from financial_report_qa.planning.raw_metric_grounding import (
+    candidate_column_labels,
+    candidate_row_labels,
+    plan_with_raw_grounding_fallback,
+)
 from financial_report_qa.planning.rule_planner import build_plan
+from financial_report_qa.planning.table_context_rendering import render_table_context
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
 from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
 from financial_report_qa.retrieval.service import RetrievalService
+from financial_report_qa.submission.backstop_answer import build_backstop_item
 from financial_report_qa.submission.contracts import (
     QuestionOutcome,
     RawQuestion,
@@ -84,6 +100,48 @@ def _replay_rows_to_csv_rows(replay_rows: tuple[ReplayRow, ...]) -> tuple[CsvRow
     )
 
 
+def _real_table_evidence_rows(
+    compiled: CompiledQuery, release_dir: Path, *, timeout_seconds: float
+) -> tuple[CsvRow, ...] | None:
+    """Day 23 evidence-table fix: the packaged CSV must be the real
+    extracted table(s) the compiler actually searched (every numeric cell,
+    via `build_cell_frame` -- the exact same frame `locate()` searched
+    within), not a synthesized single row for just the cell the answer
+    used. Scoped to only the tables the evidence cells actually came from
+    (usually 1, sometimes up to 4 -- narrower than the full candidate set),
+    which cannot introduce new ambiguity: any row `locate()` uniquely found
+    in the wider candidate frame stays uniquely findable here.
+
+    Returns `None` (caller falls back to the old synthetic single-row CSV)
+    when this frame does not independently replay to the same answer --
+    e.g. two evidence cells drawn from tables in different units, where
+    `compile_plan` reconverted one but this raw multi-row frame cannot.
+    Never trusts the coincidence; always re-verifies via the sandbox.
+    """
+    evidence_table_ids: tuple[str, ...] = tuple(
+        dict.fromkeys(cell.table_id for cell in compiled.evidence)
+    )
+    frame = build_cell_frame(release_dir, evidence_table_ids)
+    rows: tuple[CsvRow, ...] = tuple(
+        {
+            "company_code": record["company_code"],
+            "row_label_canonical": record["row_label_canonical"],
+            "row_label_raw": record["row_label_raw"],
+            "period": record["period"],
+            "value": record["value"],
+        }
+        for record in frame.to_dict(orient="records")
+    )
+    replay_frame = pd.DataFrame(list(rows))
+    replay_frame["period"] = replay_frame["period"].astype("Int64")
+    sandbox_result = replay_in_sandbox(
+        compiled.pandas_query, replay_frame, timeout_seconds=timeout_seconds
+    )
+    if sandbox_result.error_code is not None or sandbox_result.value != compiled.answer:
+        return None
+    return rows
+
+
 def _relevant_docs_and_tables(
     compiled: CompiledQuery, citation_lookup: Mapping[str, Mapping[str, object]]
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -111,6 +169,7 @@ def _run_one_question(
     execution_settings: ExecutionSettings,
     k: int,
     llm_client: ChatCompletionClient | None,
+    allow_inferred_scope: bool = False,
 ) -> tuple[QuestionOutcome, SubmissionItem | None, tuple[CsvRow, ...] | None]:
     question = raw_question.question
 
@@ -131,12 +190,30 @@ def _run_one_question(
         )
 
     entities = parse_query_entities(question)
-    # Day 22 coverage-improvement follow-up: `route_plan` (ADR 0006 A1) tries
-    # the rule planner first and only calls the LLM planner when it abstains
-    # -- never the reverse, so the Day 16 false-plan-rate-0.0 guarantee is
-    # unaffected. `llm_client=None` reproduces the exact pre-fallback
-    # behavior (no network call attempted).
-    if llm_client is not None:
+    # Day 23 plan Step 1: try the rule planner, with one grounded retry when
+    # it abstains purely on `metric_unknown` (raw_metric_grounding.py). Only
+    # once *that* combined attempt still has no plan does the Day 22
+    # coverage-improvement follow-up (`route_plan`, ADR 0006 A1) get to try
+    # the LLM planner -- never the reverse, so the Day 16
+    # false-plan-rate-0.0 guarantee is unaffected. `llm_client=None`
+    # reproduces the exact pre-fallback behavior (no network call attempted).
+    plan_result, grounded = plan_with_raw_grounding_fallback(
+        entities,
+        candidate_table_ids=retrieved,
+        known_table_ids=frozenset(retrieved),
+        release_dir=release_dir,
+    )
+    plan_source: Literal[
+        "rule",
+        "rule_raw_grounded",
+        "llm",
+        "llm_grounded",
+        "llm_cell_grounded",
+        "llm_column_refined",
+    ]
+    if plan_result.plan is not None:
+        plan_source = "rule_raw_grounded" if grounded else "rule"
+    elif llm_client is not None:
         routed = route_plan(
             entities,
             client=llm_client,
@@ -144,10 +221,53 @@ def _run_one_question(
             known_table_ids=frozenset(retrieved),
         )
         plan_result, plan_source = routed.result, routed.source
+        # Day 23 full-coverage strategy tier 3: the vocabulary-free prompt
+        # (ADR 0006 B1) gave the LLM no real row labels to copy -- Day 22
+        # measured 23.4% of its plans invented a metric name that existed
+        # nowhere in any candidate table. Retry once, shown the real
+        # candidate-table content, before giving up on this question.
+        if plan_result.plan is None:
+            table_context = render_table_context(release_dir, retrieved)
+            grounded_result = llm_planner.build_plan_grounded(
+                question,
+                client=llm_client,
+                candidate_table_ids=retrieved,
+                known_table_ids=frozenset(retrieved),
+                table_context=table_context,
+            )
+            if grounded_result.plan is not None:
+                plan_result, plan_source = grounded_result, "llm_grounded"
+        # Day 25 tier: the two tiers above ask a small local model to emit a
+        # whole typed plan -- the organizers measure that shape at up to a
+        # 99% syntax-error rate under 10B, and we measured 0/75 answers from
+        # it. This tier asks the one question the same deck says actually
+        # matters (54.7% of their end-to-end errors are picking the wrong
+        # cell): WHICH ROW. The model indexes into real labels only, and the
+        # existing rule planner still builds and validates the plan.
+        if plan_result.plan is None:
+            chosen_label = choose_row_label(
+                question,
+                candidate_row_labels(release_dir, retrieved),
+                client=llm_client,
+            )
+            if chosen_label is not None:
+                labelled = QueryEntities.model_validate(
+                    {
+                        **entities.model_dump(mode="python"),
+                        "metrics": (chosen_label,),
+                        "ambiguity": tuple(
+                            code for code in entities.ambiguity if code != "metric_unknown"
+                        ),
+                    }
+                )
+                relabelled = build_plan(
+                    labelled,
+                    candidate_table_ids=retrieved,
+                    known_table_ids=frozenset(retrieved),
+                )
+                if relabelled.plan is not None:
+                    plan_result, plan_source = relabelled, "llm_cell_grounded"
     else:
-        plan_result = build_plan(
-            entities, candidate_table_ids=retrieved, known_table_ids=frozenset(retrieved)
-        )
         plan_source = "rule"
     if plan_result.plan is None:
         return (
@@ -167,6 +287,27 @@ def _run_one_question(
     plan = plan_result.plan
 
     compiled = compile_plan(plan, release_dir, execution_settings=execution_settings)
+    # Day 26: `cell_ambiguous` means row and period did not separate the
+    # candidates -- 117 of the 1,012 official questions end there. The column
+    # is the missing dimension, and it is measurably absent from the question
+    # text (only 5 of those 117 name one), so read it off the real headers.
+    # One bounded retry, only on this error code, and only when a model is
+    # configured; anything else keeps the original abstain.
+    if compiled.error_code == "cell_ambiguous" and llm_client is not None:
+        refined = plan_with_column(
+            plan,
+            lambda row_label, columns: choose_column_label(
+                question, row_label, columns, client=llm_client
+            ),
+            columns_for=lambda row_label: candidate_column_labels(
+                release_dir, plan.candidate_table_ids, row_label
+            ),
+        )
+        if refined is not None:
+            retried = compile_plan(refined, release_dir, execution_settings=execution_settings)
+            if retried.status == "answered":
+                plan, compiled = refined, retried
+                plan_source = "llm_column_refined"
     if compiled.status != "answered":
         assert compiled.error_code is not None
         # Day 22 plan §1 §3: no gold exists for this question set, so the
@@ -198,6 +339,7 @@ def _run_one_question(
         compiled=compiled,
         retrieved_table_ids=frozenset(retrieved),
         citation_lookup=citation_lookup,
+        allow_inferred_scope=allow_inferred_scope,
     )
     if package.verification_status == "rejected":
         return (
@@ -229,6 +371,18 @@ def _run_one_question(
             "pandas_query": compiled.pandas_query,
         }
     )
+    # Day 23 evidence-table fix: prefer the real extracted table(s) the
+    # compiler actually searched over the synthesized single-row fallback --
+    # see `_real_table_evidence_rows` for why this can legitimately fail
+    # (cross-table unit mismatch) and must fall back, never guess.
+    real_evidence_rows = _real_table_evidence_rows(
+        compiled, release_dir, timeout_seconds=execution_settings.timeout_seconds
+    )
+    evidence_rows = (
+        real_evidence_rows
+        if real_evidence_rows is not None
+        else _replay_rows_to_csv_rows(compiled.replay_rows)
+    )
     return (
         QuestionOutcome.model_validate(
             {
@@ -241,8 +395,38 @@ def _run_one_question(
             }
         ),
         item,
-        _replay_rows_to_csv_rows(compiled.replay_rows),
+        evidence_rows,
     )
+
+
+def _apply_backstop(
+    raw_question: RawQuestion,
+    service: RetrievalService,
+    release_dir: Path,
+    *,
+    k: int,
+    outcome: QuestionOutcome,
+) -> tuple[QuestionOutcome, SubmissionItem, tuple[CsvRow, ...]]:
+    """Day 23 full-coverage strategy tier 4: `outcome` already failed every
+    reasoning tier -- fill the gap with `backstop_answer.build_backstop_item`
+    so this question still gets a contract-valid `SubmissionItem` (plan.md
+    §2.4 rule 1: a single missing id fails the *entire* ZIP). `stage`/`code`
+    are carried over from `outcome` so the report still records *why*
+    reasoning failed, distinct from a genuinely `"answered"` result.
+    """
+    retrieved = retrieve_candidate_table_ids(raw_question.question, service, k=k)
+    item, rows = build_backstop_item(raw_question, retrieved, release_dir)
+    backstopped_outcome = QuestionOutcome.model_validate(
+        {
+            "id": outcome.id,
+            "question": outcome.question,
+            "status": "backstopped",
+            "stage": outcome.stage,
+            "code": outcome.code,
+            "plan_source": outcome.plan_source,
+        }
+    )
+    return backstopped_outcome, item, rows
 
 
 def export_submission(
@@ -254,17 +438,29 @@ def export_submission(
     dataset_fingerprint: str,
     k: int = 10,
     llm_client: ChatCompletionClient | None = None,
+    apply_backstop: bool = True,
+    allow_inferred_scope: bool = False,
 ) -> tuple[SubmissionExportReport, tuple[SubmissionItem, ...], dict[str, tuple[CsvRow, ...]]]:
     """Run every question through the live pipeline once. Returns the
-    coverage report (all questions), the `SubmissionItem`s that qualify for
-    `submission.json` (answered + verified only), and their CSV rows keyed by
-    `csv_path`.
+    coverage report (all questions), the `SubmissionItem`s to package into
+    `submission.json`, and their CSV rows keyed by `csv_path`.
 
     `llm_client=None` (the default) keeps the pre-Day-22-coverage-follow-up
     behavior: only the rule planner ever runs. Passing a client routes every
     rule-planner abstain through `plan_router.route_plan`'s LLM fallback
-    (ADR 0006 decision A1) -- the rule planner still always runs first and is
-    never overridden once it succeeds.
+    (ADR 0006 decision A1), then a grounded LLM retry (Day 23 tier 3) -- the
+    rule planner still always runs first and is never overridden once it
+    succeeds.
+
+    `apply_backstop=True` (the default, Day 23 full-coverage strategy): any
+    question every reasoning tier still failed gets a contract-valid but
+    not-reasoned item (tier 4, `backstop_answer.build_backstop_item`), so
+    `items` always covers every question in `raw_questions` -- required by
+    plan.md §2.4 rule 1 (a single missing id fails the whole ZIP) and safe
+    under the official scoring (Answer/Execution Accuracy macro-average over
+    the *full* question set, so a wrong answer already scores the same 0
+    credit as a missing one). Pass `False` to keep the pre-Day-23 partial-
+    coverage behavior for pure measurement runs.
     """
     ordered = tuple(sorted(raw_questions, key=lambda item: item.id))
     outcomes: list[QuestionOutcome] = []
@@ -280,7 +476,12 @@ def export_submission(
             execution_settings=execution_settings,
             k=k,
             llm_client=llm_client,
+            allow_inferred_scope=allow_inferred_scope,
         )
+        if item is None and apply_backstop:
+            outcome, item, rows = _apply_backstop(
+                raw_question, service, release_dir, k=k, outcome=outcome
+            )
         outcomes.append(outcome)
         if outcome.stage is not None:
             stage_counts[outcome.stage] += 1
@@ -293,7 +494,8 @@ def export_submission(
         {
             "dataset_fingerprint": dataset_fingerprint,
             "question_count": len(ordered),
-            "answered_count": len(items),
+            "answered_count": sum(1 for o in outcomes if o.status == "answered"),
+            "backstopped_count": sum(1 for o in outcomes if o.status == "backstopped"),
             "stage_counts": dict(stage_counts),
             "outcomes": tuple(outcomes),
         }

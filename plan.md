@@ -1290,6 +1290,195 @@ Mỗi ngày có một đầu ra có thể kiểm chứng. “Hoàn tất” ngh�
 > câu mục tiêu tiến qua được bước nhận diện công ty (chuyển sang `metric_not_found`/
 > `multi_metric_unsupported`); 24/34 còn lại là câu hỏi nhiều bước/điều kiện vượt quá 9 operation
 > hiện có — nợ kỹ thuật khác, không phải lỗi alias. `pytest -q`: 1.202 passed.
+>
+> **Chẩn đoán và Bước 1 ngày 2026-08-16:** rà soát toàn diện lý do 1.012 câu chỉ trả lời được
+> 28/1.012 (2,8 %), cộng vấn đề bảng bằng chứng chỉ là 1 dòng tổng hợp thay vì bảng đã trích
+> xuất — kế hoạch chi tiết và số đo đầy đủ:
+> [docs/plans/day23-coverage-and-evidence-table.md](docs/plans/day23-coverage-and-evidence-table.md).
+> Phát hiện chính: **82,4 % bảng (107.717/130.729) không có một ô số nào mang `row_label_canonical`**
+> (coverage trung vị theo bảng = 0,0 %) — 56 chỉ tiêu canonical quá nhỏ so với 165.416 nhãn raw phân
+> biệt trong corpus, chặn cả hai đầu: 402/1.012 câu (39,7 %) chết ở planner (`metric_unknown`), 206
+> câu khác chết ở compiler (`metric_not_found`) dù retrieval đã trả về **đúng** bảng.
+>
+> **Bước 1 — cài đặt:** ADR 0004 đã xét và loại "Option B" (tự động khớp mờ `row_label_raw` toàn
+> corpus) vì không có phạm vi thì chọn giữa nhiều hàng gần khớp là đoán. Bước 1 là một cơ chế hẹp
+> hơn Option B: module mới `planning/raw_metric_grounding.py` chỉ khớp trong phạm vi **các bảng ứng
+> viên mà retrieval đã trả về cho chính câu hỏi đó** (không phải toàn corpus), và chỉ chấp nhận khi
+> đúng một nhãn `row_label_raw` (không phải 0, không phải ≥ 2) là khớp con chuỗi đã chuẩn hoá
+> (NFKC/casefold) của câu hỏi, với ngưỡng an toàn ≥ 3 từ (theo đúng tiền lệ ngưỡng alias công ty
+> Ngày 22) để loại các chú thích chung chung như "Số dư cuối năm", "Cộng". Chỉ kích hoạt khi
+> `entities.ambiguity` **đúng bằng** `("metric_unknown",)` — không đụng tới câu vừa thiếu chỉ tiêu
+> vừa thiếu trường khác. Nối vào cả hai nơi gọi `build_plan` (`submission/exporter.py` cho 1.012 câu
+> thật, `pipeline/evaluation.py` cho đo gold) để độ phủ và độ chính xác luôn được đo cùng nhau.
+> Sửa kèm một lỗi thật ở `locator._metric_mask`: nhánh `raw_text` trước đó so khớp byte-for-byte,
+> không chịu được khác biệt hoa/thường hay khoảng trắng — nay so khớp qua `normalized_key`.
+>
+> **Đo trên toàn bộ 1.012 câu thật (`submission export`, release khoá, k=10):**
+>
+> | | Trước Bước 1 | Sau Bước 1 |
+> |---|---:|---:|
+> | Answered | 28/1.012 (2,8 %) | **55/1.012 (5,4 %)** |
+> | `planning` stage | 617 | 508 |
+> | `execution` stage | 325 | 407 |
+> | `retrieval` stage | 42 | 42 (không đổi, đúng dự kiến) |
+>
+> **+27 câu mới, 0 câu mất** (đối chiếu tập ID answered cũ ⊆ tập mới). Cả 27 câu đều gắn
+> `plan_source = "rule_raw_grounded"` (nhãn tách riêng để đo, không gộp vào `"rule"`). Trong 391 câu
+> `metric_unknown` thuần tuý, **109 câu (27,9 %)** khớp được một nhãn thô duy nhất trong bảng ứng
+> viên đã truy hồi thật và dựng được plan; 82/109 sau đó vẫn dừng ở execution (đúng `period_unresolved`/
+> `cell_ambiguous`/`unit_missing` tại đúng công ty/kỳ được hỏi — compiler từ chối đoán, không phải lỗi);
+> 27/109 trả lời trót lọt đến cùng. `submission validate` trên bản ZIP mới: **valid=True, 55/55 item**
+> qua được replay `pandas_query` độc lập. Soát tay 12/27 câu mới — đúng ngữ nghĩa, kể cả ca tưởng
+> rủi ro nhất (câu 48, khớp nhãn chung chung "Số dư cuối năm"): bảng ứng viên retrieval trả về có
+> tiêu đề đúng "18. Quỹ bình ổn giá xăng dầu", tức bảng đã bị retrieval thu hẹp đúng về sổ chi tiết
+> của riêng quỹ đó trước khi grounding chạy — nói cách khác, rủi ro nhãn chung chung mà lý thuyết lo
+> ngại được giảm nhẹ đáng kể trên thực tế vì grounding chỉ hoạt động sau khi retrieval đã thu hẹp
+> phạm vi bằng chính văn bản câu hỏi.
+>
+> **Đối chiếu gold120 (cổng chính xác, không phải chỉ độ phủ):** `pipeline run-e2e` lặp lại đúng lệnh
+> tái tạo cổng Ngày 21 — accuracy **không đổi 0,846 → 0,846** (33/39 đúng, 6 sai tự tin, cả hai như
+> nhau). 10/120 câu gold có `metric_unknown` thuần tuý nhưng **0 câu kích hoạt được Bước 1** — soát
+> lại cho thấy cả 10 câu đều là dạng cấu trúc/định tính ("liệt kê công ty con", "so sánh riêng và hợp
+> nhất") ngoài phạm vi 9 operation, không phải câu tra cứu một chỉ tiêu — nên gold120 không đại diện
+> cho hình dạng câu mà Bước 1 nhắm tới (đúng bài học Ngày 21 §1.5: khớp đúng chiều đo, không suy
+> diễn). Không câu nào đổi từ đúng sang sai — an toàn theo số đo, không theo suy luận.
+>
+> Trần ~608 câu ước tính trong kế hoạch ban đầu (§1.1) đã cộng dồn hai góc đo của cùng một nguyên
+> nhân (402 phía planner + 206 phía compiler) như thể độc lập; đo thật cho thấy chúng chồng lấn đáng
+> kể. Số thật: **+27/1.012 (+96 % so với 28 câu cũ)**, 0 hồi quy. Verification đầy đủ: 1.218 test qua
+> (4 skip do hạn chế quyền Windows, không đổi), `ruff check`/`format --check` sạch trên 265 file,
+> `mypy` sạch trên 124 file `src/`.
+>
+> **Bước 2 ngày 2026-08-16 — nối 5 operation đã cài sẵn:** trước khi nối dây, phát hiện **một bug
+> thật đang sống trong bản nộp 55 câu vừa đo**: `_infer_operation` khớp `compare_companies` với
+> `n_companies >= 2` (không phải `== 2`), nhưng `compile_compare_companies` chỉ đọc đúng
+> `companies[0]`/`companies[1]`. Đo trực tiếp: **35 câu thật nêu 3–10 công ty** bị khớp nhầm vào
+> `compare_companies`, và **2 câu (id 931, 973) đã trả lời sai một cách tự tin** trong bản ZIP đã
+> nộp — câu 931 hỏi **trung bình** một tỷ lệ qua **5** công ty (GEE, GEX, VGC, SAM, PC1), hệ thống
+> trả về hiệu số GEE−GEX bằng VND thô (sai cả phép tính lẫn đơn vị); câu 973 hỏi **đếm** số công ty
+> thoả điều kiện trong 3 công ty, hệ thống trả về hiệu số HPG−HSG. Đây là lần lặp **thứ bảy** của mô
+> hình "trường thượng nguồn không được thượng nguồn hoá đúng, vỡ ở hạ nguồn", nhưng lần này không
+> phải trường bị bỏ trống mà là **điều kiện khớp quá rộng**. Sửa `n_companies == 2` (rule planner)
+> **và** khoá lại `_validate_compare_companies` để đòi đúng 2 công ty (phòng thủ hai lớp — validator
+> không được tin rule planner sẽ luôn đúng, vì LLM planner Ngày 17 cũng có thể sinh plan này). TDD:
+> `test_three_companies_one_period_does_not_silently_become_compare_companies`,
+> `test_compare_companies_with_three_companies_is_rejected`, cập nhật property-test độc lập.
+>
+> Đo real 1.012 câu để chọn phạm vi Bước 2 an toàn (không đoán): **25/26 câu 2-chỉ-tiêu** thật đều
+> mang từ khoá tỷ lệ ("tỷ lệ"/"tỷ trọng"/"%") — 0/26 là dạng `compare` không từ khoá, nên `compare`
+> **cố tình không được suy luận** (không có bằng chứng đo được để định tuyến). `entities.metrics` bị
+> sắp xếp alphabet (bất biến hợp đồng), làm mất thứ tự "A trên B" = A/B — thêm
+> `entity_parser.ordered_metric_canonicals` khôi phục thứ tự từ `entities.spans` để gán đúng
+> numerator/denominator. Với nhóm công ty (17/35 câu sạch, sau khi loại 6 câu dạng xếp hạng phức hợp
+> và 4 câu đếm bằng từ khoá loại trừ tường minh), phát hiện **bug thứ hai cùng họ**: dispatch
+> `average`/`sum` ở cả `execution/compiler.py` **và** `execution/pandas_query.py` luôn lặp qua
+> `plan.periods` tại `companies[0]` cố định — dù `plan_validator._validate_aggregate` **đã** cho phép
+> biến thiên theo company. Một plan `average` 2 công ty (1000, 750) trả lời **1000** (chỉ ACB, bỏ
+> qua MBB) thay vì trung bình đúng 875 — bắt bằng TDD trước khi nối dây sản xuất
+> (`test_compile_plan_average_varies_over_companies_not_only_first`,
+> `test_replay_average_over_companies_matches_compiled_answer`), sửa cả hai lớp.
+>
+> **Đo lại 1.012 câu thật sau khi cài Bước 2:** 53/1.012 answered (55 trước đó, **đúng −2 = xoá 931
+> và 973** — hạ coverage để xoá sai tự tin, đúng tinh thần Ngày 21). **0 câu mới trả lời được** dù
+> `build_plan` dựng đúng plan cho 20/26 câu ratio và 18/35 câu trung bình/tổng — cả 38 đều dừng ở
+> execution (22 `metric_not_found`, 13 `cell_ambiguous`, 2 `period_unresolved`, 1 `unit_missing`).
+> **Nguyên nhân trùng đúng gốc Bước 1**: dù chỉ tiêu trong câu hỏi khớp alias canonical (không phải
+> `metric_unknown`), `locate()` vẫn chỉ so khớp `row_label_canonical` — bảng cụ thể của công ty/kỳ
+> được hỏi có thể chỉ mang `row_label_raw` (82,4 % bảng không có ô canonical, đã đo ở §1.1), nên tra
+> cứu vẫn trượt. Grounding thô của Bước 1 chỉ kích hoạt khi planner abstain `metric_unknown` — không
+> chạm tới trường hợp này (planner đã khớp canonical thành công, chỉ hỏng ở compiler). Đây là nợ kỹ
+> thuật đo được, chưa sửa trong lượt này — mở rộng cơ chế grounding xuống tầng `locate()` (thử raw
+> label khi canonical trượt, cùng cổng an toàn "chỉ một khớp") là ứng viên Bước tiếp theo, không phải
+> Bước 2. `submission validate` trên ZIP mới: `valid=True items=53`. gold120: accuracy không đổi
+> 0,846 → 0,846, 0 hồi quy. Verification đầy đủ: 1.235 test qua (4 skip không đổi), `ruff`/`mypy`
+> sạch.
+>
+> **Chiến lược phủ 100% — thay đổi lớn ngày 2026-08-16, theo yêu cầu người dùng:** người dùng chỉ ra
+> LLM planner (Ngày 17) "gặp vấn đề lớn" và hỏi có nên đổi chiến lược để trả lời được toàn bộ 1.012
+> câu. Cung cấp thêm phương pháp chấm điểm chính thức của Ban Tổ chức: Answer Accuracy và Execution
+> Accuracy đều **chia cho tổng số câu hỏi (1.012), không phải số câu đã thử** — nghĩa là một câu trả
+> lời sai chỉ được 0 điểm, giống hệt một câu bỏ trống, **không bị phạt nặng hơn**. Đối chiếu với
+> plan.md §2.4 quy tắc 1 ("tập ID phải khớp chính xác... không thiếu"): **thiếu dù chỉ một câu làm
+> toàn bộ ZIP bị từ chối** — nghĩa là cả ba bản ZIP đo được từ đầu Ngày 24 (28, 55, 53 câu) **chưa
+> từng là bản nộp Dashboard hợp lệ**, chỉ là artifact đo coverage nội bộ. Kết luận: không có rủi ro
+> điểm số khi thử trả lời mọi câu, chỉ có yêu cầu bắt buộc phải phủ đủ.
+>
+> Người dùng chọn chiến lược "LLM suy luận tự do có kiểm soát, làm tầng dự phòng cuối". Phát hiện
+> trước khi cài: prompt LLM planner (Ngày 17) **chưa từng cho model thấy nội dung bảng ứng viên
+> thật** — chỉ có operation guide + few-shot tĩnh — đúng lý do 23,4 % plan bịa tên chỉ tiêu (đo Ngày
+> 22). Cài hai tầng mới, cả hai vẫn giữ nguyên bất biến "LLM chỉ sinh `FinancialQueryPlan` có kiểu,
+> không sinh Python tự do, compiler/sandbox vẫn kiểm chứng độc lập":
+>
+> - **Tầng 3 — LLM có bảng thật:** `planning/table_context_rendering.py` (render bảng ứng viên thật
+>   qua `load_table_frame` đã có sẵn) + `llm_planner.build_plan_grounded` (tái cấu trúc
+>   `llm_planner.py` tách logic dùng chung, không đổi hành vi tầng cũ — 7 test cũ vẫn xanh). Chỉ chạy
+>   khi tầng LLM có kiểu (không bảng) đã abstain.
+> - **Tầng 4 — Backstop tuyệt đối:** `submission/backstop_answer.py`, chỉ có nhiệm vụ duy nhất là
+>   **hợp lệ hợp đồng**, không phải đúng đắn — chọn một ô số **thật** (không bịa giá trị) từ bảng ứng
+>   viên đã truy hồi (hoặc bất kỳ ô số nào trong corpus nếu retrieval rỗng — 42/1.012 câu) và dựng một
+>   `SubmissionItem` tự nhất quán (CSV + `pandas_query` luôn replay đúng). `QuestionOutcome.status`
+>   thêm giá trị `"backstopped"`, tách khỏi `"answered"` để `answered_count` vẫn đo đúng số câu trả
+>   lời có suy luận thật.
+>
+> **Bug thật tìm thấy khi kiểm chứng ZIP đầy đủ lần đầu tiên (không phải giả thuyết):** chạy
+> `submission validate` với **toàn bộ 1.012 ID thật** (trước giờ luôn chỉ validate tập con đã trả
+> lời) phát hiện 5 câu `replay_failed`. Nguyên nhân: một số ô backstop có `row_label_raw` là chuỗi
+> *trông giống số thuần* (ví dụ `"2"`, một số thứ tự ghi chú), khi ghi ra CSV rồi đọc lại,
+> `pandas.read_csv` **tự suy luận kiểu cột thành int64** thay vì chuỗi — phép so `row_label_raw ==
+> "2"` so một cột số với một chuỗi, luôn `False`, khung dữ liệu lọc rỗng, `.iloc[0]` vỡ. Đây là lỗi
+> chỉ lộ ra khi round-trip qua CSV thật (không lộ trong toàn bộ đo lường trước đó vì các bản ZIP cũ
+> chỉ chứa câu trả lời thật, chưa bao giờ có backstop). Sửa tại đúng một nơi đọc CSV
+> (`submission/validator.py`): ép `dtype=str` cho ba cột so sánh chuỗi (`company_code`,
+> `row_label_canonical`, `row_label_raw`). TDD tái hiện đúng lỗi thật (`row_label_raw="2"`) trước khi
+> sửa.
+>
+> **Đo tốc độ trước khi chạy toàn bộ:** smoke test 15 câu khó nhất với Ollama `qwen2.5:7b` thật (mạnh
+> hơn `qwen2.5:3b` đã thử Ngày 22) — **~16 giây/câu** (mỗi câu tới 4 lệnh gọi LLM: tầng có kiểu +
+> repair, tầng có bảng + repair). Ước tính ~950 câu chưa trả lời × 16 giây ≈ 4+ giờ cho toàn bộ 1.012
+> câu — chạy nền, chưa thực hiện trong lượt này. Quyết định: sinh ngay bản ZIP nhanh (chỉ rule +
+> Bước 1 + backstop, không LLM, ~2 phút) làm bản nộp khả dụng ngay lập tức, tách khỏi việc đầu tư
+> nhiều giờ LLM để tăng thêm số câu trả lời thật.
+>
+> **Kết quả — bản nộp phủ 100% ĐẦU TIÊN trong dự án:** 1.012/1.012 câu, `answered=53` (suy luận
+> thật, không đổi so với Bước 2) + `backstopped=959`. `submission validate` với đúng bộ 1.012 ID
+> chính thức: **`valid=True item_count=1012`**. Verification đầy đủ: 1.255 test qua (4 skip không
+> đổi), `ruff`/`mypy` sạch. Lệnh tái tạo (nhanh, không cần LLM):
+> ```
+> uv run --frozen --no-sync financial-report-qa submission export \
+>   --release-lock data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json \
+>   --bm25-index data/indexes/bm25-v4/422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a \
+>   --questions-path data/raw/ViFinQA/questions/questions.jsonl \
+>   --execution-config configs/base.yaml configs/local_rtx3050.yaml \
+>   --output-zip submissions/submission_day23_fullcoverage_fast.zip \
+>   --report-dir artifacts/evaluations/day23/submission_fullcoverage_fast --k 10
+> ```
+> Chạy có thêm `--llm-config configs/local_ollama_grounded.yaml` sẽ kích hoạt tầng 3/4 giờ nêu trên,
+> có thể chuyển thêm một số câu từ `backstopped` sang `answered` thật — chưa đo được số cụ thể trong
+> lượt này do thời gian chạy.
+>
+> **Bảng bằng chứng phải là bảng đã trích xuất, không phải 1 dòng tổng hợp — sửa cùng ngày, theo yêu
+> cầu người dùng:** người dùng chỉ ra đúng vấn đề B đã chẩn đoán từ đầu (§2, Bước 4 "chưa cài đặt").
+> Gốc: `compiler._replay_row()` tổng hợp một dict cho mỗi ô bằng chứng đã định vị; exporter ghi thẳng
+> danh sách đó ra CSV — bảng trích xuất thật không bao giờ được đọc.
+>
+> **Cách sửa, rẻ hơn hẳn dự thảo multi-frame `df1..dfN` ban đầu:** không cần tách nhiều CSV theo bảng
+> nguồn. `build_cell_frame(release_dir, table_ids)` — đúng hàm compiler đã dùng nội bộ để `locate()`
+> tìm kiếm — đã trả về đúng **mọi ô số của (các) bảng nguồn** ở đúng dạng tidy `pandas_query` đã hiểu
+> sẵn (`company_code`, `row_label_raw`, `row_label_canonical`, `period`, `value`). Exporter giờ dựng
+> CSV bằng chính hàm này, giới hạn đúng các `table_id` mà bằng chứng đã dùng (thường 1, có lúc tới
+> 4 — hẹp hơn toàn bộ candidate set nên không thể sinh thêm nhập nhằng mới). `pandas_query` đã render
+> **không cần đổi** vì nó chỉ lọc theo company/nhãn/kỳ, không quan tâm bảng vật lý nào chứa dòng đó.
+>
+> **Cổng an toàn bắt buộc:** không tin sự trùng hợp — mỗi bảng thật được xác minh lại qua chính
+> `replay_in_sandbox` trước khi dùng; nếu không replay đúng `answer` đã tính (rủi ro đã đo trước: hai
+> ô bằng chứng đến từ hai bảng khác đơn vị, compiler đã quy đổi nhưng bảng thật thô thì chưa), rơi về
+> đúng hành vi cũ (1 dòng tổng hợp) cho riêng câu đó, không đoán, không crash cả batch. TDD trước:
+> dựng bảng 2 dòng thật, xác nhận CSV xuất ra có **cả 2 dòng**, không chỉ dòng được hỏi.
+>
+> **Đo trên toàn bộ 1.012 câu:** cả 53/53 câu trả lời thật đều dùng được bảng thật (0 câu phải rơi về
+> fallback) — số dòng mỗi bảng bằng chứng từ 4 đến 131 dòng, xác nhận đây là bảng đã trích xuất thật,
+> không phải bản tổng hợp. `submission validate` với đủ 1.012 ID: **valid=True item_count=1012**,
+> không đổi. Verification đầy đủ: 1.256 test qua, `ruff`/`mypy` sạch.
 
 - [x] Viết contract tests trước cho JSON root array và đúng bảy field của `SubmissionItem`:
   `id`, `question`, `answer`, `relevant_docs`, `relevant_tables`, `evidence`, `pandas_query`.

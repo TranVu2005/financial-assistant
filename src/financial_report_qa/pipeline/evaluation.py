@@ -32,6 +32,7 @@ from financial_report_qa.pipeline.contracts import (
     ScopePolicyResult,
 )
 from financial_report_qa.planning.entity_parser import parse_query_entities
+from financial_report_qa.planning.raw_metric_grounding import plan_with_raw_grounding_fallback
 from financial_report_qa.planning.rule_planner import build_plan
 from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
@@ -98,8 +99,14 @@ def _run_one_question(
         )
 
     entities = parse_query_entities(question.question)
-    plan_result = build_plan(
-        entities, candidate_table_ids=retrieved, known_table_ids=frozenset(retrieved)
+    # Day 23 plan Step 1: same grounded retry the submission exporter applies
+    # (raw_metric_grounding.py), so accuracy measured here reflects the
+    # fallback's real effect on gold, not a stale rule-only path.
+    plan_result, _grounded = plan_with_raw_grounding_fallback(
+        entities,
+        candidate_table_ids=retrieved,
+        known_table_ids=frozenset(retrieved),
+        release_dir=release_dir,
     )
     if plan_result.plan is None:
         return PipelineQuestionResult.model_validate(

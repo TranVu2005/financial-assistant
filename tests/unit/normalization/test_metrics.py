@@ -149,3 +149,44 @@ def test_reviewed_structural_rows_are_not_metrics(raw: str) -> None:
 
 def test_ordinal_prefix_does_not_hide_supported_metric() -> None:
     assert is_non_metric_label("1. Doanh thu thuần") is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [
+        # Vietnamese financial statements number every line item; the ordinal
+        # prefix is decoration, not part of the metric name. Day 23 measured
+        # 57,466 numeric cells (589 distinct labels) blocked by exactly this.
+        ("4. Giá vốn hàng bán", "cost_of_goods_sold"),
+        ("1. Hàng tồn kho", "inventory"),
+        ("I. Tiền và các khoản tương đương tiền", "cash_and_cash_equivalents"),
+        ("III. Các khoản phải thu ngắn hạn", "accounts_receivable"),
+        ("B. Tài sản dài hạn", "non_current_assets"),
+        ("1) Doanh thu bán hàng và cung cấp dịch vụ", "revenue"),
+        # Trailing footnote/reference markers are decoration too.
+        ("Tổng tài sản (1)", "total_assets"),
+        ("Vay ngắn hạn (*)", "short_term_debt"),
+        ("Lãi cơ bản trên cổ phiếu (**)", "basic_eps"),
+        # Both at once.
+        ("2. Tổng nợ phải trả (2)", "total_liabilities"),
+    ],
+)
+def test_normalize_metric_ignores_ordinal_and_footnote_decoration(raw: str, canonical: str) -> None:
+    decision = normalize_metric(raw)
+
+    assert decision.value == canonical
+    assert decision.issue_code is None
+
+
+def test_normalize_metric_still_rejects_a_decorated_non_alias() -> None:
+    """Stripping decoration must not turn an unknown phrase into a guess."""
+    decision = normalize_metric("1. Một chỉ tiêu hoàn toàn không có trong từ điển")
+
+    assert decision.value is None
+    assert decision.issue_code == "metric_unknown"
+
+
+def test_normalize_metric_does_not_strip_a_digit_that_belongs_to_the_name() -> None:
+    """Only a leading ordinal *followed by a separator* is decoration -- a
+    bare leading digit that is part of the phrase must survive."""
+    assert normalize_metric("3 tháng đầu năm").value is None

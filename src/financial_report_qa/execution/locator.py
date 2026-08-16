@@ -15,11 +15,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from functools import lru_cache
 from typing import cast
 
 import pandas as pd
 
 from financial_report_qa.execution.contracts import CellMatch, ExecutionIssueCode
+from financial_report_qa.normalization._shared import normalized_key
+from financial_report_qa.normalization.metrics import normalize_metric
 from financial_report_qa.normalization.units import CanonicalUnit
 from financial_report_qa.planning.plan_contracts import MetricSelector
 
@@ -33,14 +36,92 @@ class LocateResult:
     error_message: str | None
 
 
+@lru_cache(maxsize=100_000)
+def _canonical_of_raw_label(label: str) -> str | None:
+    """Re-derive a cell's canonical metric from its raw label at query time.
+
+    The locked release baked `row_label_canonical` in at ingestion, before
+    `normalize_metric` learned to ignore ordinal/note decoration -- so 57,466
+    numeric cells whose label is an exact alias under a "1. "/"I. "/"(1)"
+    wrapper are still NULL there (Day 23 measurement). Re-deriving here
+    recovers them without re-ingesting, which would change
+    `dataset_fingerprint` and invalidate every pinned baseline (ADR 0004
+    §1.7). Cached because a candidate frame repeats the same few labels
+    across companies, periods, and columns.
+    """
+    return normalize_metric(label).value
+
+
 def _metric_mask(frame: pd.DataFrame, selector: MetricSelector) -> pd.Series:
     if selector.canonical is not None:
-        return frame["row_label_canonical"] == selector.canonical
-    return frame["row_label_raw"] == selector.raw_text
+        by_column = frame["row_label_canonical"] == selector.canonical
+        by_raw_label = frame["row_label_raw"].map(
+            lambda value: (
+                _canonical_of_raw_label(value) == selector.canonical
+                if isinstance(value, str)
+                else False
+            )
+        )
+        return by_column | by_raw_label
+    # Raw-text matching is normalization-tolerant (NFKC/casefold/whitespace
+    # collapse), not byte-for-byte equality: Day 23 grounding sources
+    # `raw_text` straight from a corpus `row_label_raw`, which can differ
+    # from the selector's exact casing/spacing while naming the same cell.
+    assert selector.raw_text is not None
+    target = normalized_key(selector.raw_text)
+    return frame["row_label_raw"].map(
+        lambda value: normalized_key(value) == target if isinstance(value, str) else False
+    )
+
+
+def _column_mask(frame: pd.DataFrame, column_text: str) -> pd.Series:
+    """Keep only cells whose column header names the requested column.
+
+    Containment, not equality: extraction concatenates a header with the row
+    above and with its unit row, so the real corpus label is "Số phải nộpcuối
+    năm" or "Số cuối nămVND" rather than a clean caption.
+
+    Whitespace is removed entirely, not merely collapsed, because that
+    concatenation drops the separator: the real PC1 2025 header reads
+    "nộpcuối", so a question saying "phải nộp cuối năm" would not otherwise
+    match the very cell it names. Column headers are short and few per table,
+    so the cross-word matches this admits are far cheaper than missing the
+    dominant real-world form.
+    """
+    target = normalized_key(column_text).replace(" ", "")
+    return frame["column_label"].map(
+        lambda value: (
+            target in normalized_key(value).replace(" ", "") if isinstance(value, str) else False
+        )
+    )
 
 
 def _selector_label(selector: MetricSelector) -> str | None:
     return selector.canonical if selector.canonical is not None else selector.raw_text
+
+
+def _prefer_statutory_rows(rows: pd.DataFrame) -> pd.DataFrame:
+    """Narrow a conflicting row set to its Circular 200 statement rows.
+
+    A note table can repeat a statement line's label with a different, narrower
+    figure -- the CEO 2018 "Thu nhập khác" case in the Day 24 notes, where the
+    statement line and a note breakdown row disagree. Only statement rows carry
+    a "Mã số"; note tables have no such column at all (8,449 of 146,011 tables
+    do). So a code is positive evidence that a row is the statement line the
+    question means.
+
+    Deliberately narrow: it fires only when the coded rows agree among
+    themselves, so it resolves main-versus-note conflicts without ever picking
+    between two genuine statement values (consolidated versus separate, which
+    ADR 0010 measured disagreeing in 92.8% of cross-scope groups). Everything
+    else falls through to `cell_ambiguous` unchanged.
+    """
+    if rows["value"].nunique() <= 1:
+        return rows
+    coded = rows[rows["statutory_code"].notna()]
+    if coded.empty or coded["value"].nunique() != 1:
+        return rows
+    return coded
 
 
 def locate(
@@ -56,6 +137,8 @@ def locate(
         scoped = scoped[scoped["company_code"] == company_code]
 
     metric_rows = scoped[_metric_mask(scoped, selector)]
+    if selector.column_text is not None and not metric_rows.empty:
+        metric_rows = metric_rows[_column_mask(metric_rows, selector.column_text)]
     if metric_rows.empty:
         return LocateResult(
             match=None,
@@ -73,6 +156,7 @@ def locate(
             ),
         )
 
+    period_rows = _prefer_statutory_rows(period_rows)
     distinct = period_rows.drop_duplicates(subset=["value", "unit"])
     known_units = distinct["unit"].dropna().drop_duplicates()
     if len(distinct) > 1:

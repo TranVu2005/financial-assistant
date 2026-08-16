@@ -103,6 +103,12 @@ class AnswerPackage(_FrozenModel):
     period_inferred: bool
     verification_status: Literal["verified", "rejected"]
     verification_issues: tuple[VerificationIssue, ...]
+    # Day 24: records that this package was built under a policy that
+    # deliberately accepts an inferred statement scope (see
+    # `builder.build_answer_package`). Kept as an explicit, auditable field
+    # rather than silently dropping the `scope_inferred` issue -- a reader
+    # must always be able to tell that the scope was guessed.
+    inferred_scope_accepted: bool = False
 
     @model_validator(mode="after")
     def validate_structure(self) -> Self:
@@ -110,9 +116,18 @@ class AnswerPackage(_FrozenModel):
             raise ValueError("evidence must not be empty")
         if not self.retrieved_table_ids:
             raise ValueError("retrieved_table_ids must not be empty")
+        waived = {"scope_inferred"} if self.inferred_scope_accepted else set()
         blocking = tuple(
-            issue for issue in self.verification_issues if issue.code in _BLOCKING_ISSUE_CODES
+            issue
+            for issue in self.verification_issues
+            if issue.code in _BLOCKING_ISSUE_CODES and issue.code not in waived
         )
+        if self.inferred_scope_accepted and not any(
+            issue.code == "scope_inferred" for issue in self.verification_issues
+        ):
+            raise ValueError(
+                "inferred_scope_accepted requires the scope_inferred issue to still be recorded"
+            )
         if self.verification_status == "rejected" and not self.verification_issues:
             raise ValueError("rejected status requires at least one verification issue")
         if self.verification_status == "verified" and blocking:

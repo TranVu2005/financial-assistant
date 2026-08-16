@@ -73,6 +73,19 @@ def test_two_companies_one_period_is_compare_companies() -> None:
     assert result.plan.companies == ("CTG", "NVL")
 
 
+def test_three_companies_one_period_does_not_silently_become_compare_companies() -> None:
+    """Regression: `compile_compare_companies` only ever reads
+    `companies[0]`/`companies[1]` (execution/compiler.py) -- routing a
+    3+-company question there silently drops every company past the first
+    two and answers a difference the question never asked for. Confirmed
+    live in the Day 22/23 submission export: id 931 ("average across 5
+    companies") and id 973 ("how many of 3 companies...") were both answered
+    with a GEE-GEX / HPG-HSG style two-company subtraction before this fix."""
+    result = _plan_for("So sánh doanh thu thuần giữa NVL, CTG và VNM năm 2023.")
+    assert result.plan is None
+    assert result.abstain_codes == ("operation_unknown",)
+
+
 def test_missing_company_abstains_with_entity_ambiguous() -> None:
     result = _plan_for("Doanh thu thuần năm 2023 là bao nhiêu?")
     assert result.plan is None
@@ -89,6 +102,88 @@ def test_two_metrics_abstains_with_multi_metric_unsupported() -> None:
     result = _plan_for("So sánh doanh thu thuần và giá vốn hàng bán của DBC năm 2023.")
     assert result.plan is None
     assert result.abstain_codes == ("multi_metric_unsupported",)
+
+
+def test_two_metrics_with_ratio_keyword_is_ratio_in_reading_order() -> None:
+    """Day 23 plan Step 2: measured 25/26 real 2-metric questions are this
+    'A trên B' = A/B ratio shape (e.g. ROA phrasing)."""
+    result = _plan_for(
+        "Lợi nhuận sau thuế trên tổng tài sản của DBC năm 2023 là bao nhiêu phần trăm?"
+    )
+    assert result.plan is not None
+    assert result.plan.operation == "ratio"
+    assert result.plan.numerator_metric is not None
+    assert result.plan.numerator_metric.canonical == "profit_after_tax"
+    assert result.plan.denominator_metric is not None
+    assert result.plan.denominator_metric.canonical == "total_assets"
+
+
+def test_two_metrics_ratio_keyword_but_two_periods_abstains() -> None:
+    """The ratio fast path requires exactly 1 company and 1 period -- a
+    2-metric, 2-period question is a shape Step 2 does not model; it must
+    fall back to the existing multi_metric_unsupported abstain, not guess."""
+    result = _plan_for(
+        "Tỷ lệ lợi nhuận sau thuế trên tổng tài sản của DBC năm 2022 và 2023 "
+        "là bao nhiêu phần trăm?"
+    )
+    assert result.plan is None
+    assert result.abstain_codes == ("multi_metric_unsupported",)
+
+
+def test_one_metric_three_periods_average_keyword_is_average() -> None:
+    # "năm" repeated before each year: a bare comma-separated list ("năm
+    # 2021, 2022 và 2023") is a separate, pre-existing entity-parser period
+    # gap (only 2/3 years extracted) out of scope for Step 2 -- see
+    # docs/plans/day23-coverage-and-evidence-table.md Step 3.
+    result = _plan_for("Tính trung bình doanh thu thuần của DBC năm 2021, năm 2022 và năm 2023.")
+    assert result.plan is not None
+    assert result.plan.operation == "average"
+    assert result.plan.companies == ("DBC",)
+    assert result.plan.periods == ("2021", "2022", "2023")
+
+
+def test_one_metric_three_periods_sum_keyword_is_sum() -> None:
+    result = _plan_for("Tính tổng doanh thu thuần của DBC năm 2021, năm 2022 và năm 2023.")
+    assert result.plan is not None
+    assert result.plan.operation == "sum"
+
+
+def test_one_metric_three_companies_average_keyword_is_average() -> None:
+    result = _plan_for("Tính trung bình doanh thu thuần của DBC, NVL và CTG năm 2023.")
+    assert result.plan is not None
+    assert result.plan.operation == "average"
+    assert result.plan.companies == ("CTG", "DBC", "NVL")
+    assert result.plan.periods == ("2023",)
+
+
+def test_one_metric_three_companies_sum_keyword_is_sum() -> None:
+    result = _plan_for("Tính tổng doanh thu thuần của DBC, NVL và CTG năm 2023.")
+    assert result.plan is not None
+    assert result.plan.operation == "sum"
+
+
+def test_one_metric_three_companies_no_aggregate_keyword_abstains() -> None:
+    result = _plan_for("Doanh thu thuần của DBC, NVL và CTG năm 2023 là bao nhiêu?")
+    assert result.plan is None
+    assert result.abstain_codes == ("operation_unknown",)
+
+
+def test_one_metric_three_companies_superlative_keyword_does_not_become_average() -> None:
+    """Guards against silently answering a composite/rank question (needs a
+    metric-per-company ranking, not a flat aggregate) as if it were a plain
+    average -- Day 23 plan Step 2 measured 6/35 real multi-company questions
+    are this superlative shape and must stay unsupported, not guessed."""
+    result = _plan_for(
+        "Trung bình doanh thu thuần của DBC, NVL và CTG có giá trị cao nhất năm 2023 là bao nhiêu?"
+    )
+    assert result.plan is None
+    assert result.abstain_codes == ("operation_unknown",)
+
+
+def test_one_metric_three_companies_count_question_does_not_become_sum() -> None:
+    result = _plan_for("Tổng doanh thu thuần của DBC, NVL và CTG có bao nhiêu, năm 2023?")
+    assert result.plan is None
+    assert result.abstain_codes == ("operation_unknown",)
 
 
 def test_date_period_abstains_with_period_grammar_unsupported() -> None:

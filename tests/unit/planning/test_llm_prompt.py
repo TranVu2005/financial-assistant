@@ -14,6 +14,8 @@ import json
 
 from financial_report_qa.planning.llm_prompt import (
     _FEW_SHOTS,
+    build_grounded_system_prompt,
+    build_grounded_user_prompt,
     build_system_prompt,
     build_user_prompt,
 )
@@ -83,3 +85,27 @@ def test_user_prompt_embeds_the_question_verbatim() -> None:
     question = "Tra cứu doanh thu thuần của NVL năm 2023."
     prompt = build_user_prompt(question)
     assert question in prompt
+
+
+def test_grounded_system_prompt_covers_every_plan_operation() -> None:
+    """Day 23 last-resort tier: same operation contract as the vocabulary-free
+    prompt -- the LLM still only ever emits a typed FinancialQueryPlan."""
+    prompt = build_grounded_system_prompt()
+    for operation in _ALL_OPERATIONS:
+        assert f'"{operation}"' in prompt
+
+
+def test_grounded_system_prompt_instructs_copying_row_labels_verbatim() -> None:
+    """Day 22 measured 23.4% of vocabulary-free LLM plans invented a metric
+    name that did not exist in any candidate table -- the grounded prompt
+    must explicitly instruct copying real row labels, not paraphrasing."""
+    prompt = build_grounded_system_prompt()
+    assert "nguyên văn" in prompt.lower()
+
+
+def test_grounded_user_prompt_embeds_question_and_table_context() -> None:
+    question = "Lãi tiền gửi của VJC năm 2018 là bao nhiêu?"
+    table_context = "--- Bảng tbl_x (VJC/2018/report.txt) ---\nLãi tiền gửi | 100"
+    prompt = build_grounded_user_prompt(question, table_context)
+    assert question in prompt
+    assert table_context in prompt

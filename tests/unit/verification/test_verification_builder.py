@@ -169,6 +169,44 @@ def test_build_answer_package_rejected_when_scope_inferred() -> None:
     assert "scope_inferred" in codes
 
 
+def test_build_answer_package_can_downgrade_scope_inferred_to_a_warning() -> None:
+    """Day 24: under the organizers' scoring (correct / TOTAL questions) a
+    scope-guessed answer costs exactly what an abstention costs -- 0 -- so a
+    submission run may opt to ship it. Off by default: the blocking behavior
+    stays correct for internal quality measurement (ADR 0010 B1)."""
+    plan = _plan()
+    compiled = _compiled(scope_inferred=True)
+    package = build_answer_package(
+        question_id=QUESTION_ID,
+        question="Tra cứu tiền mặt của ACB năm 2023.",
+        plan=plan,
+        compiled=compiled,
+        retrieved_table_ids=frozenset({TABLE_ID}),
+        citation_lookup=_CITATION_LOOKUP,
+        allow_inferred_scope=True,
+    )
+    assert package.verification_status == "verified"
+    codes = {issue.code for issue in package.verification_issues}
+    assert "scope_inferred" in codes, "the issue must still be recorded, just not blocking"
+
+
+def test_allow_inferred_scope_does_not_unblock_a_real_correctness_failure() -> None:
+    """The escape hatch is scoped to `scope_inferred` only -- a genuine
+    correctness block (e.g. recompute mismatch) must still reject."""
+    plan = _plan()
+    compiled = _compiled(scope_inferred=True, answer=Decimal("999999"))
+    package = build_answer_package(
+        question_id=QUESTION_ID,
+        question="Tra cứu tiền mặt của ACB năm 2023.",
+        plan=plan,
+        compiled=compiled,
+        retrieved_table_ids=frozenset({TABLE_ID}),
+        citation_lookup=_CITATION_LOOKUP,
+        allow_inferred_scope=True,
+    )
+    assert package.verification_status == "rejected"
+
+
 def test_build_answer_package_raises_on_non_answered_compiled_query() -> None:
     plan = _plan()
     compiled = CompiledQuery.model_validate(

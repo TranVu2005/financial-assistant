@@ -115,14 +115,49 @@ class QuestionOutcome(_FrozenModel):
 
     id: StrictInt = Field(gt=0)
     question: NonEmptyString
-    status: Literal["answered", "abstained", "error"]
+    # "backstopped" (Day 23 plan, full-coverage strategy): the official
+    # Dashboard rejects the *entire* ZIP if even one id is missing (plan.md
+    # §2.4 rule 1), and its scoring macro-averages over the full 1.012-
+    # question set -- a wrong answer already scores the same 0 credit as a
+    # missing one. So every question still unanswered after every reasoning
+    # tier gets a contract-valid but not-reasoned item from
+    # `backstop_answer.build_backstop_item`; `stage`/`code` here record the
+    # reasoning failure that triggered it (not "answered": that status is
+    # reserved for a genuinely reasoned result).
+    status: Literal["answered", "abstained", "error", "backstopped"]
     stage: PipelineStage | None
     code: NonEmptyString | None
     # Which planner actually produced the plan (Day 22 coverage-improvement
     # follow-up: route_plan tries the rule planner first, falling back to the
     # LLM planner only on abstain -- ADR 0006 decision A1). None whenever
     # planning was never reached (e.g. stage == "retrieval").
-    plan_source: Literal["rule", "llm"] | None = None
+    # "rule_raw_grounded" (Day 23 plan Step 1): the rule planner still built
+    # the plan, but only after `raw_metric_grounding.ground_raw_metric`
+    # resolved a metric_unknown abstain -- kept distinct from "rule" so
+    # coverage gained by this fallback is measurable on its own.
+    # "llm_grounded" (Day 23 full-coverage strategy): the typed LLM planner
+    # (vocabulary-free prompt) abstained, but a second attempt shown the
+    # real candidate-table content (`llm_planner.build_plan_grounded`)
+    # succeeded -- kept distinct so its yield is measurable on its own.
+    # "llm_cell_grounded" (Day 25): the LLM chose only WHICH ROW from the
+    # real candidate labels; the rule planner still built and validated
+    # the plan. Distinct so this tier's yield is measurable on its own.
+    # "llm_column_refined" (Day 26): row and period compiled to more than one
+    # candidate cell (`cell_ambiguous`), and the LLM chose WHICH COLUMN from
+    # that row's real headers. Distinct so this tier's yield is measurable on
+    # its own, and so a column-narrowed answer is never mistaken for one the
+    # deterministic locator resolved unaided.
+    plan_source: (
+        Literal[
+            "rule",
+            "rule_raw_grounded",
+            "llm",
+            "llm_grounded",
+            "llm_cell_grounded",
+            "llm_column_refined",
+        ]
+        | None
+    ) = None
 
     @model_validator(mode="after")
     def validate_consistency(self) -> Self:
@@ -141,7 +176,12 @@ class SubmissionExportReport(_FrozenModel):
 
     dataset_fingerprint: Fingerprint
     question_count: int = Field(ge=0)
+    # Genuinely reasoned answers only (status == "answered") -- does NOT
+    # count backstop fills, so this stays a meaningful coverage/accuracy
+    # signal even though `submission.json` itself now always has one item
+    # per question (Day 23 full-coverage strategy).
     answered_count: int = Field(ge=0)
+    backstopped_count: int = Field(ge=0, default=0)
     stage_counts: dict[PipelineStage, int]
     outcomes: tuple[QuestionOutcome, ...]
 
@@ -152,11 +192,14 @@ class SubmissionExportReport(_FrozenModel):
         ids = tuple(outcome.id for outcome in self.outcomes)
         if ids != tuple(sorted(set(ids))):
             raise ValueError("outcomes must be sorted and unique by id")
-        if self.answered_count > self.question_count:
-            raise ValueError("answered_count cannot exceed question_count")
+        if self.answered_count + self.backstopped_count > self.question_count:
+            raise ValueError("answered_count + backstopped_count cannot exceed question_count")
         actual_answered = sum(1 for outcome in self.outcomes if outcome.status == "answered")
         if actual_answered != self.answered_count:
             raise ValueError("answered_count must equal the number of answered outcomes")
+        actual_backstopped = sum(1 for outcome in self.outcomes if outcome.status == "backstopped")
+        if actual_backstopped != self.backstopped_count:
+            raise ValueError("backstopped_count must equal the number of backstopped outcomes")
         return self
 
 

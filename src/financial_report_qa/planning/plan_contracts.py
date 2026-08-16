@@ -60,6 +60,17 @@ class MetricSelector(_FrozenModel):
 
     canonical: NonEmptyString | None = None
     raw_text: RawMetricText | None = None
+    # A row alone does not identify a cell. Vietnamese statement tables put
+    # several semantically distinct amounts on one row -- the PC1 2025 tax note
+    # carries "Số phải nộp đầu năm", "Số phải nộp trong năm", "Số đã thực nộp"
+    # and "Số phải nộp cuối năm" against the same "Thuế giá trị gia tăng" row.
+    # Selecting by row and period alone collapses them (two of those columns
+    # both resolve to the closing year) and abstains as `cell_ambiguous`.
+    # Measured on the locked release: `column_label_raw` is present on 96.9% of
+    # numeric cells and only 4.4% of tables lack it entirely, so the column is a
+    # dimension the release can actually support. Optional because most
+    # questions name only a row; when absent, period remains the sole narrowing.
+    column_text: RawMetricText | None = None
 
     @model_validator(mode="after")
     def validate_exactly_one_branch(self) -> Self:

@@ -23,7 +23,12 @@ import json
 from financial_report_qa.core.errors import LLMError
 from financial_report_qa.planning.llm_client import ChatCompletionClient
 from financial_report_qa.planning.llm_contracts import LLMPlanOutput, to_financial_query_plan
-from financial_report_qa.planning.llm_prompt import build_system_prompt, build_user_prompt
+from financial_report_qa.planning.llm_prompt import (
+    build_grounded_system_prompt,
+    build_grounded_user_prompt,
+    build_system_prompt,
+    build_user_prompt,
+)
 from financial_report_qa.planning.plan_contracts import FinancialQueryPlan
 from financial_report_qa.planning.plan_validator import validate_plan_semantics
 from financial_report_qa.planning.rule_planner import PlanAbstainCode, RulePlanResult
@@ -65,29 +70,31 @@ def _parse_and_validate(
     return plan
 
 
-def _repair_user_prompt(question: str, previous_output: str, error: str) -> str:
+def _repair_user_prompt(base_user_prompt: str, previous_output: str, error: str) -> str:
     return (
-        f"{build_user_prompt(question)}\n\n"
+        f"{base_user_prompt}\n\n"
         f"Kết quả trước đó không hợp lệ:\n{previous_output}\n\n"
         f"Lỗi: {error}\n\n"
         "Hãy sửa lại và CHỈ trả về đúng một JSON object hợp lệ."
     )
 
 
-def build_plan(
-    question: str,
+def _run_llm_plan(
     *,
     client: ChatCompletionClient,
+    system_prompt: str,
+    user_prompt: str,
     candidate_table_ids: tuple[TableId, ...],
     known_table_ids: frozenset[str],
 ) -> RulePlanResult:
-    """Ask the LLM for a plan; on a repairable failure, retry once; else abstain."""
-    system_prompt = build_system_prompt()
-
+    """Shared core of `build_plan`/`build_plan_grounded`: ask the LLM for a
+    plan; on a repairable failure, retry once with the same system prompt;
+    else abstain. Never returns a plan that has not passed
+    `validate_plan_semantics` (ADR 0005 §Hệ quả)."""
     try:
         raw_content = client.complete_json(
             system_prompt=system_prompt,
-            user_prompt=build_user_prompt(question),
+            user_prompt=user_prompt,
             json_schema=_LLM_PLAN_JSON_SCHEMA,
         )
     except LLMError:
@@ -104,7 +111,7 @@ def build_plan(
     try:
         repaired_content = client.complete_json(
             system_prompt=system_prompt,
-            user_prompt=_repair_user_prompt(question, raw_content, first_error_message),
+            user_prompt=_repair_user_prompt(user_prompt, raw_content, first_error_message),
             json_schema=_LLM_PLAN_JSON_SCHEMA,
         )
     except LLMError:
@@ -121,3 +128,47 @@ def build_plan(
         return _abstain("llm_invalid_json", repaired=True)
     except ValueError:
         return _abstain("llm_plan_invalid", repaired=True)
+
+
+def build_plan(
+    question: str,
+    *,
+    client: ChatCompletionClient,
+    candidate_table_ids: tuple[TableId, ...],
+    known_table_ids: frozenset[str],
+) -> RulePlanResult:
+    """Ask the LLM for a plan from the vocabulary-free prompt (no candidate
+    table content shown -- ADR 0006 decision B1)."""
+    return _run_llm_plan(
+        client=client,
+        system_prompt=build_system_prompt(),
+        user_prompt=build_user_prompt(question),
+        candidate_table_ids=candidate_table_ids,
+        known_table_ids=known_table_ids,
+    )
+
+
+def build_plan_grounded(
+    question: str,
+    *,
+    client: ChatCompletionClient,
+    candidate_table_ids: tuple[TableId, ...],
+    known_table_ids: frozenset[str],
+    table_context: str,
+) -> RulePlanResult:
+    """Day 23 last-resort fallback tier: same typed-`FinancialQueryPlan`
+    contract as `build_plan` -- the LLM still only ever emits a plan, never
+    raw Python, and the compiler/sandbox still independently verify the
+    final number -- but the prompt shows the LLM real candidate-table
+    content (`table_context`, from `table_context_rendering.render_table_context`)
+    so `raw_text` selectors can be copied verbatim instead of invented (Day
+    22 measured 23.4% of vocabulary-free LLM plans did exactly that on a
+    weak model). Called only after both the rule planner and `build_plan`
+    have already abstained."""
+    return _run_llm_plan(
+        client=client,
+        system_prompt=build_grounded_system_prompt(),
+        user_prompt=build_grounded_user_prompt(question, table_context),
+        candidate_table_ids=candidate_table_ids,
+        known_table_ids=known_table_ids,
+    )

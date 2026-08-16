@@ -62,6 +62,20 @@ def _parser() -> argparse.ArgumentParser:
     export.add_argument("--output-zip", type=Path, required=True)
     export.add_argument("--report-dir", type=Path, required=True)
     export.add_argument("--k", type=int, default=10)
+    export.add_argument(
+        "--allow-inferred-scope",
+        action="store_true",
+        help=(
+            "Ship answers whose statement_scope came from "
+            "`execution.default_statement_scope` rather than the question itself "
+            "(ADR 0010 B1 normally blocks these). The organizers score "
+            "correct/TOTAL questions, so such an answer costs exactly what an "
+            "abstention costs while retaining a chance of being right. The "
+            "`scope_inferred` issue is still recorded on every affected "
+            "AnswerPackage. Off by default: for internal quality measurement a "
+            "scope-guessed answer really is untrustworthy."
+        ),
+    )
 
     validate = commands.add_parser("validate")
     validate.add_argument("--zip-path", type=Path, required=True)
@@ -105,6 +119,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         dataset_fingerprint=release.dataset_fingerprint,
                         k=args.k,
                         llm_client=llm_client,
+                        allow_inferred_scope=args.allow_inferred_scope,
                     )
             else:
                 report, items, csv_rows = export_submission(
@@ -114,6 +129,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     execution_settings=execution_settings,
                     dataset_fingerprint=release.dataset_fingerprint,
                     k=args.k,
+                    allow_inferred_scope=args.allow_inferred_scope,
                 )
             sha256 = write_submission_zip(items, csv_rows, args.output_zip)
             json_path, markdown_path = write_export_report(report, args.report_dir)

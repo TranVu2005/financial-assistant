@@ -146,7 +146,21 @@ def validate_submission_zip(
                             )
                         )
                         continue
-                    frame = pd.read_csv(io.BytesIO(archive.read(evidence.csv_path)))
+                    # `dtype` forced for every string-compared column
+                    # (pandas_query.py `_ALLOWED_ATTRS`): a `row_label_raw`
+                    # that looks like a pure number (e.g. a footnote
+                    # reference such as "2") would otherwise round-trip
+                    # through the CSV as pandas' *inferred* int64, silently
+                    # breaking `df1.row_label_raw == "2"` (int compared to
+                    # str never matches) and crashing `.iloc[0]` on replay.
+                    frame = pd.read_csv(
+                        io.BytesIO(archive.read(evidence.csv_path)),
+                        dtype={
+                            "company_code": str,
+                            "row_label_canonical": str,
+                            "row_label_raw": str,
+                        },
+                    )
                     sandbox_result = replay_in_sandbox(
                         item.pandas_query, frame, timeout_seconds=replay_timeout_seconds
                     )

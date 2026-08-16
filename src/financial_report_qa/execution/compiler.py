@@ -289,24 +289,46 @@ def _dispatch(
 
     if plan.operation in ("average", "sum"):
         assert plan.metric is not None
-        cells = tuple(
-            _require(locate(frame, plan.metric, int(p), company_code=company)) for p in plan.periods
-        )
+        # `_validate_aggregate` (plan_validator.py) allows exactly one of
+        # (companies, periods) to vary -- this must dispatch on which one
+        # actually does, not always assume periods (Day 23 plan Step 2
+        # regression: a >1-company plan was silently averaged/summed over
+        # just companies[0], the rest never located at all).
+        if len(plan.companies) > 1:
+            assert period is not None
+            cells = tuple(
+                _require(locate(frame, plan.metric, period, company_code=c)) for c in plan.companies
+            )
+            target_unit = cells[0].unit
+            rows = [
+                _replay_row(
+                    company_code=c,
+                    selector=plan.metric,
+                    period=period,
+                    value=_reconvert(cell, target_unit),
+                )
+                for c, cell in zip(plan.companies, cells, strict=True)
+            ]
+        else:
+            cells = tuple(
+                _require(locate(frame, plan.metric, int(p), company_code=company))
+                for p in plan.periods
+            )
+            target_unit = cells[0].unit
+            rows = [
+                _replay_row(
+                    company_code=company,
+                    selector=plan.metric,
+                    period=int(p),
+                    value=_reconvert(cell, target_unit),
+                )
+                for p, cell in zip(plan.periods, cells, strict=True)
+            ]
         answer, unit = (
             operations.compile_average(cells)
             if plan.operation == "average"
             else operations.compile_sum(cells)
         )
-        target_unit = cells[0].unit
-        rows = [
-            _replay_row(
-                company_code=company,
-                selector=plan.metric,
-                period=int(p),
-                value=_reconvert(cell, target_unit),
-            )
-            for p, cell in zip(plan.periods, cells, strict=True)
-        ]
         return cells, rows, answer, unit
 
     if plan.operation == "rank":

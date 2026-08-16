@@ -49,7 +49,12 @@ def _expected_ok(
     if operation in {"lookup", "compare", "difference", "growth_rate", "ratio"}:
         if n_companies != 1:
             return False
-    elif operation in {"rank", "compare_companies"}:
+    elif operation == "compare_companies":
+        # Day 23 plan Step 2: exactly 2, not >= 2 -- `compile_compare_companies`
+        # only ever reads companies[0]/companies[1] (execution/compiler.py).
+        if n_companies != 2:
+            return False
+    elif operation == "rank":
         if n_companies < 2:
             return False
     elif n_companies > 1 and n_periods > 1:  # average, sum

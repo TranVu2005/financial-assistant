@@ -266,10 +266,17 @@ def _validate_aggregate(plan: FinancialQueryPlan) -> tuple[PlanValidationIssue, 
 
 
 def _validate_compare_companies(plan: FinancialQueryPlan) -> tuple[PlanValidationIssue, ...]:
-    """`(>=2 companies, 1 period, 1 metric)` — juxtapose one metric across companies.
+    """`(exactly 2 companies, 1 period, 1 metric)` — one metric's difference
+    between exactly two companies.
 
-    Distinct from `compare` (two metrics, one company/period) and `rank` (needs
-    `top_k`, ranks rather than lists side by side).
+    Distinct from `compare` (two metrics, one company/period) and `rank`
+    (needs `top_k`, and genuinely generalizes to N companies). Day 23 plan
+    Step 2 tightened this from ADR 0005 decision A1's original ">= 2
+    companies": `compile_compare_companies` (execution/compiler.py) only
+    ever reads `companies[0]`/`companies[1]`, so a 3+-company plan would
+    silently drop every company past the first two and answer a two-way
+    difference the question never asked for -- confirmed live in the Day
+    22/23 submission export (question ids 931, 973).
     """
     issues = (
         *_check_periods_count(plan, expected=1),
@@ -277,10 +284,10 @@ def _validate_compare_companies(plan: FinancialQueryPlan) -> tuple[PlanValidatio
         *_check_forbidden_extras(plan),
         *_check_expected_unit(plan, allowed=_CURRENCY_UNITS),
     )
-    if len(plan.companies) < 2:
+    if len(plan.companies) != 2:
         issues = (
             *issues,
-            _issue("companies_arity_invalid", "compare_companies requires at least 2 companies"),
+            _issue("companies_arity_invalid", "compare_companies requires exactly 2 companies"),
         )
     return issues
 

@@ -4,7 +4,13 @@ questions -- not a synthetic fixture. Exercises exactly the wiring the CLI
 uses (index loading, dataset_fingerprint match, real parquet reads), without
 asserting answer correctness (no gold labels exist for this question set,
 Day 22 plan §3): the point is that the pipeline runs end-to-end on real data
-without crashing and, if anything is answered, the packaged ZIP validates.
+without crashing and the packaged ZIP validates.
+
+Day 23 full-coverage strategy: `export_submission`'s `apply_backstop=True`
+default means `items` now always covers every question passed in, not just
+genuinely answered ones (plan.md §2.4 rule 1 fails the whole ZIP on a single
+missing id) -- `expected_ids` below is every question id, not just the
+`"answered"` subset.
 """
 
 from __future__ import annotations
@@ -83,6 +89,7 @@ def test_export_and_validate_a_handful_of_real_questions(tmp_path: Path) -> None
 
     zip_path = tmp_path / "submission.zip"
     write_submission_zip(items, csv_rows, zip_path)
-    expected_ids = [outcome.id for outcome in report.outcomes if outcome.status == "answered"]
+    expected_ids = [question.id for question in questions]
+    assert len(items) == len(questions)
     validation = validate_submission_zip(zip_path, expected_ids)
     assert validation.valid is True, validation.issues

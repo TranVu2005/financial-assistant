@@ -13,7 +13,7 @@ import httpx
 
 from financial_report_qa.core.config import LLMSettings
 from financial_report_qa.planning.llm_client import LLMClient
-from financial_report_qa.planning.llm_planner import build_plan
+from financial_report_qa.planning.llm_planner import build_plan, build_plan_grounded
 from financial_report_qa.planning.plan_contracts import FinancialQueryPlan
 
 _SETTINGS = LLMSettings(
@@ -197,3 +197,87 @@ def test_repair_prompt_references_the_original_bad_output() -> None:
     repair_user_message = messages[1]["content"]
     assert '{"operation": "lookup"}' in repair_user_message
     assert calls[0] != calls[1]
+
+
+_TABLE_CONTEXT = "--- Bảng tbl_a (NVL/2023/report.txt) ---\nDoanh thu thuần | 63075000000"
+
+
+def test_grounded_valid_first_response_returns_a_plan() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_envelope(_VALID_LOOKUP))
+
+    result = build_plan_grounded(
+        _QUESTION,
+        client=_client(handler),
+        candidate_table_ids=_TABLE_IDS,
+        known_table_ids=_KNOWN_TABLES,
+        table_context=_TABLE_CONTEXT,
+    )
+
+    assert result.abstain_codes == ()
+    assert result.plan is not None
+    assert result.plan.operation == "lookup"
+
+
+def test_grounded_user_prompt_carries_the_table_context_to_the_client() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=_envelope(_VALID_LOOKUP))
+
+    build_plan_grounded(
+        _QUESTION,
+        client=_client(handler),
+        candidate_table_ids=_TABLE_IDS,
+        known_table_ids=_KNOWN_TABLES,
+        table_context=_TABLE_CONTEXT,
+    )
+
+    messages = captured["body"]["messages"]  # type: ignore[index]
+    user_message = messages[1]["content"]
+    assert _TABLE_CONTEXT in user_message
+
+
+def test_grounded_invalid_json_twice_abstains_with_llm_invalid_json() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_envelope("still not json"))
+
+    result = build_plan_grounded(
+        _QUESTION,
+        client=_client(handler),
+        candidate_table_ids=_TABLE_IDS,
+        known_table_ids=_KNOWN_TABLES,
+        table_context=_TABLE_CONTEXT,
+    )
+
+    assert result.plan is None
+    assert result.abstain_codes == ("llm_invalid_json",)
+
+
+def test_grounded_raw_text_metric_resolves_against_the_shown_table() -> None:
+    """The point of this tier: a metric with 0% canonical coverage can still
+    resolve, because the LLM copies the exact raw label it was shown."""
+    grounded_plan = json.dumps(
+        {
+            "operation": "lookup",
+            "companies": ["NVL"],
+            "periods": ["2023"],
+            "metric": {"raw_text": "Doanh thu thuần"},
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_envelope(grounded_plan))
+
+    result = build_plan_grounded(
+        _QUESTION,
+        client=_client(handler),
+        candidate_table_ids=_TABLE_IDS,
+        known_table_ids=_KNOWN_TABLES,
+        table_context=_TABLE_CONTEXT,
+    )
+
+    assert result.plan is not None
+    assert result.plan.metric is not None
+    assert result.plan.metric.raw_text == "Doanh thu thuần"

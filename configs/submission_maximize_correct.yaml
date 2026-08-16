@@ -1,0 +1,24 @@
+# Day 23: execution overlay tuned for the official Dashboard scoring formula.
+#
+# The organizers score Answer/Execution Accuracy as
+#   (số query có kết quả khớp đáp án chuẩn) / (TỔNG số query)
+# -- divided by the full question set, not by the questions we chose to
+# answer. A wrong answer therefore scores exactly the same as an abstention
+# (both 0), so abstaining buys nothing while answering can only add.
+#
+# Day 21 rejected `default_statement_scope: consolidated` on gold120 because
+# its *precision-style* accuracy (correct/answered) was lower: 0.755 vs
+# 0.846. Re-measured under the organizers' own formula (correct/total), the
+# ranking inverts decisively:
+#
+#   policy                 correct  answered  correct/answered  CORRECT/TOTAL
+#   default_consolidated        39        70             0.750          0.325
+#   none                        30        36             0.833          0.250
+#   abstain_when_unstated       25        28             0.893          0.208
+#
+# 30% more correct answers. `configs/local_rtx3050.yaml` keeps the
+# conservative `none` default for internal quality measurement, where
+# precision-style accuracy is the honest signal; this overlay is for
+# producing the actual submission.
+execution:
+  default_statement_scope: consolidated

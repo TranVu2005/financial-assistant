@@ -125,6 +125,53 @@ def test_replay_average_matches_compiled_answer() -> None:
     assert replayed == Decimal("200")
 
 
+def test_replay_average_over_companies_matches_compiled_answer() -> None:
+    """Regression (Day 23 plan Step 2): `render_pandas_query`'s average/sum
+    branch hardcoded `company=plan.companies[0]`, so a plan varying over
+    companies (>1 company, 1 period) rendered a query that filtered to just
+    the first company and averaged a length-1 selection -- silently
+    ignoring the rest, never surfacing as a replay mismatch because the
+    same wrong assumption was baked into both the compiler and the
+    renderer."""
+    plan = FinancialQueryPlan(
+        operation="average",
+        companies=("ACB", "MBB", "VCB"),
+        periods=("2023",),
+        candidate_table_ids=TABLE_IDS,
+        metric=MetricSelector(canonical="cash_and_cash_equivalents"),
+    )
+    query = render_pandas_query(plan)
+    frame = _frame(
+        [
+            _row(company_code="ACB", value="100", period=2023),
+            _row(company_code="MBB", value="200", period=2023),
+            _row(company_code="VCB", value="300", period=2023),
+        ]
+    )
+    replayed = replay_pandas_query(query, frame)
+    assert replayed == Decimal("200")
+
+
+def test_replay_sum_over_companies_matches_compiled_answer() -> None:
+    plan = FinancialQueryPlan(
+        operation="sum",
+        companies=("ACB", "MBB", "VCB"),
+        periods=("2023",),
+        candidate_table_ids=TABLE_IDS,
+        metric=MetricSelector(canonical="cash_and_cash_equivalents"),
+    )
+    query = render_pandas_query(plan)
+    frame = _frame(
+        [
+            _row(company_code="ACB", value="100", period=2023),
+            _row(company_code="MBB", value="200", period=2023),
+            _row(company_code="VCB", value="300", period=2023),
+        ]
+    )
+    replayed = replay_pandas_query(query, frame)
+    assert replayed == Decimal("600")
+
+
 def test_replay_rank_matches_compiled_answer() -> None:
     plan = FinancialQueryPlan(
         operation="rank",
