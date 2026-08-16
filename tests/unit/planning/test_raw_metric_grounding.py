@@ -13,8 +13,10 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 
 from financial_report_qa.data.dataset_builder import CELL_SCHEMA
+from financial_report_qa.planning import raw_metric_grounding
 from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.raw_metric_grounding import (
     candidate_column_labels,
@@ -275,6 +277,64 @@ def test_candidate_row_labels_lists_real_numeric_row_labels(tmp_path: Path) -> N
     assert "Không có số" not in labels
 
 
+def test_candidate_row_labels_are_stable_across_source_row_orders(tmp_path: Path) -> None:
+    """The LLM chooses a numeric index, so one label set must always produce
+    the same numbered menu even when DuckDB returns DISTINCT rows differently."""
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+    first_release = _write_cells(
+        first_root,
+        [
+            _cell("cell_a", TABLE_A, row_label_raw="Lãi tiền gửi"),
+            _cell("cell_b", TABLE_A, row_label_raw="Chi phí nhân viên"),
+        ],
+    )
+    second_release = _write_cells(
+        second_root,
+        [
+            _cell("cell_b", TABLE_A, row_label_raw="Chi phí nhân viên"),
+            _cell("cell_a", TABLE_A, row_label_raw="Lãi tiền gửi"),
+        ],
+    )
+
+    first = candidate_row_labels(first_release, [TABLE_A])
+    second = candidate_row_labels(second_release, [TABLE_A])
+
+    assert first == second == ("Chi phí nhân viên", "Lãi tiền gửi")
+
+
+def test_candidate_row_labels_use_raw_text_to_break_normalized_key_ties(
+    tmp_path: Path,
+) -> None:
+    """Case/Unicode variants share one normalized key, so raw text must be
+    the deterministic secondary key instead of preserving query row order."""
+    first_root = tmp_path / "first-tie"
+    second_root = tmp_path / "second-tie"
+    first_root.mkdir()
+    second_root.mkdir()
+    first_release = _write_cells(
+        first_root,
+        [
+            _cell("cell_a", TABLE_A, row_label_raw="Lãi tiền gửi"),
+            _cell("cell_b", TABLE_A, row_label_raw="LÃI TIỀN GỬI"),
+        ],
+    )
+    second_release = _write_cells(
+        second_root,
+        [
+            _cell("cell_b", TABLE_A, row_label_raw="LÃI TIỀN GỬI"),
+            _cell("cell_a", TABLE_A, row_label_raw="Lãi tiền gửi"),
+        ],
+    )
+
+    first = candidate_row_labels(first_release, [TABLE_A])
+    second = candidate_row_labels(second_release, [TABLE_A])
+
+    assert first == second == ("LÃI TIỀN GỬI", "Lãi tiền gửi")
+
+
 def test_candidate_row_labels_is_empty_without_tables(tmp_path: Path) -> None:
     release_dir = _write_cells(tmp_path, [])
     assert candidate_row_labels(release_dir, []) == ()
@@ -329,3 +389,36 @@ def test_candidate_column_labels_matches_the_row_normalization_tolerantly(
         [_cell("c1", TABLE_A, row_label_raw="  Thuế   GTGT ", column_label_raw="Số cuối năm")],
     )
     assert candidate_column_labels(release_dir, [TABLE_A], "thuế gtgt") == ("Số cuối năm",)
+
+
+def test_candidate_column_labels_are_stable_across_query_row_orders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Column choices use the same numeric-index protocol as row choices and
+    therefore require the same deterministic ordering guarantee."""
+
+    class FakeResult:
+        def __init__(self, rows: list[tuple[str, str]]) -> None:
+            self.rows = rows
+
+        def execute(self, query: str, parameters: list[object]) -> "FakeResult":
+            return self
+
+        def fetchall(self) -> list[tuple[str, str]]:
+            return self.rows
+
+    release_dir = tmp_path / "release"
+    monkeypatch.setattr(
+        raw_metric_grounding,
+        "_label_connection",
+        lambda cells_path: FakeResult([("Thuế GTGT", "Số đầu năm"), ("Thuế GTGT", "Số cuối năm")]),
+    )
+    first = candidate_column_labels(release_dir, [TABLE_A], "Thuế GTGT")
+    monkeypatch.setattr(
+        raw_metric_grounding,
+        "_label_connection",
+        lambda cells_path: FakeResult([("Thuế GTGT", "Số cuối năm"), ("Thuế GTGT", "Số đầu năm")]),
+    )
+    second = candidate_column_labels(release_dir, [TABLE_A], "Thuế GTGT")
+
+    assert first == second == ("Số cuối năm", "Số đầu năm")

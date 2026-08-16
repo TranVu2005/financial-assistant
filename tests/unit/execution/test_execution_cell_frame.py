@@ -445,7 +445,9 @@ def _row_with_statutory_code(code: str | None) -> list[dict[str, object]]:
     0 of 187,207 "Mã số" cells do), so it never enters the numeric frame."""
     cells: list[dict[str, object]] = []
 
-    def make(cell_id: str, col: int, column_label: str | None, raw: str, numeric: str | None):
+    def make(
+        cell_id: str, col: int, column_label: str | None, raw: str, numeric: str | None
+    ) -> dict[str, object]:
         return {
             "cell_id": cell_id,
             "table_id": TABLE_ID,

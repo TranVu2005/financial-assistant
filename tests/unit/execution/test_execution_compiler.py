@@ -66,6 +66,7 @@ def _cell(
     value_numeric: str | None,
     period: str | None,
     unit: str | None = "VND",
+    column_label_raw: str | None = None,
 ) -> dict[str, object]:
     return {
         "cell_id": cell_id,
@@ -75,7 +76,13 @@ def _cell(
         "row_label_raw": row_label_raw,
         "row_label_canonical": row_label_canonical,
         "row_group_context_raw": None,
-        "column_label_raw": f"Năm {period}" if period else None,
+        "column_label_raw": (
+            column_label_raw
+            if column_label_raw is not None
+            else f"Năm {period}"
+            if period
+            else None
+        ),
         "column_label_canonical": None,
         "value_raw": value_numeric or "-",
         "value_numeric": Decimal(value_numeric) if value_numeric is not None else None,
@@ -359,6 +366,60 @@ def test_compile_plan_duplicate_conflicting_rows_is_cell_ambiguous(tmp_path: Pat
     result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
     assert result.status == "error"
     assert result.error_code == "cell_ambiguous"
+
+
+def test_compile_plan_column_refinement_is_preserved_in_replay_contract(tmp_path: Path) -> None:
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="Thuế giá trị gia tăng",
+                row_label_canonical=None,
+                value_numeric="100",
+                period="2025",
+                column_label_raw="Số phải nộp đầu năm",
+            ),
+            _cell(
+                "cell_" + "b" * 64,
+                TABLE_ID,
+                1,
+                2,
+                row_label_raw="Thuế giá trị gia tăng",
+                row_label_canonical=None,
+                value_numeric="200",
+                period="2025",
+                column_label_raw="Số phải nộp cuối năm",
+            ),
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2025",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(
+            raw_text="Thuế giá trị gia tăng",
+            column_text="Số phải nộp cuối năm",
+        ),
+    )
+
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+
+    assert result.status == "answered"
+    assert result.answer == Decimal("200")
+    assert 'df1.column_label == "Số phải nộp cuối năm"' in result.pandas_query
+    assert result.replay_rows[0].model_dump(mode="python") == {
+        "company_code": "ACB",
+        "row_label_canonical": None,
+        "row_label_raw": "Thuế giá trị gia tăng",
+        "column_label": "Số phải nộp cuối năm",
+        "period": 2025,
+        "value": Decimal("200"),
+    }
 
 
 def test_compile_plan_missing_metric_is_metric_not_found(tmp_path: Path) -> None:

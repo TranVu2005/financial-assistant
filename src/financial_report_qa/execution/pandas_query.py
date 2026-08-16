@@ -41,7 +41,7 @@ import pandas as pd
 from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
 
 _ALLOWED_ATTRS = frozenset(
-    {"company_code", "row_label_canonical", "row_label_raw", "period", "value"}
+    {"company_code", "row_label_canonical", "row_label_raw", "column_label", "period", "value"}
 )
 _ALLOWED_METHODS = frozenset({"isin", "sort_values", "mean", "sum"})
 
@@ -81,6 +81,8 @@ def _cell_expr(*, company: str | None, selector: MetricSelector, period: str) ->
     if company is not None:
         clauses.append(f"(df1.company_code == {_lit(company)})")
     clauses.append(f"(df1.{column} == {_lit(value)})")
+    if selector.column_text is not None:
+        clauses.append(f"(df1.column_label == {_lit(selector.column_text)})")
     clauses.append(f"(df1.period == {int(period)})")
     condition = " & ".join(clauses)
     return f'df1[{condition}]["value"].iloc[0]'
@@ -94,6 +96,8 @@ def _aggregate_expr(
     if company is not None:
         clauses.append(f"(df1.company_code == {_lit(company)})")
     clauses.append(f"(df1.{column} == {_lit(value)})")
+    if selector.column_text is not None:
+        clauses.append(f"(df1.column_label == {_lit(selector.column_text)})")
     period_list = ", ".join(str(int(period)) for period in periods)
     clauses.append(f"(df1.period.isin([{period_list}]))")
     condition = " & ".join(clauses)
@@ -110,8 +114,10 @@ def _aggregate_expr_over_companies(
     clauses = [
         f"(df1.company_code.isin([{companies_list}]))",
         f"(df1.{column} == {_lit(value)})",
-        f"(df1.period == {int(period)})",
     ]
+    if selector.column_text is not None:
+        clauses.append(f"(df1.column_label == {_lit(selector.column_text)})")
+    clauses.append(f"(df1.period == {int(period)})")
     condition = " & ".join(clauses)
     return f'df1[{condition}]["value"].{method}()'
 
@@ -173,11 +179,10 @@ def render_pandas_query(plan: FinancialQueryPlan) -> str:
         assert plan.metric is not None and plan.top_k is not None
         column, value = _metric_column_and_value(plan.metric)
         companies_list = ", ".join(_lit(company) for company in plan.companies)
-        condition = (
-            f"(df1.company_code.isin([{companies_list}])) & "
-            f"(df1.{column} == {_lit(value)}) & "
-            f"(df1.period == {int(period or '0')})"
-        )
+        condition = f"(df1.company_code.isin([{companies_list}])) & (df1.{column} == {_lit(value)})"
+        if plan.metric.column_text is not None:
+            condition += f" & (df1.column_label == {_lit(plan.metric.column_text)})"
+        condition += f" & (df1.period == {int(period or '0')})"
         index = plan.top_k - 1
         return f'df1[{condition}].sort_values("value", ascending=False)["value"].iloc[{index}]'
 

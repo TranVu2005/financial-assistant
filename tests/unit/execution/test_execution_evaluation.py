@@ -1,5 +1,6 @@
 """Tests for the Day 18 compile-plans evaluation harness."""
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -9,7 +10,11 @@ import pyarrow.parquet as pq
 from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
 from financial_report_qa.execution.evaluation import evaluate_compiled_plans_on_gold
-from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion, GoldTableEvidence
+from financial_report_qa.retrieval.contracts import (
+    GoldRetrievalQuestion,
+    GoldTableEvidence,
+    RetrievalFilters,
+)
 
 TABLE_ID = "tbl_" + "1" * 64
 DOC_ID = "doc_" + "a" * 64
@@ -108,10 +113,10 @@ def _gold_question(question_id: str, question: str) -> GoldRetrievalQuestion:
         dataset_fingerprint=FINGERPRINT,
         question=question,
         intent="lookup",
-        filters={"company_codes": ["ACB"], "periods": ["2023"], "statement_types": []},
+        filters=RetrievalFilters(company_codes=("ACB",), periods=("2023",)),
         gold_table_ids=(TABLE_ID,),
         reviewed_by="test-fixture",
-        reviewed_at="2026-08-15T00:00:00Z",
+        reviewed_at=datetime(2026, 8, 15, tzinfo=UTC),
         gold_evidence=(
             GoldTableEvidence(
                 table_id=TABLE_ID,

@@ -9,6 +9,7 @@ that Day 20's harness bypassed (Day 21 plan §1.1).
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -18,7 +19,11 @@ import pyarrow.parquet as pq
 from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
 from financial_report_qa.pipeline.evaluation import evaluate_scope_policies, run_e2e_pipeline
-from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion, GoldTableEvidence
+from financial_report_qa.retrieval.contracts import (
+    GoldRetrievalQuestion,
+    GoldTableEvidence,
+    RetrievalFilters,
+)
 
 TABLE_ID = "tbl_" + "1" * 64
 TABLE_ID_SEPARATE = "tbl_" + "2" * 64
@@ -114,10 +119,10 @@ def _question(
         question_id=question_id,
         question=question,
         intent="lookup",
-        filters={},
+        filters=RetrievalFilters(),
         gold_table_ids=gold_table_ids,
         reviewed_by="tester",
-        reviewed_at="2026-08-15T00:00:00+00:00",
+        reviewed_at=datetime(2026, 8, 15, tzinfo=UTC),
         gold_evidence=(
             GoldTableEvidence(
                 table_id=gold_table_ids[0],

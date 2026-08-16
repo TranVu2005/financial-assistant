@@ -75,6 +75,7 @@ def _replay_row(
         "company_code": company_code,
         "row_label_canonical": selector.canonical,
         "row_label_raw": selector.raw_text,
+        "column_label": selector.column_text,
         "period": period,
         "value": value,
     }

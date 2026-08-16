@@ -130,8 +130,14 @@ def locate(
     period: int,
     *,
     company_code: str | None = None,
+    prefer_statutory_rows: bool = False,
 ) -> LocateResult:
-    """Resolve one metric selector at one period within an already-scoped frame."""
+    """Resolve one metric selector at one period within an already-scoped frame.
+
+    Statutory rows are only preferred through an explicit opt-in from a caller
+    that has independent evidence the question targets a primary statement.
+    A code identifies the source row, but cannot establish question intent.
+    """
     scoped = frame
     if company_code is not None:
         scoped = scoped[scoped["company_code"] == company_code]
@@ -156,7 +162,8 @@ def locate(
             ),
         )
 
-    period_rows = _prefer_statutory_rows(period_rows)
+    if prefer_statutory_rows:
+        period_rows = _prefer_statutory_rows(period_rows)
     distinct = period_rows.drop_duplicates(subset=["value", "unit"])
     known_units = distinct["unit"].dropna().drop_duplicates()
     if len(distinct) > 1:

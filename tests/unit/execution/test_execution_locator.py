@@ -271,7 +271,7 @@ def test_locate_canonical_column_still_wins_when_already_populated() -> None:
     assert set(result.match.cell_ids) == {CELL_A, CELL_B}
 
 
-def test_locate_prefers_the_statutory_statement_row_over_an_uncoded_note_row() -> None:
+def test_locate_prefers_statutory_row_only_when_explicitly_requested() -> None:
     """A statement line and a note-table line can share a label and disagree.
     Only the statement line carries a Circular 200 code (8,449 of 146,011
     tables have the column at all), so the code identifies which one the
@@ -292,11 +292,42 @@ def test_locate_prefers_the_statutory_statement_row_over_an_uncoded_note_row() -
             ),
         ]
     )
-    result = locate(frame, MetricSelector(canonical="general_administration_expenses"), 2020)
+    result = locate(
+        frame,
+        MetricSelector(canonical="general_administration_expenses"),
+        2020,
+        prefer_statutory_rows=True,
+    )
     assert result.error_code is None
     assert result.match is not None
     assert result.match.value == Decimal("1000")
     assert result.match.cell_ids == (CELL_A,)
+
+
+def test_locate_keeps_main_statement_and_note_conflict_ambiguous_by_default() -> None:
+    """A statutory code identifies the main-statement row but does not prove
+    that the question intended that source instead of the conflicting note."""
+    frame = _frame(
+        [
+            _row(
+                cell_id=CELL_A,
+                row_label_canonical="general_administration_expenses",
+                value="1000",
+                statutory_code="26",
+            ),
+            _row(
+                cell_id=CELL_B,
+                row_label_canonical="general_administration_expenses",
+                value="250",
+                statutory_code=None,
+            ),
+        ]
+    )
+
+    result = locate(frame, MetricSelector(canonical="general_administration_expenses"), 2020)
+
+    assert result.match is None
+    assert result.error_code == "cell_ambiguous"
 
 
 def test_locate_stays_ambiguous_when_two_statutory_rows_disagree() -> None:

@@ -159,6 +159,7 @@ def validate_submission_zip(
                             "company_code": str,
                             "row_label_canonical": str,
                             "row_label_raw": str,
+                            "column_label": str,
                         },
                     )
                     sandbox_result = replay_in_sandbox(

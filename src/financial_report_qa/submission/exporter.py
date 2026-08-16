@@ -93,6 +93,7 @@ def _replay_rows_to_csv_rows(replay_rows: tuple[ReplayRow, ...]) -> tuple[CsvRow
             "company_code": row.company_code,
             "row_label_canonical": row.row_label_canonical,
             "row_label_raw": row.row_label_raw,
+            "column_label": row.column_label,
             "period": row.period,
             "value": row.value,
         }
@@ -127,6 +128,7 @@ def _real_table_evidence_rows(
             "company_code": record["company_code"],
             "row_label_canonical": record["row_label_canonical"],
             "row_label_raw": record["row_label_raw"],
+            "column_label": record["column_label"],
             "period": record["period"],
             "value": record["value"],
         }
@@ -506,15 +508,26 @@ def export_submission(
 def _render_csv_bytes(rows: Sequence[CsvRow]) -> bytes:
     buffer = io.StringIO(newline="")
     writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(["company_code", "row_label_canonical", "row_label_raw", "period", "value"])
+    writer.writerow(
+        [
+            "company_code",
+            "row_label_canonical",
+            "row_label_raw",
+            "column_label",
+            "period",
+            "value",
+        ]
+    )
     for row in rows:
         canonical = row["row_label_canonical"]
         raw = row["row_label_raw"]
+        column = row.get("column_label")
         writer.writerow(
             [
                 row["company_code"],
                 "" if canonical is None else canonical,
                 "" if raw is None else raw,
+                "" if column is None else column,
                 row["period"],
                 row["value"],
             ]

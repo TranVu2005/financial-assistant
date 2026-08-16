@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pytest import MonkeyPatch
 
+from financial_report_qa.core.config import LLMSettings
 from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
 from financial_report_qa.evaluation.week1_release import ReleaseLock
 from financial_report_qa.planning.llm_client import LLMClient
@@ -248,7 +249,7 @@ def test_export_with_llm_config_answers_a_rule_planner_abstain(
 
     import financial_report_qa.submission.cli as submission_cli
 
-    def fake_llm_client(settings: object, **kwargs: object) -> LLMClient:
+    def fake_llm_client(settings: LLMSettings, **kwargs: object) -> LLMClient:
         return LLMClient(settings, transport=httpx.MockTransport(handler), max_retries=1)
 
     monkeypatch.setattr(submission_cli, "LLMClient", fake_llm_client)

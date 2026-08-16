@@ -64,13 +64,15 @@ def test_plan_accepts_consolidated_statement_scope() -> None:
 
 def test_plan_rejects_unknown_statement_scope() -> None:
     with pytest.raises(ValidationError):
-        FinancialQueryPlan(
-            operation="lookup",
-            companies=("NVL",),
-            periods=("2023",),
-            metric=MetricSelector(canonical="revenue"),
-            candidate_table_ids=(_table_id("a"),),
-            statement_scope="both",
+        FinancialQueryPlan.model_validate(
+            {
+                "operation": "lookup",
+                "companies": ("NVL",),
+                "periods": ("2023",),
+                "metric": {"canonical": "revenue"},
+                "candidate_table_ids": (_table_id("a"),),
+                "statement_scope": "both",
+            }
         )
 
 
@@ -113,6 +115,7 @@ def test_metric_selector_rejects_raw_text_over_512_chars() -> None:
 
 def test_metric_selector_accepts_raw_text_at_512_chars() -> None:
     selector = MetricSelector(raw_text="A" * 512)
+    assert selector.raw_text is not None
     assert len(selector.raw_text) == 512
 
 

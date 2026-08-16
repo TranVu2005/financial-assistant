@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -10,7 +11,11 @@ import pyarrow.parquet as pq
 
 from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
-from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion, GoldTableEvidence
+from financial_report_qa.retrieval.contracts import (
+    GoldRetrievalQuestion,
+    GoldTableEvidence,
+    RetrievalFilters,
+)
 from financial_report_qa.verification.evaluation import (
     build_citation_lookup,
     evaluate_answer_packages_on_gold,
@@ -106,10 +111,10 @@ def test_evaluate_answer_packages_reports_verified_and_accuracy(tmp_path: Path) 
         question_id="retq_" + "b" * 64,
         question="Tra cứu doanh thu thuần của ACB năm 2023.",
         intent="lookup",
-        filters={},
+        filters=RetrievalFilters(),
         gold_table_ids=(TABLE_ID,),
         reviewed_by="tester",
-        reviewed_at="2026-08-15T00:00:00+00:00",
+        reviewed_at=datetime(2026, 8, 15, tzinfo=UTC),
         gold_evidence=(
             GoldTableEvidence(
                 table_id=TABLE_ID,
@@ -141,10 +146,10 @@ def test_write_answer_verification_report_creates_files(tmp_path: Path) -> None:
         question_id="retq_" + "c" * 64,
         question="Tra cứu doanh thu thuần của ACB năm 2023.",
         intent="lookup",
-        filters={},
+        filters=RetrievalFilters(),
         gold_table_ids=(TABLE_ID,),
         reviewed_by="tester",
-        reviewed_at="2026-08-15T00:00:00+00:00",
+        reviewed_at=datetime(2026, 8, 15, tzinfo=UTC),
         gold_evidence=(
             GoldTableEvidence(
                 table_id=TABLE_ID,

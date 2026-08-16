@@ -212,6 +212,54 @@ def test_validate_submission_zip_replays_a_numeric_looking_raw_label(tmp_path: P
     assert report.issues == ()
 
 
+def test_validate_submission_zip_replays_a_column_refined_query(tmp_path: Path) -> None:
+    """The packaged CSV and sandbox grammar must retain the same column
+    dimension that the locator used to disambiguate the selected cell."""
+    item = SubmissionItem.model_validate(
+        {
+            "id": 1,
+            "question": "Thuế GTGT phải nộp cuối năm là bao nhiêu?",
+            "answer": 200.0,
+            "relevant_docs": ("report",),
+            "relevant_tables": ("report|5",),
+            "evidence": (SubmissionEvidence(variable="df1", csv_path="data/q000001_df1.csv"),),
+            "pandas_query": (
+                'df1[(df1.company_code == "PC1") '
+                '& (df1.row_label_raw == "Thuế GTGT") '
+                '& (df1.column_label == "Số phải nộp cuối năm") '
+                '& (df1.period == 2025)]["value"].iloc[0]'
+            ),
+        }
+    )
+    csv_rows = {
+        "data/q000001_df1.csv": (
+            {
+                "company_code": "PC1",
+                "row_label_canonical": None,
+                "row_label_raw": "Thuế GTGT",
+                "column_label": "Số phải nộp đầu năm",
+                "period": 2025,
+                "value": Decimal("100"),
+            },
+            {
+                "company_code": "PC1",
+                "row_label_canonical": None,
+                "row_label_raw": "Thuế GTGT",
+                "column_label": "Số phải nộp cuối năm",
+                "period": 2025,
+                "value": Decimal("200"),
+            },
+        )
+    }
+    zip_path = tmp_path / "submission.zip"
+    write_submission_zip([item], csv_rows, zip_path)
+
+    report = validate_submission_zip(zip_path, expected_ids=[1])
+
+    assert report.valid is True, report.issues
+    assert report.issues == ()
+
+
 def test_validate_submission_zip_rejects_orphan_csv(tmp_path: Path) -> None:
     zip_path, _ = _build_zip(tmp_path)
     tampered = tmp_path / "tampered.zip"

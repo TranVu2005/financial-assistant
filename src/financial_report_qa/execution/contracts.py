@@ -70,6 +70,7 @@ class ReplayRow(_FrozenModel):
     company_code: NonEmptyString
     row_label_canonical: NonEmptyString | None
     row_label_raw: NonEmptyString | None
+    column_label: NonEmptyString | None = None
     period: int = Field(ge=1900, le=2100)
     value: Decimal
 

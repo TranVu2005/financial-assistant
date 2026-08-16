@@ -25,11 +25,13 @@ def _row(
     value: str,
     unit: str = "VND",
     period: int,
+    column_label: str | None = None,
 ) -> dict[str, object]:
     return {
         "company_code": company_code,
         "row_label_canonical": row_label_canonical,
         "row_label_raw": row_label_raw,
+        "column_label": column_label,
         "unit": unit,
         "value": Decimal(value),
         "period": period,
@@ -52,6 +54,113 @@ def test_render_lookup_produces_readable_query() -> None:
     assert "eval" not in query and "exec" not in query
 
 
+@pytest.mark.parametrize(
+    ("plan", "expected_column_predicates"),
+    [
+        (
+            FinancialQueryPlan(
+                operation="lookup",
+                companies=("ACB",),
+                periods=("2025",),
+                candidate_table_ids=TABLE_IDS,
+                metric=MetricSelector(raw_text="Metric", column_text="Target column"),
+            ),
+            1,
+        ),
+        (
+            FinancialQueryPlan(
+                operation="difference",
+                companies=("ACB",),
+                periods=("2024", "2025"),
+                candidate_table_ids=TABLE_IDS,
+                metric=MetricSelector(raw_text="Metric", column_text="Target column"),
+            ),
+            2,
+        ),
+        (
+            FinancialQueryPlan(
+                operation="growth_rate",
+                companies=("ACB",),
+                periods=("2024", "2025"),
+                candidate_table_ids=TABLE_IDS,
+                metric=MetricSelector(raw_text="Metric", column_text="Target column"),
+            ),
+            3,
+        ),
+        (
+            FinancialQueryPlan(
+                operation="compare",
+                companies=("ACB",),
+                periods=("2025",),
+                candidate_table_ids=TABLE_IDS,
+                metric_a=MetricSelector(raw_text="Metric A", column_text="Target column"),
+                metric_b=MetricSelector(raw_text="Metric B", column_text="Target column"),
+            ),
+            2,
+        ),
+        (
+            FinancialQueryPlan(
+                operation="compare_companies",
+                companies=("ACB", "MBB"),
+                periods=("2025",),
+                candidate_table_ids=TABLE_IDS,
+                metric=MetricSelector(raw_text="Metric", column_text="Target column"),
+            ),
+            2,
+        ),
+        (
+            FinancialQueryPlan(
+                operation="ratio",
+                companies=("ACB",),
+                periods=("2025",),
+                candidate_table_ids=TABLE_IDS,
+                numerator_metric=MetricSelector(raw_text="Numerator", column_text="Target column"),
+                denominator_metric=MetricSelector(
+                    raw_text="Denominator", column_text="Target column"
+                ),
+            ),
+            2,
+        ),
+        (
+            FinancialQueryPlan(
+                operation="average",
+                companies=("ACB",),
+                periods=("2024", "2025"),
+                candidate_table_ids=TABLE_IDS,
+                metric=MetricSelector(raw_text="Metric", column_text="Target column"),
+            ),
+            1,
+        ),
+        (
+            FinancialQueryPlan(
+                operation="sum",
+                companies=("ACB", "MBB"),
+                periods=("2025",),
+                candidate_table_ids=TABLE_IDS,
+                metric=MetricSelector(raw_text="Metric", column_text="Target column"),
+            ),
+            1,
+        ),
+        (
+            FinancialQueryPlan(
+                operation="rank",
+                companies=("ACB", "MBB"),
+                periods=("2025",),
+                candidate_table_ids=TABLE_IDS,
+                metric=MetricSelector(raw_text="Metric", column_text="Target column"),
+                top_k=1,
+            ),
+            1,
+        ),
+    ],
+)
+def test_render_all_operations_preserves_column_selector(
+    plan: FinancialQueryPlan, expected_column_predicates: int
+) -> None:
+    query = render_pandas_query(plan)
+    assert query.count("df1.column_label") == expected_column_predicates
+
+
 def test_replay_lookup_matches_compiled_answer() -> None:
     plan = FinancialQueryPlan(
         operation="lookup",
@@ -64,6 +173,43 @@ def test_replay_lookup_matches_compiled_answer() -> None:
     frame = _frame([_row(value="100", period=2023)])
     replayed = replay_pandas_query(query, frame)
     assert replayed == Decimal("100")
+
+
+def test_replay_lookup_with_column_is_independent_of_row_order() -> None:
+    """A column-refined plan must encode the chosen column in the submitted
+    query instead of relying on whichever matching row reaches iloc[0]."""
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("PC1",),
+        periods=("2025",),
+        candidate_table_ids=TABLE_IDS,
+        metric=MetricSelector(
+            raw_text="Thuế giá trị gia tăng",
+            column_text="Số phải nộp cuối năm",
+        ),
+    )
+    query = render_pandas_query(plan)
+    opening = _row(
+        company_code="PC1",
+        row_label_canonical=None,
+        row_label_raw="Thuế giá trị gia tăng",
+        column_label="Số phải nộp đầu năm",
+        value="100",
+        period=2025,
+    )
+    closing = _row(
+        company_code="PC1",
+        row_label_canonical=None,
+        row_label_raw="Thuế giá trị gia tăng",
+        column_label="Số phải nộp cuối năm",
+        value="200",
+        period=2025,
+    )
+
+    forward = replay_pandas_query(query, _frame([opening, closing]))
+    reversed_result = replay_pandas_query(query, _frame([closing, opening]))
+
+    assert forward == reversed_result == Decimal("200")
 
 
 def test_replay_difference_matches_compiled_answer() -> None:

@@ -182,9 +182,9 @@ def test_malicious_case_never_crashes_uncaught(case: dict[str, object], tmp_path
                 "period": pd.array([2018], dtype="Int64"),
             }
         )
-        result = replay_in_sandbox(payload, frame, timeout_seconds=5.0)
-        assert result.value is None
-        assert result.error_code in ("query_rejected", "budget_exceeded")
+        sandbox_result = replay_in_sandbox(payload, frame, timeout_seconds=5.0)
+        assert sandbox_result.value is None
+        assert sandbox_result.error_code in ("query_rejected", "budget_exceeded")
 
     else:
         raise AssertionError(f"unknown layer: {layer}")

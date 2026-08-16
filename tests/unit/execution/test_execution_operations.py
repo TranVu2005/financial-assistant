@@ -4,13 +4,20 @@ from decimal import Decimal
 
 import pytest
 
-from financial_report_qa.execution import operations
+import financial_report_qa.execution.operations as operations
 from financial_report_qa.execution.contracts import CellMatch
+from financial_report_qa.normalization.units import CanonicalUnit
 
 TABLE_ID = "tbl_" + "1" * 64
 
 
-def _cell(cell_id_char: str, *, value: str, unit: str = "VND", period: int = 2020) -> CellMatch:
+def _cell(
+    cell_id_char: str,
+    *,
+    value: str,
+    unit: CanonicalUnit = "VND",
+    period: int = 2020,
+) -> CellMatch:
     return CellMatch(
         table_id=TABLE_ID,
         cell_ids=("cell_" + cell_id_char * 64,),

@@ -89,7 +89,14 @@ def _candidate_raw_labels(release_dir: Path, table_ids: Sequence[str]) -> tuple[
         return ()
     connection = _label_connection(str(release_dir / "cells.parquet"))
     rows = connection.execute(_QUERY, [list(table_ids)]).fetchall()
-    return tuple(row[0] for row in rows)
+    labels = (row[0] for row in rows)
+    return tuple(sorted(labels, key=lambda label: (normalized_key(label), label)))
+
+
+def _stable_unique_labels(labels: Sequence[str]) -> tuple[str, ...]:
+    """Return stripped, unique labels in deterministic semantic order."""
+    unique = dict.fromkeys(label.strip() for label in labels if label and label.strip())
+    return tuple(sorted(unique, key=lambda label: (normalized_key(label), label)))
 
 
 def candidate_row_labels(release_dir: Path, table_ids: Sequence[str]) -> tuple[str, ...]:
@@ -101,8 +108,7 @@ def candidate_row_labels(release_dir: Path, table_ids: Sequence[str]) -> tuple[s
     into this list, it cannot invent a metric name -- the exact failure mode
     measured at 23.4% in Day 22.
     """
-    labels = _candidate_raw_labels(release_dir, table_ids)
-    return tuple(dict.fromkeys(label.strip() for label in labels if label and label.strip()))
+    return _stable_unique_labels(_candidate_raw_labels(release_dir, table_ids))
 
 
 def ground_raw_metric(
@@ -194,9 +200,9 @@ def candidate_column_labels(
     connection = _label_connection(str(release_dir / "cells.parquet"))
     rows = connection.execute(_COLUMN_QUERY, [list(table_ids)]).fetchall()
     target = normalized_key(row_label)
-    columns = (
+    columns = tuple(
         column.strip()
         for stored_row, column in rows
         if normalized_key(stored_row) == target and column and column.strip()
     )
-    return tuple(dict.fromkeys(columns))
+    return _stable_unique_labels(columns)

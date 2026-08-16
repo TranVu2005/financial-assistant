@@ -261,6 +261,7 @@ def test_export_submission_evidence_csv_contains_the_full_extracted_table(
     assert len(rows) == 2
     labels = {row["row_label_raw"] for row in rows}
     assert labels == {"Doanh thu thuan", "Gia von hang ban"}
+    assert all(row.get("column_label") == "Năm 2023" for row in rows)
 
 
 def test_export_submission_answers_a_real_unseen_question(tmp_path: Path) -> None:
