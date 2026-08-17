@@ -322,3 +322,58 @@ def test_export_rejects_mismatched_index_fingerprint(
         ]
     )
     assert exit_code == 2
+
+
+def test_validate_expects_every_question_id_not_only_answered_ones(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    """The ZIP must carry all 1,012 official ids (plan.md §2.4 rule 1), so the
+    backstop tier fills every question no reasoning tier answered. The
+    validator's expected id set therefore has to be every outcome, not just
+    the `answered` ones -- filtering to `answered` predates the Day 23
+    backstop and makes `id_set_mismatch` fire on every real submission.
+    """
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    index_dir = tmp_path / "index"
+    _write_bm25_index(index_dir)
+    config_path = tmp_path / "execution.yaml"
+    _write_execution_config(config_path)
+    questions_path = tmp_path / "questions.jsonl"
+    questions_path.write_text(
+        '{"id": 1, "question": "Tổng tài sản của DBC năm 2023 là bao nhiêu?"}\n'
+        '{"id": 2, "question": "Câu hỏi không thể trả lời được bằng dữ liệu nào cả?"}\n',
+        encoding="utf-8",
+    )
+    output_zip = tmp_path / "submission.zip"
+    report_dir = tmp_path / "report"
+
+    assert (
+        main(
+            [
+                "export",
+                "--release-lock",
+                "lock.json",
+                "--bm25-index",
+                str(index_dir),
+                "--questions-path",
+                str(questions_path),
+                "--execution-config",
+                str(config_path),
+                "--output-zip",
+                str(output_zip),
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
+        == 0
+    )
+    report_files = list(report_dir.glob("submission-export-*.json"))
+    payload = json.loads(report_files[0].read_text(encoding="utf-8"))
+    statuses = {outcome["status"] for outcome in payload["outcomes"]}
+    assert "backstopped" in statuses, "fixture must produce a backstopped question"
+
+    assert (
+        main(["validate", "--zip-path", str(output_zip), "--report-path", str(report_files[0])])
+        == 0
+    )

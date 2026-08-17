@@ -142,9 +142,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "validate":
             report_payload = json.loads(args.report_path.read_text(encoding="utf-8"))
             export_report = SubmissionExportReport.model_validate(report_payload)
-            expected_ids = [
-                outcome.id for outcome in export_report.outcomes if outcome.status == "answered"
-            ]
+            # Every question id, not just the answered ones: plan.md §2.4 rule
+            # 1 requires the ZIP's id set to match the official question set
+            # exactly, and the Day 23 backstop tier exists precisely to fill
+            # the gap for questions no reasoning tier answered. Filtering to
+            # `answered` here predates that tier and made `id_set_mismatch`
+            # fire on every submission that uses it -- i.e. every real one.
+            expected_ids = [outcome.id for outcome in export_report.outcomes]
             validation = validate_submission_zip(
                 args.zip_path, expected_ids, tolerance=Decimal(args.tolerance)
             )
