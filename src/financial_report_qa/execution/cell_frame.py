@@ -12,7 +12,8 @@ Two lossy filters are applied unconditionally (Day 18 plan §1.4/§1.5):
 
 Period resolution follows ADR 0007 decision C2: an explicit `period` wins
 (normalized to a 4-digit year, since ~37.7% of stored periods are ISO dates);
-otherwise a relative column label infers the year from `documents.report_year`.
+otherwise a literal 4-digit year in the extracted column header is used before
+falling back to relative labels inferred from `documents.report_year`.
 Prior-year markers ("năm trước", "kỳ trước", "đầu năm", "đầu kỳ") are matched
 before current-year ones ("năm nay", "kỳ này", "cuối năm", "cuối kỳ") because
 "Số dư cuối năm trước" carries both and only the prior-year reading is right.
@@ -81,6 +82,16 @@ SELECT
     c.value_numeric AS value,
     CASE
         WHEN c.period IS NOT NULL THEN TRY_CAST(LEFT(c.period, 4) AS INTEGER)
+        -- OCR/header normalization does not always populate `c.period` even
+        -- when the raw header still names the year explicitly ("Năm 2023",
+        -- "31/12/2023", "2023"). Recover that evidence before interpreting
+        -- relative opening/closing labels from the document report year.
+        WHEN REGEXP_MATCHES(COALESCE(c.column_label_raw, ''), '(19|20)[0-9]{2}')
+            THEN TRY_CAST(
+                REGEXP_EXTRACT(
+                    COALESCE(c.column_label_raw, ''), '(19|20)[0-9]{2}', 0
+                ) AS INTEGER
+            )
         -- Prior-year markers are tested first: "Số dư cuối năm trước" contains
         -- both a closing and a prior-year marker, and only the prior-year
         -- reading is correct. Bare forms subsume the "Số " variants.
