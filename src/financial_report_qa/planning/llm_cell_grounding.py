@@ -27,11 +27,14 @@ import re
 from collections.abc import Sequence
 
 from financial_report_qa.core.errors import LLMError
+from financial_report_qa.normalization._shared import normalized_key
 from financial_report_qa.planning.llm_client import ChatCompletionClient
 
 # Keeps the prompt inside a small model's usable context and bounds latency.
-# Candidate frames for one question rarely exceed this after company/period
-# scoping; beyond it, the extra labels are almost always unrelated notes.
+# Candidate frames for one question can exceed this after company/period
+# scoping. We therefore rank against the question *before* truncating so a
+# semantically relevant row is not discarded merely because its label sorts
+# after the first 60 alphabetically.
 _MAX_LABELS = 60
 
 _SYSTEM_PROMPT = (
@@ -77,6 +80,53 @@ def _build_user_prompt(question: str, labels: Sequence[str]) -> str:
     return f"Câu hỏi: {question}\n\nCác nhãn dòng có thật:\n{numbered}\n\nSố thứ tự:"
 
 
+def _row_relevance(question: str, label: str) -> tuple[int, float, int]:
+    """Cheap deterministic lexical relevance for prompt-budget pruning.
+
+    This is deliberately *not* a locator and never produces a final row
+    decision. It only decides which real labels survive the 60-item prompt
+    budget; the LLM still makes the grounded choice and can still decline.
+
+    Ranking signals, strongest first:
+      1. the whole normalized label occurs in the question;
+      2. fraction of label tokens also present in the question;
+      3. absolute token overlap.
+
+    `normalized_key` gives the same NFKC/case/whitespace tolerance used by the
+    rest of the grounding stack, including Vietnamese diacritics.
+    """
+    q_key = normalized_key(question)
+    label_key = normalized_key(label)
+    q_tokens = set(q_key.split())
+    label_tokens = set(label_key.split())
+    overlap = len(q_tokens & label_tokens)
+    coverage = overlap / max(len(label_tokens), 1)
+    return (int(bool(label_key) and label_key in q_key), coverage, overlap)
+
+
+def _candidate_rows_for_prompt(question: str, labels: Sequence[str]) -> list[str]:
+    """Deduplicate rows and, only when needed, rank before the prompt cap.
+
+    Preserving the original order for <=60 candidates keeps existing small
+    prompts byte-for-byte stable. For larger menus we stable-sort by relevance
+    so a useful label at position 61+ is not silently unreachable.
+    """
+    candidates = list(dict.fromkeys(label for label in labels if label and label.strip()))
+    if len(candidates) <= _MAX_LABELS:
+        return candidates
+
+    ranked = sorted(
+        enumerate(candidates),
+        key=lambda item: (
+            -_row_relevance(question, item[1])[0],
+            -_row_relevance(question, item[1])[1],
+            -_row_relevance(question, item[1])[2],
+            item[0],
+        ),
+    )
+    return [label for _, label in ranked[:_MAX_LABELS]]
+
+
 def _parse_choice(content: str, label_count: int) -> int | None:
     """Extract the chosen index, validated against the real range.
 
@@ -114,10 +164,9 @@ def choose_row_label(
     reply, explicit "none of these", out-of-range index) so the caller simply
     falls through to its existing abstain path.
     """
-    candidates = list(dict.fromkeys(label for label in labels if label and label.strip()))
+    candidates = _candidate_rows_for_prompt(question, labels)
     if not candidates:
         return None
-    candidates = candidates[:_MAX_LABELS]
 
     try:
         content = client.complete_json(
