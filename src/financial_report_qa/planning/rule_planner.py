@@ -33,7 +33,15 @@ PlanAbstainCode = Literal[
     "multi_metric_unsupported",
     "period_grammar_unsupported",
     "entity_ambiguous",
+    # Three distinct client failures that must stay distinct: the endpoint
+    # was unreachable, it rejected the request (4xx -- wrong model name or
+    # an unsupported `response_format`), or it answered 200 with an
+    # envelope that did not parse. Collapsing them into "unavailable"
+    # pointed a Day 26 diagnosis at the server being down when its log
+    # showed every request returning 200.
     "llm_unavailable",
+    "llm_request_rejected",
+    "llm_bad_response",
     "llm_invalid_json",
     "llm_plan_invalid",
 ]

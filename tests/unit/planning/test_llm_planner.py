@@ -281,3 +281,46 @@ def test_grounded_raw_text_metric_resolves_against_the_shown_table() -> None:
     assert result.plan is not None
     assert result.plan.metric is not None
     assert result.plan.metric.raw_text == "Doanh thu thuần"
+
+
+def test_llm_planner_distinguishes_a_malformed_200_from_an_unreachable_endpoint() -> None:
+    """`except LLMError` lumped three distinct client failures under one code.
+    The Day 26 smoke run reported 8 questions as `llm_unavailable` while the
+    Ollama server log showed every request returning HTTP 200 -- the endpoint
+    was reachable and answering; its envelope just did not parse. Reporting
+    that as "unavailable" sends diagnosis down the wrong path entirely.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"unexpected": "envelope"})
+
+    result = build_plan(
+        _QUESTION,
+        client=_client(handler),
+        candidate_table_ids=_TABLE_IDS,
+        known_table_ids=_KNOWN_TABLES,
+    )
+
+    assert result.plan is None
+    assert "llm_bad_response" in result.abstain_codes
+    assert "llm_unavailable" not in result.abstain_codes
+
+
+def test_llm_planner_distinguishes_a_rejected_request_from_an_unreachable_endpoint() -> None:
+    """A 4xx means the request itself was wrong (bad model name, unsupported
+    `response_format`); restarting the server will not help, so it must not
+    read as an availability problem either."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "unsupported response_format"})
+
+    result = build_plan(
+        _QUESTION,
+        client=_client(handler),
+        candidate_table_ids=_TABLE_IDS,
+        known_table_ids=_KNOWN_TABLES,
+    )
+
+    assert result.plan is None
+    assert "llm_request_rejected" in result.abstain_codes
+    assert "llm_unavailable" not in result.abstain_codes

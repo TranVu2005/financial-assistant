@@ -20,7 +20,11 @@ from __future__ import annotations
 
 import json
 
-from financial_report_qa.core.errors import LLMError
+from financial_report_qa.core.errors import (
+    LLMError,
+    LLMRequestError,
+    LLMResponseError,
+)
 from financial_report_qa.planning.llm_client import ChatCompletionClient
 from financial_report_qa.planning.llm_contracts import LLMPlanOutput, to_financial_query_plan
 from financial_report_qa.planning.llm_prompt import (
@@ -39,6 +43,22 @@ _LLM_PLAN_JSON_SCHEMA: dict[str, object] = LLMPlanOutput.model_json_schema()
 
 class _InvalidJsonError(ValueError):
     """Raised when the raw LLM content is not parseable JSON at all."""
+
+
+def _client_failure_code(error: LLMError) -> PlanAbstainCode:
+    """Map a client failure to the abstain code that names what went wrong.
+
+    `llm_client` already separates these three; collapsing them under one
+    `except LLMError` threw that away. A Day 26 smoke run reported 8 questions
+    as `llm_unavailable` while the Ollama server log showed every request
+    returning HTTP 200 -- the endpoint was up and answering, so "unavailable"
+    sent the investigation at the server instead of at the envelope.
+    """
+    if isinstance(error, LLMResponseError):
+        return "llm_bad_response"
+    if isinstance(error, LLMRequestError):
+        return "llm_request_rejected"
+    return "llm_unavailable"
 
 
 def _abstain(code: PlanAbstainCode, *, repaired: bool = False) -> RulePlanResult:
@@ -97,8 +117,8 @@ def _run_llm_plan(
             user_prompt=user_prompt,
             json_schema=_LLM_PLAN_JSON_SCHEMA,
         )
-    except LLMError:
-        return _abstain("llm_unavailable")
+    except LLMError as exc:
+        return _abstain(_client_failure_code(exc))
 
     try:
         plan = _parse_and_validate(
@@ -114,8 +134,8 @@ def _run_llm_plan(
             user_prompt=_repair_user_prompt(user_prompt, raw_content, first_error_message),
             json_schema=_LLM_PLAN_JSON_SCHEMA,
         )
-    except LLMError:
-        return _abstain("llm_unavailable", repaired=True)
+    except LLMError as exc:
+        return _abstain(_client_failure_code(exc), repaired=True)
 
     try:
         plan = _parse_and_validate(
