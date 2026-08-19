@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling==1.31.0"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -37,7 +37,7 @@ normalization-audit = "financial_report_qa.evaluation.normalization_audit_cli:ma
 
 [project.optional-dependencies]
 dev = [
-    "hatchling==1.31.0",
+    "hatchling==1.32.0",
     "hypothesis>=6.120,<7",
     "jupyterlab>=4.4,<5",
     "matplotlib>=3.10,<4",
