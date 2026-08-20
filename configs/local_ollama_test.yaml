@@ -1,6 +1,6 @@
 llm:
   base_url: http://127.0.0.1:11434/v1
-  model: qwen2.5:3b
+  model: qwen3:4b-instruct-2507-q4_K_M
   timeout_seconds: 30
   max_output_tokens: 160
   temperature: 0.0

@@ -9,8 +9,14 @@ from collections.abc import Sequence
 from decimal import Decimal
 from json import JSONDecodeError
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
+
+if TYPE_CHECKING:
+    from financial_report_qa.retrieval.dense_encoder import DenseEncoder
+    from financial_report_qa.retrieval.release import ResolvedRetrievalRelease
+    from financial_report_qa.retrieval.row_dense_service import RowDenseRetrievalService
 
 from financial_report_qa.core.config import load_execution_settings, load_llm_settings
 from financial_report_qa.core.errors import (
@@ -63,6 +69,50 @@ def _parser() -> argparse.ArgumentParser:
     export.add_argument("--report-dir", type=Path, required=True)
     export.add_argument("--k", type=int, default=10)
     export.add_argument(
+        "--row-dense-corpus",
+        type=Path,
+        default=None,
+        help="Row dense corpus dir from `retrieval build-dense-corpus` (the "
+        "'row_corpus' sibling of the table 'corpus' dir). Requires "
+        "--row-dense-index and --dense-encoder too; row fusion falls back to "
+        "bm25+fuzzy+alias only (dense weight 0) when any of the three is omitted.",
+    )
+    export.add_argument(
+        "--row-dense-index",
+        type=Path,
+        default=None,
+        help="Row dense FAISS index dir from `retrieval build-dense-index` "
+        "(the '..._row' sibling of the table dense index dir).",
+    )
+    export.add_argument(
+        "--dense-encoder",
+        choices=("bge-m3", "multilingual-e5-small"),
+        default=None,
+        help="Encoder the --row-dense-index was built with (must match its manifest).",
+    )
+    export.add_argument(
+        "--dense-cache-dir",
+        type=Path,
+        default=None,
+        help="Query embedding cache dir (default: --row-dense-index parent / 'query-cache').",
+    )
+    export.add_argument(
+        "--dense-local-files-only",
+        action="store_true",
+        help="Never fetch the dense encoder from the network; require a local HF cache hit.",
+    )
+    export.add_argument(
+        "--dense-weight",
+        type=float,
+        default=0.0,
+        help="Row-fusion weight for the dense branch (default 0.0, i.e. off, even when "
+        "--row-dense-corpus/--row-dense-index/--dense-encoder are all given). plan.md §20's "
+        "row-recall benchmark (58 gold questions, dense weight 0.5) measured dense making "
+        "Row Recall@3/@5 *worse* than bm25+fuzzy+alias alone (74.1%->67.2%, 82.8%->74.1%; "
+        "@1/@10 unchanged) -- re-measure with `retrieval.row_recall_evaluation` before "
+        "raising this above 0.",
+    )
+    export.add_argument(
         "--allow-inferred-scope",
         action="store_true",
         help=(
@@ -93,6 +143,63 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _load_row_dense_service(
+    args: argparse.Namespace,
+    release: ResolvedRetrievalRelease,
+    *,
+    encoder: DenseEncoder | None = None,
+) -> RowDenseRetrievalService | None:
+    """Load the row dense retrieval branch from `--row-dense-corpus`/
+    `--row-dense-index`/`--dense-encoder`, or return `None` if any of the
+    three is missing or fails to load (row fusion then just runs without
+    the dense branch -- dense weight 0 in `RowFusionWeights` degrades
+    exactly to the pre-dense-wiring bm25+fuzzy+alias behavior).
+
+    `encoder` is an injection seam for tests -- production always leaves it
+    `None` and gets the real pinned `SentenceTransformerDenseEncoder`."""
+    if args.row_dense_corpus is None or args.row_dense_index is None or args.dense_encoder is None:
+        return None
+
+    from financial_report_qa.retrieval.dense_cache import QueryEmbeddingCache
+    from financial_report_qa.retrieval.dense_encoder import (
+        SentenceTransformerDenseEncoder,
+        approved_encoder_spec,
+        encoder_spec_sha256,
+    )
+    from financial_report_qa.retrieval.row_dense_corpus import load_row_dense_corpus
+    from financial_report_qa.retrieval.row_dense_index import load_row_dense_index
+    from financial_report_qa.retrieval.row_dense_service import RowDenseRetrievalService
+
+    try:
+        row_corpus = load_row_dense_corpus(
+            args.row_dense_corpus, release_lock_sha256=release.lock_sha256
+        )
+        if row_corpus.manifest.dataset_fingerprint != release.dataset_fingerprint:
+            print(
+                "Warning: --row-dense-corpus dataset_fingerprint does not match "
+                "--release-lock; skipping row dense retrieval",
+                file=sys.stderr,
+            )
+            return None
+        if encoder is None:
+            spec = approved_encoder_spec(args.dense_encoder)
+            encoder = SentenceTransformerDenseEncoder(
+                spec, local_files_only=args.dense_local_files_only
+            )
+        row_dense_index = load_row_dense_index(
+            args.row_dense_index,
+            row_corpus,
+            expected_encoder_spec_sha256=encoder_spec_sha256(encoder.spec),
+            release_lock_sha256=release.lock_sha256,
+        )
+        cache_dir = args.dense_cache_dir or (args.row_dense_index.parent / "query-cache")
+        cache = QueryEmbeddingCache(cache_dir, encoder.spec)
+        return RowDenseRetrievalService(row_dense_index, encoder, cache)
+    except Exception as e:
+        print(f"Warning: Failed to load row dense index: {e}", file=sys.stderr)
+        return None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -108,6 +215,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             execution_settings = load_execution_settings(args.execution_config)
             questions = load_raw_questions(args.questions_path)
 
+            # Load row BM25 index and initialize row fusion if available
+            row_index_dir = args.bm25_index.parent / f"{args.bm25_index.name}_row"
+            row_fusion = None
+            if row_index_dir.is_dir():
+                from financial_report_qa.retrieval.row_fusion import RowFusionService
+                from financial_report_qa.retrieval.row_fusion_contracts import RowFusionWeights
+                from financial_report_qa.retrieval.row_index import load_row_bm25_index
+                from financial_report_qa.retrieval.row_lexical import (
+                    RowAliasRetrievalService,
+                    RowFuzzyRetrievalService,
+                )
+                from financial_report_qa.retrieval.row_service import RowRetrievalService
+
+                try:
+                    row_index = load_row_bm25_index(
+                        row_index_dir, release_lock_sha256=release.lock_sha256
+                    )
+                    row_service = RowRetrievalService(row_index)
+                    # Dense (plan.md §7) is opt-in via --row-dense-corpus/
+                    # --row-dense-index/--dense-encoder; loading it still
+                    # defaults to weight 0.0 (--dense-weight) -- plan.md §20's
+                    # benchmark measured 0.5 making Row Recall@3/@5 worse,
+                    # not better, than bm25+fuzzy+alias alone.
+                    row_dense_service = _load_row_dense_service(args, release)
+                    row_fusion = RowFusionService(
+                        bm25=row_service,
+                        dense=row_dense_service,
+                        weights=RowFusionWeights(
+                            bm25=1.0, dense=args.dense_weight, fuzzy=0.3, alias=0.2
+                        ),
+                        fuzzy=RowFuzzyRetrievalService(row_index),
+                        alias=RowAliasRetrievalService(row_index),
+                    )
+                except Exception as e:
+                    print(f"Warning: Failed to load row BM25 index: {e}", file=sys.stderr)
+
             if args.llm_config is not None:
                 llm_settings = load_llm_settings(args.llm_config)
                 with LLMClient(llm_settings) as llm_client:
@@ -119,6 +262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         dataset_fingerprint=release.dataset_fingerprint,
                         k=args.k,
                         llm_client=llm_client,
+                        row_fusion=row_fusion,
                         allow_inferred_scope=args.allow_inferred_scope,
                     )
             else:
@@ -129,6 +273,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     execution_settings=execution_settings,
                     dataset_fingerprint=release.dataset_fingerprint,
                     k=args.k,
+                    row_fusion=row_fusion,
                     allow_inferred_scope=args.allow_inferred_scope,
                 )
             sha256 = write_submission_zip(items, csv_rows, args.output_zip)

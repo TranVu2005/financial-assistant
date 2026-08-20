@@ -28,6 +28,25 @@ class ResolvedRetrievalRelease:
     lock_sha256: str
 
 
+def _find_main_repo_root(repo_root: Path) -> Path | None:
+    git_file = repo_root / ".git"
+    if git_file.is_file():
+        try:
+            content = git_file.read_text(encoding="utf-8").strip()
+            if content.startswith("gitdir:"):
+                gitdir_str = content.split(":", 1)[1].strip()
+                gitdir_path = Path(gitdir_str)
+                if not gitdir_path.is_absolute():
+                    gitdir_path = (repo_root / gitdir_path).resolve()
+                else:
+                    gitdir_path = gitdir_path.resolve()
+                if len(gitdir_path.parents) >= 3:
+                    return gitdir_path.parents[2].resolve()
+        except Exception:
+            pass
+    return None
+
+
 def _resolve_repo_path(repo_root: Path, relative_path: str, *, label: str) -> Path:
     path = Path(relative_path)
     if path.is_absolute() or ".." in path.parts:
@@ -36,8 +55,16 @@ def _resolve_repo_path(repo_root: Path, relative_path: str, *, label: str) -> Pa
     try:
         resolved.relative_to(repo_root.resolve())
     except ValueError as exc:
+        main_root = _find_main_repo_root(repo_root)
+        if main_root:
+            try:
+                resolved.relative_to(main_root)
+                return resolved
+            except ValueError:
+                pass
         raise RetrievalReleaseError(f"{label} escapes repository root") from exc
     return resolved
+
 
 
 def resolve_retrieval_release(lock_path: Path, *, repo_root: Path) -> ResolvedRetrievalRelease:

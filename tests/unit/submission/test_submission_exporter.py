@@ -631,3 +631,153 @@ def test_write_submission_zip_is_deterministic_and_replayable(tmp_path: Path) ->
         payload = json.loads(archive.read("submission.json"))
         assert payload[0]["id"] == 1
         assert "data/q000001_df1.csv" in names
+
+
+def test_export_submission_with_row_fusion(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+
+    from financial_report_qa.retrieval.row_fusion import RowFusionService
+    from financial_report_qa.retrieval.row_fusion_contracts import RowFusionTrace, RowFusionWeights
+
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=1, question="Tra cứu doanh thu thuần của ACB năm 2023.")
+
+    # 1. Test when row_fusion is None (backward compatibility check)
+    report, items, _ = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        row_fusion=None,
+    )
+    assert report.answered_count == 1
+
+    # 2. Test when row_fusion is a mock service. It should be called during planning fallback.
+    # To force fallback to LLM planners (where row_fusion results are actually used),
+    # we use a question that the rule planner is guaranteed to abstain on (e.g. unknown metric).
+    unsupported_question = RawQuestion(id=2, question="Tra cứu chỉ số không tồn tại của ACB năm 2023.")
+
+    mock_fusion = MagicMock(spec=RowFusionService)
+    # Set up mock to return an empty trace
+    mock_fusion.retrieve_rows.return_value = RowFusionTrace(
+        query=unsupported_question.question,
+        weights=RowFusionWeights(bm25=1, dense=1),
+        candidate_table_ids=(TABLE_ID,),
+        bm25_candidate_count=0,
+        dense_candidate_count=0,
+        results=(),
+    )
+
+    # Note: LLM client is needed because LLM fallback only executes when llm_client is not None.
+    # We mock LLM client to return a dummy json choice.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choice": 0})
+
+    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
+
+    export_submission(
+        [unsupported_question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        llm_client=llm_client,
+        row_fusion=mock_fusion,
+    )
+
+    # Verify retrieve_rows was called exactly once on our mock
+    mock_fusion.retrieve_rows.assert_called_once_with(
+        unsupported_question.question, candidate_table_ids=(TABLE_ID,)
+    )
+
+
+def test_export_submission_semantic_grounding_recovery(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+
+    from financial_report_qa.retrieval.row_documents import RowMetadata
+    from financial_report_qa.retrieval.row_fusion import RowFusionService
+    from financial_report_qa.retrieval.row_fusion_contracts import (
+        RowFusedCandidate,
+        RowFusionTrace,
+        RowFusionWeights,
+    )
+
+    release_dir = _write_release(tmp_path)
+
+    # We want rule planner to abstain (by passing a question that metric parser cannot canonically map)
+    # so that LLM cell grounding gets invoked.
+    unsupported_question = RawQuestion(id=11, question="Tra cứu chỉ số không rõ ràng của ACB năm 2023.")
+
+    # Top candidates from row fusion:
+    # 1. "Doanh thu ao" (which will fail compile with metric_not_found)
+    # 2. "Doanh thu thuan" (which exists in release cells and will succeed compile)
+    candidates = (
+        RowFusedCandidate(
+            row_id=f"{TABLE_ID}|row_99",
+            table_id=TABLE_ID,
+            row_idx=99,
+            rank=1,
+            fused_score=0.9,
+            metadata=RowMetadata(table_id=TABLE_ID, row_idx=99, row_label_raw="Doanh thu ao"),
+            snippet="dummy",
+        ),
+        RowFusedCandidate(
+            row_id=f"{TABLE_ID}|row_0",
+            table_id=TABLE_ID,
+            row_idx=0,
+            rank=2,
+            fused_score=0.8,
+            metadata=RowMetadata(table_id=TABLE_ID, row_idx=0, row_label_raw="Doanh thu thuan"),
+            snippet="dummy",
+        ),
+    )
+
+    mock_fusion = MagicMock(spec=RowFusionService)
+    mock_fusion.retrieve_rows.return_value = RowFusionTrace(
+        query=unsupported_question.question,
+        weights=RowFusionWeights(bm25=1, dense=0),
+        candidate_table_ids=(TABLE_ID,),
+        bm25_candidate_count=2,
+        dense_candidate_count=0,
+        results=candidates,
+    )
+
+    # Mock LLM to choose option 1: "Doanh thu ao" (index 1)
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"choice": 1}'
+                    }
+                }
+            ]
+        }
+        return httpx.Response(200, json=payload)
+
+    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
+
+    report, items, csv_rows = export_submission(
+        [unsupported_question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        llm_client=llm_client,
+        row_fusion=mock_fusion,
+    )
+
+    # It must have successfully recovered using candidate switching to option 2 "Doanh thu thuan"
+    assert report.answered_count == 1
+    assert report.outcomes[0].status == "answered"
+    assert report.outcomes[0].plan_source == "llm_cell_grounded_recovered"
+    # plan.md §9: the accepted row's own fused_score, not the rejected
+    # "Doanh thu ao" candidate's.
+    assert report.outcomes[0].grounding_score == 0.8
+    assert len(items) == 1
+    assert items[0].answer == Decimal("100")
+

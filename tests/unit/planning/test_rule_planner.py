@@ -223,3 +223,15 @@ def test_candidate_table_id_unknown_to_release_abstains() -> None:
     )
     assert result.plan is None
     assert result.abstain_codes == ("operation_unknown",)
+
+
+def test_compare_two_metrics_difference() -> None:
+    result = _plan_for("Chênh lệch giữa tài sản ngắn hạn và nợ phải trả của FPT năm 2021 là bao nhiêu?")
+    assert result.plan is not None
+    assert result.plan.operation == "compare"
+    assert result.plan.companies == ("FPT",)
+    assert result.plan.periods == ("2021",)
+    assert result.plan.metric_a is not None
+    assert result.plan.metric_a.canonical == "current_assets"
+    assert result.plan.metric_b is not None
+    assert result.plan.metric_b.canonical == "total_liabilities"

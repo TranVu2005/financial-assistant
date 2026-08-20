@@ -23,6 +23,7 @@ from financial_report_qa.planning.plan_contracts import (
     FinancialQueryPlan,
     MetricSelector,
     PlanOperation,
+    map_requested_unit,
 )
 from financial_report_qa.planning.plan_validator import validate_plan_semantics
 from financial_report_qa.retrieval.contracts import TableId, _FrozenModel
@@ -47,21 +48,8 @@ PlanAbstainCode = Literal[
 ]
 
 _GROWTH_KEYWORDS = ("tăng trưởng", "biến động", "tốc độ")
-
-# Day 23 plan Step 2: measured 25/26 real 2-metric, 1-company, 1-period
-# questions in the official 1.012-question set are this exact "A trên/trong
-# B" ratio shape (e.g. ROA phrasing); 0/26 are the no-keyword `compare`
-# shape, so `compare` is deliberately not inferred here -- no measured
-# evidence to route on.
-_RATIO_KEYWORDS = ("tỷ lệ", "tỷ trọng", "tỷ số", "phần trăm", "%")
-
 _AGGREGATE_AVERAGE_KEYWORDS = ("trung bình", "bình quân")
 _AGGREGATE_SUM_KEYWORDS = ("tổng cộng", "tổng giá trị", "tổng số", "tổng ")
-# Composite/rank ("company with the highest X") and count ("how many
-# companies satisfy...") questions are a different shape than a flat
-# average/sum: Day 23 plan Step 2 measured 6/35 and 4/35 real multi-company
-# candidates are these shapes respectively -- silently averaging/summing
-# anyway would answer a different question than asked.
 _AGGREGATE_EXCLUDE_KEYWORDS = (
     "cao nhất",
     "thấp nhất",
@@ -76,6 +64,36 @@ _AGGREGATE_EXCLUDE_KEYWORDS = (
     "số công ty",
     "số doanh nghiệp",
 )
+
+
+def _infer_aggregate_operation(question: str) -> PlanOperation | None:
+    lowered = question.lower()
+    if any(keyword in lowered for keyword in _AGGREGATE_EXCLUDE_KEYWORDS):
+        return None
+    has_average = any(keyword in lowered for keyword in _AGGREGATE_AVERAGE_KEYWORDS)
+    has_sum = any(keyword in lowered for keyword in _AGGREGATE_SUM_KEYWORDS)
+    if has_average and not has_sum:
+        return "average"
+    if has_sum and not has_average:
+        return "sum"
+    return None
+
+
+def _infer_operation(question: str, *, n_companies: int, n_periods: int) -> PlanOperation | None:
+    if n_companies == 2 and n_periods == 1:
+        return "compare_companies"
+    if n_companies == 1 and n_periods == 1:
+        return "lookup"
+    if n_companies == 1 and n_periods == 2:
+        lowered = question.lower()
+        if any(keyword in lowered for keyword in _GROWTH_KEYWORDS):
+            return "growth_rate"
+        return "difference"
+    if n_companies == 1 and n_periods >= 3:
+        return _infer_aggregate_operation(question)
+    if n_companies >= 3 and n_periods == 1:
+        return _infer_aggregate_operation(question)
+    return None
 
 
 class RulePlanResult(_FrozenModel):
@@ -102,47 +120,6 @@ def _abstain(code: PlanAbstainCode) -> RulePlanResult:
     return RulePlanResult(abstain_codes=(code,))
 
 
-def _infer_aggregate_operation(question: str) -> PlanOperation | None:
-    """average vs sum, from keyword; `None` for neither, both (ambiguous), or
-    a composite/rank/count shape this operation does not model (Day 23 plan
-    Step 2)."""
-    lowered = question.lower()
-    if any(keyword in lowered for keyword in _AGGREGATE_EXCLUDE_KEYWORDS):
-        return None
-    has_average = any(keyword in lowered for keyword in _AGGREGATE_AVERAGE_KEYWORDS)
-    has_sum = any(keyword in lowered for keyword in _AGGREGATE_SUM_KEYWORDS)
-    if has_average and not has_sum:
-        return "average"
-    if has_sum and not has_average:
-        return "sum"
-    return None
-
-
-def _infer_operation(question: str, *, n_companies: int, n_periods: int) -> PlanOperation | None:
-    # Exactly 2, not >= 2: `compile_compare_companies` (execution/compiler.py)
-    # only ever reads `companies[0]`/`companies[1]` -- routing a 3+-company
-    # question here would silently drop every company past the first two and
-    # answer a two-way difference the question never asked for.
-    if n_companies == 2 and n_periods == 1:
-        return "compare_companies"
-    if n_companies == 1 and n_periods == 1:
-        return "lookup"
-    if n_companies == 1 and n_periods == 2:
-        lowered = question.lower()
-        if any(keyword in lowered for keyword in _GROWTH_KEYWORDS):
-            return "growth_rate"
-        return "difference"
-    # `_validate_aggregate` requires exactly one of (companies, periods) to
-    # vary (len > 1) with the other pinned to a single value -- both shapes
-    # below satisfy that and `execution/compiler.py`'s average/sum dispatch
-    # implements both (Day 23 plan Step 2).
-    if n_companies == 1 and n_periods >= 3:
-        return _infer_aggregate_operation(question)
-    if n_companies >= 3 and n_periods == 1:
-        return _infer_aggregate_operation(question)
-    return None
-
-
 def _build_ratio_plan(
     entities: QueryEntities, *, candidate_table_ids: tuple[TableId, ...]
 ) -> FinancialQueryPlan | None:
@@ -152,8 +129,6 @@ def _build_ratio_plan(
     falls back to the existing `multi_metric_unsupported` abstain, never a
     guess."""
     if len(entities.company_codes) != 1 or len(entities.periods) != 1:
-        return None
-    if not any(keyword in entities.question.lower() for keyword in _RATIO_KEYWORDS):
         return None
     ordered = ordered_metric_canonicals(entities)
     if len(ordered) != 2:
@@ -196,27 +171,66 @@ def build_plan(
 
     periods = entities.periods
     metrics = entities.metrics
+    metric_phrases = entities.metric_phrases
 
     if any(not _PERIOD_PATTERN.match(period) for period in periods):
         return _abstain("period_grammar_unsupported")
 
-    if len(metrics) == 2:
-        ratio_plan = _build_ratio_plan(entities, candidate_table_ids=candidate_table_ids)
-        if ratio_plan is None or validate_plan_semantics(
-            ratio_plan, known_table_ids=known_table_ids
-        ):
-            return _abstain("multi_metric_unsupported")
-        return RulePlanResult(plan=ratio_plan)
-    if len(metrics) != 1:
-        return _abstain("multi_metric_unsupported")
+    target_metrics = metrics if metrics else metric_phrases
+    n_metrics = len(target_metrics)
 
-    operation = _infer_operation(
-        entities.question, n_companies=len(entities.company_codes), n_periods=len(periods)
-    )
+    operation = entities.operation
+    if operation is None:
+        operation = _infer_operation(
+            entities.question, n_companies=len(entities.company_codes), n_periods=len(periods)
+        )
     if operation is None:
         return _abstain("operation_unknown")
 
-    metric_selector = _metric_selector(entities, metrics[0])
+    # Map difference of 2 metrics to compare
+    if operation == "difference" and n_metrics == 2:
+        operation = "compare"
+
+    # Build ratio plan
+    if operation == "ratio":
+        if len(metrics) == 2:
+            ratio_plan = _build_ratio_plan(entities, candidate_table_ids=candidate_table_ids)
+            if ratio_plan is not None and not validate_plan_semantics(
+                ratio_plan, known_table_ids=known_table_ids
+            ):
+                return RulePlanResult(plan=ratio_plan)
+        return _abstain("multi_metric_unsupported")
+
+    # Build compare plan
+    if operation == "compare":
+        if n_metrics != 2:
+            return _abstain("multi_metric_unsupported")
+        metric_a_val = metrics[0] if metrics else metric_phrases[0]
+        metric_b_val = metrics[1] if len(metrics) > 1 else metric_phrases[1]
+        try:
+            plan = FinancialQueryPlan(
+                operation="compare",
+                companies=entities.company_codes,
+                periods=periods,
+                candidate_table_ids=candidate_table_ids,
+                metric_a=_metric_selector(entities, metric_a_val),
+                metric_b=_metric_selector(entities, metric_b_val),
+                expected_unit=map_requested_unit(entities.requested_unit),
+                statement_scope=entities.statement_scope,
+            )
+        except ValueError:
+            return _abstain("operation_unknown")
+
+        if validate_plan_semantics(plan, known_table_ids=known_table_ids):
+            return _abstain("operation_unknown")
+        return RulePlanResult(plan=plan)
+
+    # For other operations, we expect exactly 1 metric
+    if n_metrics != 1:
+        return _abstain("multi_metric_unsupported")
+
+    metric_val = metrics[0] if metrics else metric_phrases[0]
+    metric_selector = _metric_selector(entities, metric_val)
     try:
         plan = FinancialQueryPlan(
             operation=operation,
@@ -224,6 +238,7 @@ def build_plan(
             periods=periods,
             candidate_table_ids=candidate_table_ids,
             metric=metric_selector,
+            expected_unit=map_requested_unit(entities.requested_unit),
             statement_scope=entities.statement_scope,
         )
     except ValueError:

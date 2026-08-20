@@ -17,6 +17,7 @@ from typing import Literal
 from financial_report_qa.planning import llm_planner, rule_planner
 from financial_report_qa.planning.entity_contracts import QueryEntities
 from financial_report_qa.planning.llm_client import ChatCompletionClient
+from financial_report_qa.planning.plan_contracts import map_requested_unit
 from financial_report_qa.planning.rule_planner import RulePlanResult
 from financial_report_qa.retrieval.contracts import TableId, _FrozenModel
 
@@ -50,4 +51,12 @@ def route_plan(
         candidate_table_ids=candidate_table_ids,
         known_table_ids=known_table_ids,
     )
+    if llm_result.plan is not None:
+        plan = llm_result.plan
+        if plan.expected_unit is None and entities.requested_unit:
+            mapped_unit = map_requested_unit(entities.requested_unit)
+            if mapped_unit:
+                plan = plan.model_copy(update={"expected_unit": mapped_unit})
+                llm_result = RulePlanResult(plan=plan, abstain_codes=llm_result.abstain_codes)
+
     return RoutedPlanResult(result=llm_result, source="llm")

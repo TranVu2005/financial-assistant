@@ -130,6 +130,7 @@ def test_longest_metric_alias_wins_over_a_shorter_substring() -> None:
 def test_unknown_metric_phrase_is_flagged() -> None:
     entities = parse_query_entities("Tra cứu tổng lợi thế cạnh tranh của DBC năm 2023.")
     assert entities.metrics == ()
+    assert entities.metric_phrases == ("tổng lợi thế cạnh tranh",)
     assert entities.ambiguity == ("metric_unknown",)
 
 
@@ -274,3 +275,57 @@ def test_year_modifier_does_not_swallow_an_unrelated_number() -> None:
     arbitrary span, or a note reference would masquerade as a period."""
     entities = parse_query_entities("Thuyết minh số 2023 của DBC năm 2022 là gì?")
     assert entities.periods == ("2022",)
+
+
+def test_metric_phrases_extraction_single_metric() -> None:
+    entities = parse_query_entities("Doanh thu thuần của VNM năm 2023 là bao nhiêu?")
+    assert entities.metric_phrases == ("Doanh thu thuần",)
+    assert entities.metric_phrase == "Doanh thu thuần"
+    assert entities.operation == "lookup"
+    assert entities.requested_unit is None
+
+
+def test_metric_phrases_extraction_unregistered_metric() -> None:
+    entities = parse_query_entities("Tra cứu biên lợi nhuận gộp của HPG trong năm 2022?")
+    assert entities.metric_phrases == ("biên lợi nhuận gộp",)
+    assert entities.metric_phrase == "biên lợi nhuận gộp"
+    assert entities.operation == "lookup"
+    assert entities.requested_unit is None
+
+
+def test_metric_phrases_multiple_metrics() -> None:
+    entities = parse_query_entities(
+        "Tổng tài sản ngắn hạn và nợ phải trả của FPT năm 2021 chênh lệch bao nhiêu?"
+    )
+    assert entities.metric_phrases == ("Tổng tài sản ngắn hạn", "nợ phải trả")
+    assert entities.operation == "difference"
+    assert entities.requested_unit is None
+
+
+def test_operation_inference_ratio() -> None:
+    entities = parse_query_entities(
+        "Lợi nhuận sau thuế trên tổng tài sản năm 2023 của VNM là bao nhiêu phần trăm?"
+    )
+    assert entities.operation == "ratio"
+    assert entities.requested_unit == "percent"
+
+
+def test_operation_inference_aggregate_sum() -> None:
+    entities = parse_query_entities("Tính tổng cộng doanh thu thuần của VNM từ năm 2020 đến 2023?")
+    assert entities.operation == "sum"
+
+
+def test_operation_inference_aggregate_average() -> None:
+    entities = parse_query_entities("Tính trung bình doanh thu thuần của VNM từ năm 2020 đến 2023?")
+    assert entities.operation == "average"
+
+
+def test_requested_unit_percent() -> None:
+    entities = parse_query_entities("Tỷ lệ tăng trưởng doanh thu là bao nhiêu %?")
+    assert entities.requested_unit == "percent"
+
+
+def test_requested_unit_billion() -> None:
+    entities = parse_query_entities("Doanh thu thuần của VNM năm 2023 là bao nhiêu tỷ đồng?")
+    assert entities.requested_unit == "billion_vnd"
+

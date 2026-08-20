@@ -79,15 +79,22 @@ class ParsedSpan(_FrozenModel):
 class QueryEntities(_FrozenModel):
     """Deterministic entity-parser output for one natural-language question."""
 
-    parser_version: Literal["entity-parser-v1"] = "entity-parser-v1"
+    parser_version: Literal["entity-parser-v1", "entity-parser-v2"] = "entity-parser-v2"
     question: NonEmptyString
     company_codes: tuple[str, ...] = ()
     periods: tuple[str, ...] = ()
     metrics: tuple[str, ...] = ()
+    metric_phrases: tuple[str, ...] = ()
+    operation: str | None = None
+    requested_unit: str | None = None
     statement_types: tuple[str, ...] = ()
     statement_scope: StatementScope | None = None
     ambiguity: tuple[AmbiguityCode, ...] = ()
     spans: tuple[ParsedSpan, ...] = ()
+
+    @property
+    def metric_phrase(self) -> str | None:
+        return self.metric_phrases[0] if self.metric_phrases else None
 
     @field_validator("company_codes", "periods", "metrics", "statement_types")
     @classmethod

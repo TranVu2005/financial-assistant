@@ -45,6 +45,23 @@ PlanOperation = Literal[
 
 ExpectedUnit = Literal["VND", "VND_thousand", "VND_million", "VND_billion", "percent", "ratio"]
 
+
+def map_requested_unit(req_unit: str | None) -> ExpectedUnit | None:
+    if not req_unit:
+        return None
+    mapping: dict[str, ExpectedUnit] = {
+        "vnd": "VND",
+        "VND": "VND",
+        "VND_thousand": "VND_thousand",
+        "million_vnd": "VND_million",
+        "VND_million": "VND_million",
+        "billion_vnd": "VND_billion",
+        "VND_billion": "VND_billion",
+        "percent": "percent",
+        "ratio": "ratio",
+    }
+    return mapping.get(req_unit)
+
 # Day 21 plan §1.3/§1.4: `documents.statement_scope` distinguishes separate
 # ("riêng"/"công ty mẹ") from consolidated ("hợp nhất") reports; 64.9% of
 # (company, period, metric) groups exist in both with 92.8% disagreeing in

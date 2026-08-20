@@ -149,6 +149,23 @@ def compile_plan(
 
     try:
         evidence, replay_rows, answer, unit = _dispatch(plan, frame, period)
+        if plan.expected_unit is not None and unit is not None and plan.expected_unit != unit:
+            orig_unit = unit
+            answer = operations.convert_cell_value(answer, orig_unit, plan.expected_unit)
+            unit = plan.expected_unit
+
+            from financial_report_qa.normalization.units import _MONETARY_UNITS, unit_multiplier
+            if orig_unit in _MONETARY_UNITS:
+                factor = unit_multiplier(orig_unit) / unit_multiplier(plan.expected_unit)
+                updated_rows = []
+                for row in replay_rows:
+                    new_row = dict(row)
+                    new_row["value"] = row["value"] * factor
+                    updated_rows.append(new_row)
+                replay_rows = updated_rows
+            else:
+                factor = unit_multiplier(orig_unit) / unit_multiplier(plan.expected_unit)
+                query = f"({query}) * {factor}"
     except _CompileFailure as failure:
         return _error(plan.operation, failure.code, failure.message, query)
     except ValueError as exc:

@@ -234,3 +234,54 @@ def choose_column_label(
     if choice is None:
         return None
     return candidates[choice - 1]
+
+
+_CONTEXT_SYSTEM_PROMPT = (
+    "Bạn là trợ lý đọc báo cáo tài chính Việt Nam. Bạn sẽ nhận một câu hỏi, "
+    "NỘI DUNG BẢNG BÀI BÁO CÁO TÀI CHÍNH, và một danh sách nhãn dòng ĐÃ ĐÁNH SỐ.\n\n"
+    "Nhiệm vụ của bạn: Sử dụng nội dung bảng và ngữ cảnh xung quanh để chọn "
+    "nhãn dòng chứa số liệu câu hỏi cần.\n\n"
+    "Quy tắc:\n"
+    '- Trả về DUY NHẤT một JSON object dạng {"choice": <số thứ tự>}.\n'
+    '- Nếu không nhãn nào đúng, dùng {"choice": 0}.\n'
+    "- Chỉ chọn trong danh sách nhãn dòng có sẵn."
+)
+
+
+def _build_context_user_prompt(question: str, labels: Sequence[str], table_context: str) -> str:
+    numbered = "\n".join(f"{index}. {label}" for index, label in enumerate(labels, start=1))
+    return (
+        f"Ngữ cảnh bảng biểu:\n{table_context}\n\n"
+        f"Câu hỏi: {question}\n\n"
+        f"Các nhãn dòng có thật:\n{numbered}\n\n"
+        "Số thứ tự:"
+    )
+
+
+def choose_row_label_with_context(
+    question: str,
+    labels: Sequence[str],
+    table_context: str,
+    *,
+    client: ChatCompletionClient,
+) -> str | None:
+    """Return the one row label the LLM picks under the assistance of table
+    context metadata, or `None`."""
+    candidates = _candidate_rows_for_prompt(question, labels)
+    if not candidates:
+        return None
+
+    try:
+        content = client.complete_json(
+            system_prompt=_CONTEXT_SYSTEM_PROMPT,
+            user_prompt=_build_context_user_prompt(question, candidates, table_context),
+            json_schema=_CHOICE_SCHEMA,
+        )
+    except LLMError:
+        return None
+
+    choice = _parse_choice(content, len(candidates))
+    if choice is None:
+        return None
+    return candidates[choice - 1]
+

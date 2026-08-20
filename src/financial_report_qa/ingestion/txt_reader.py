@@ -29,6 +29,25 @@ _NOTES_HEADINGS = {
 }
 
 
+def _find_main_repo_root(repo_root: Path) -> Path | None:
+    git_file = repo_root / ".git"
+    if git_file.is_file():
+        try:
+            content = git_file.read_text(encoding="utf-8").strip()
+            if content.startswith("gitdir:"):
+                gitdir_str = content.split(":", 1)[1].strip()
+                gitdir_path = Path(gitdir_str)
+                if not gitdir_path.is_absolute():
+                    gitdir_path = (repo_root / gitdir_path).resolve()
+                else:
+                    gitdir_path = gitdir_path.resolve()
+                if len(gitdir_path.parents) >= 3:
+                    return gitdir_path.parents[2].resolve()
+        except Exception:
+            pass
+    return None
+
+
 def _safe_source_path(root: Path, document: DocumentRecord) -> Path:
     try:
         root_resolved = root.resolve()
@@ -39,8 +58,11 @@ def _safe_source_path(root: Path, document: DocumentRecord) -> Path:
             f"cannot resolve {document.relative_path}: {type(error).__name__} errno={errno}"
         ) from error
     if not source.is_relative_to(root_resolved):
-        raise InvalidSourceDocumentError("source path escapes snapshot root")
+        main_root = _find_main_repo_root(root)
+        if not (main_root and source.is_relative_to(main_root)):
+            raise InvalidSourceDocumentError("source path escapes snapshot root")
     return source
+
 
 
 def _read_verified_bytes(path: Path, document: DocumentRecord) -> bytes:

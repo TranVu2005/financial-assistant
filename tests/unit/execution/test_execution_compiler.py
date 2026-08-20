@@ -914,3 +914,86 @@ def test_compile_plan_answered_result_has_scope_inferred_false_by_default(tmp_pa
     result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
     assert result.status == "answered"
     assert result.scope_inferred is False
+
+
+def test_compile_plan_performs_unit_scale_conversion(tmp_path: Path) -> None:
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="Doanh thu",
+                row_label_canonical="net_revenue",
+                value_numeric="5000",
+                period="2023",
+                unit="VND_million",
+            )
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="net_revenue"),
+        expected_unit="VND_billion",
+    )
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "answered"
+    assert result.answer == Decimal("5")
+    assert result.unit == "VND_billion"
+
+
+def test_compile_plan_rejects_incompatible_unit_conversion(tmp_path: Path) -> None:
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "cell_" + "a" * 64,
+                TABLE_ID,
+                1,
+                1,
+                row_label_raw="Biên lợi nhuận",
+                row_label_canonical="profit_after_tax",
+                value_numeric="0.45",
+                period="2023",
+                unit="percent",
+            )
+        ],
+    )
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="profit_after_tax"),
+        expected_unit="VND",
+    )
+    result = compile_plan(plan, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "error"
+    assert result.error_code == "unit_incompatible"
+
+
+def test_planners_propagate_expected_unit() -> None:
+    from financial_report_qa.planning.entity_contracts import QueryEntities
+    from financial_report_qa.planning.rule_planner import build_plan
+
+    entities = QueryEntities(
+        parser_version="entity-parser-v2",
+        question="Doanh thu thuần của ACB năm 2023 là bao nhiêu tỷ đồng?",
+        company_codes=("ACB",),
+        periods=("2023",),
+        metrics=("net_revenue",),
+        requested_unit="billion_vnd",
+    )
+    result = build_plan(
+        entities,
+        candidate_table_ids=(TABLE_ID,),
+        known_table_ids=frozenset([TABLE_ID]),
+    )
+    assert result.plan is not None
+    assert result.plan.expected_unit == "VND_billion"
+

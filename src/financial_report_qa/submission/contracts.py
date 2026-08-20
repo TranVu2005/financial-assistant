@@ -154,10 +154,24 @@ class QuestionOutcome(_FrozenModel):
             "llm",
             "llm_grounded",
             "llm_cell_grounded",
+            "llm_cell_grounded_recovered",
+            "llm_cell_grounded_context_expanded",
             "llm_column_refined",
         ]
         | None
     ) = None
+    # plan.md §9: retrieval confidence backing the plan's row selector(s)
+    # (min across every selector the plan uses), when the row went through
+    # fusion at all. `None` for a deterministic canonical-dictionary match,
+    # or whenever planning never resolved a row (abstained/erred earlier).
+    grounding_score: float | None = None
+    # plan.md §15: True only when `cell_grounding.ground_with_recovery`'s
+    # threshold retry ran and never found a row ranked within
+    # `max_grounding_rank` in fusion -- this answer is its best-effort
+    # fallback, not a confidently-ranked match. Always False when the rule
+    # or LLM planner answered directly without going through that ladder
+    # (a direct rule-planner success is never threshold-checked today).
+    low_confidence: bool = False
 
     @model_validator(mode="after")
     def validate_consistency(self) -> Self:

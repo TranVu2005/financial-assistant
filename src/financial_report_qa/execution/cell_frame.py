@@ -41,6 +41,7 @@ import duckdb
 import pandas as pd
 
 from financial_report_qa.core.errors import ExecutionInputError
+from financial_report_qa.normalization.periods import normalize_period
 
 CELL_FRAME_COLUMNS = (
     "table_id",
@@ -56,6 +57,8 @@ CELL_FRAME_COLUMNS = (
     "period",
     "period_inferred",
     "statutory_code",
+    "normalized_period",
+    "period_type",
 )
 
 # Circular 200/2014 numbers every statement row ("Mã số"), identically across
@@ -106,7 +109,9 @@ SELECT
         ELSE NULL
     END AS period,
     (c.period IS NULL) AS period_inferred,
-    code.statutory_code
+    code.statutory_code,
+    d.report_year,
+    t.statement_type
 FROM read_parquet(?) AS c
 JOIN read_parquet(?) AS t USING (table_id)
 JOIN read_parquet(?) AS d USING (doc_id)
@@ -186,4 +191,41 @@ def build_cell_frame(release_dir: Path, table_ids: Sequence[str]) -> pd.DataFram
     frame["statutory_code"] = (
         frame["statutory_code"].astype(object).where(frame["statutory_code"].notna(), None)
     )
+
+    # V2 column post-processing
+    norm_periods = []
+    period_types = []
+    for _, row in frame.iterrows():
+        col_label = row["column_label"]
+        rep_year = row["report_year"]
+        pr = row["period"]
+        stmt_type = row["statement_type"]
+
+        norm_val = None
+        if col_label and pd.notna(col_label):
+            norm_val = normalize_period(str(col_label), int(rep_year)).value
+        if norm_val is None and pd.notna(pr):
+            norm_val = str(pr)
+
+        p_type = None
+        if norm_val:
+            if stmt_type == "balance_sheet":
+                p_type = "point_in_time"
+            elif stmt_type in ("income_statement", "cash_flow_statement"):
+                p_type = "duration"
+            elif len(norm_val) == 10 and "-" in norm_val:
+                p_type = "point_in_time"
+            else:
+                col_lower = str(col_label).lower() if col_label and pd.notna(col_label) else ""
+                if "ngày" in col_lower or "tại" in col_lower:
+                    p_type = "point_in_time"
+                else:
+                    p_type = "duration"
+
+        norm_periods.append(norm_val)
+        period_types.append(p_type)
+
+    frame["normalized_period"] = norm_periods
+    frame["period_type"] = period_types
+
     return frame.loc[:, list(CELL_FRAME_COLUMNS)]

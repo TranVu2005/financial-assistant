@@ -12,6 +12,7 @@ import csv
 import hashlib
 import io
 import json
+import sys
 import zipfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -28,10 +29,16 @@ from financial_report_qa.execution.contracts import CompiledQuery, ReplayRow
 from financial_report_qa.execution.sandbox import replay_in_sandbox
 from financial_report_qa.pipeline.contracts import PipelineStage
 from financial_report_qa.planning import llm_planner
+from financial_report_qa.planning.cell_grounding import ground_with_recovery
 from financial_report_qa.planning.column_refinement import plan_with_column
-from financial_report_qa.planning.entity_contracts import QueryEntities
 from financial_report_qa.planning.entity_parser import parse_query_entities
-from financial_report_qa.planning.llm_cell_grounding import choose_column_label, choose_row_label
+from financial_report_qa.planning.evidence_rendering import (
+    evidence_row_labels,
+    evidence_table_context,
+    plan_grounding_score,
+    row_label_confidence,
+)
+from financial_report_qa.planning.llm_cell_grounding import choose_column_label
 from financial_report_qa.planning.llm_client import ChatCompletionClient
 from financial_report_qa.planning.plan_router import route_plan
 from financial_report_qa.planning.raw_metric_grounding import (
@@ -39,10 +46,10 @@ from financial_report_qa.planning.raw_metric_grounding import (
     candidate_row_labels,
     plan_with_raw_grounding_fallback,
 )
-from financial_report_qa.planning.rule_planner import build_plan
 from financial_report_qa.planning.table_context_rendering import render_table_context
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
 from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
+from financial_report_qa.retrieval.row_fusion import RowFusionService
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.backstop_answer import build_backstop_item
 from financial_report_qa.submission.contracts import (
@@ -171,6 +178,7 @@ def _run_one_question(
     execution_settings: ExecutionSettings,
     k: int,
     llm_client: ChatCompletionClient | None,
+    row_fusion: RowFusionService | None = None,
     allow_inferred_scope: bool = False,
 ) -> tuple[QuestionOutcome, SubmissionItem | None, tuple[CsvRow, ...] | None]:
     question = raw_question.question
@@ -191,7 +199,21 @@ def _run_one_question(
             None,
         )
 
+    # Evidence-aware planner: run row fusion to get ranked rows for downstream
+    # tiers. When row_fusion is None (backward compatible), fusion_rows stays
+    # empty and all tiers fall back to their existing unranked behavior.
+    fusion_rows = (
+        row_fusion.retrieve_rows(question, candidate_table_ids=retrieved).results
+        if row_fusion is not None
+        else ()
+    )
+
     entities = parse_query_entities(question)
+    row_labels = (
+        evidence_row_labels(fusion_rows)
+        if fusion_rows
+        else candidate_row_labels(release_dir, retrieved)
+    )
     # Day 23 plan Step 1: try the rule planner, with one grounded retry when
     # it abstains purely on `metric_unknown` (raw_metric_grounding.py). Only
     # once *that* combined attempt still has no plan does the Day 22
@@ -211,11 +233,37 @@ def _run_one_question(
         "llm",
         "llm_grounded",
         "llm_cell_grounded",
+        "llm_cell_grounded_recovered",
+        "llm_cell_grounded_context_expanded",
         "llm_column_refined",
     ]
+    compiled: CompiledQuery | None = None
+    low_confidence = False
+
     if plan_result.plan is not None:
         plan_source = "rule_raw_grounded" if grounded else "rule"
+        compiled = compile_plan(
+            plan_result.plan, release_dir, execution_settings=execution_settings
+        )
+        # Column refinement on deterministic rule plan if ambiguous
+        if compiled.error_code == "cell_ambiguous" and llm_client is not None:
+            refined = plan_with_column(
+                plan_result.plan,
+                lambda row_label, columns: choose_column_label(
+                    question, row_label, columns, client=llm_client
+                ),
+                columns_for=lambda row_label: candidate_column_labels(
+                    release_dir, plan_result.plan.candidate_table_ids, row_label
+                ),
+            )
+            if refined is not None:
+                retried = compile_plan(refined, release_dir, execution_settings=execution_settings)
+                if retried.status == "answered":
+                    plan_result = plan_result.model_copy(update={"plan": refined})
+                    compiled = retried
+                    plan_source = "llm_column_refined"
     elif llm_client is not None:
+        # LLM Planner (Attempt 0 LLM)
         routed = route_plan(
             entities,
             client=llm_client,
@@ -223,13 +271,13 @@ def _run_one_question(
             known_table_ids=frozenset(retrieved),
         )
         plan_result, plan_source = routed.result, routed.source
-        # Day 23 full-coverage strategy tier 3: the vocabulary-free prompt
-        # (ADR 0006 B1) gave the LLM no real row labels to copy -- Day 22
-        # measured 23.4% of its plans invented a metric name that existed
-        # nowhere in any candidate table. Retry once, shown the real
-        # candidate-table content, before giving up on this question.
+
         if plan_result.plan is None:
-            table_context = render_table_context(release_dir, retrieved)
+            table_context = (
+                evidence_table_context(fusion_rows)
+                if fusion_rows
+                else render_table_context(release_dir, retrieved)
+            )
             grounded_result = llm_planner.build_plan_grounded(
                 question,
                 client=llm_client,
@@ -239,78 +287,114 @@ def _run_one_question(
             )
             if grounded_result.plan is not None:
                 plan_result, plan_source = grounded_result, "llm_grounded"
-        # Day 25 tier: the two tiers above ask a small local model to emit a
-        # whole typed plan -- the organizers measure that shape at up to a
-        # 99% syntax-error rate under 10B, and we measured 0/75 answers from
-        # it. This tier asks the one question the same deck says actually
-        # matters (54.7% of their end-to-end errors are picking the wrong
-        # cell): WHICH ROW. The model indexes into real labels only, and the
-        # existing rule planner still builds and validates the plan.
-        if plan_result.plan is None:
-            chosen_label = choose_row_label(
-                question,
-                candidate_row_labels(release_dir, retrieved),
-                client=llm_client,
+
+        if plan_result.plan is not None:
+            compiled = compile_plan(
+                plan_result.plan, release_dir, execution_settings=execution_settings
             )
-            if chosen_label is not None:
-                labelled = QueryEntities.model_validate(
-                    {
-                        **entities.model_dump(mode="python"),
-                        "metrics": (chosen_label,),
-                        "ambiguity": tuple(
-                            code for code in entities.ambiguity if code != "metric_unknown"
-                        ),
-                    }
+            if compiled.error_code == "cell_ambiguous":
+                refined = plan_with_column(
+                    plan_result.plan,
+                    lambda row_label, columns: choose_column_label(
+                        question, row_label, columns, client=llm_client
+                    ),
+                    columns_for=lambda row_label: candidate_column_labels(
+                        release_dir, plan_result.plan.candidate_table_ids, row_label
+                    ),
                 )
-                relabelled = build_plan(
-                    labelled,
-                    candidate_table_ids=retrieved,
-                    known_table_ids=frozenset(retrieved),
-                )
-                if relabelled.plan is not None:
-                    plan_result, plan_source = relabelled, "llm_cell_grounded"
+                if refined is not None:
+                    retried = compile_plan(
+                        refined, release_dir, execution_settings=execution_settings
+                    )
+                    if retried.status == "answered":
+                        plan_result = plan_result.model_copy(update={"plan": refined})
+                        compiled = retried
+                        plan_source = "llm_column_refined"
     else:
         plan_source = "rule"
-    if plan_result.plan is None:
-        return (
-            QuestionOutcome.model_validate(
-                {
-                    "id": raw_question.id,
-                    "question": question,
-                    "status": "abstained",
-                    "stage": "planning",
-                    "code": "+".join(plan_result.abstain_codes),
-                    "plan_source": plan_source,
-                }
-            ),
-            None,
-            None,
-        )
-    plan = plan_result.plan
+        compiled = None
 
-    compiled = compile_plan(plan, release_dir, execution_settings=execution_settings)
-    # Day 26: `cell_ambiguous` means row and period did not separate the
-    # candidates -- 117 of the 1,012 official questions end there. The column
-    # is the missing dimension, and it is measurably absent from the question
-    # text (only 5 of those 117 name one), so read it off the real headers.
-    # One bounded retry, only on this error code, and only when a model is
-    # configured; anything else keeps the original abstain.
-    if compiled.error_code == "cell_ambiguous" and llm_client is not None:
-        refined = plan_with_column(
-            plan,
-            lambda row_label, columns: choose_column_label(
-                question, row_label, columns, client=llm_client
-            ),
-            columns_for=lambda row_label: candidate_column_labels(
-                release_dir, plan.candidate_table_ids, row_label
-            ),
+    # Decoupled Cell Grounding & Grounding Recovery (Attempt 1-2). Runs
+    # whenever the plan produced above -- by the rule planner or the LLM
+    # planner, or no plan at all -- did not compile to an answer, so a
+    # rule-planner failure (e.g. `cell_ambiguous`) gets the same recovery
+    # ladder as an LLM-planner failure instead of skipping it.
+    needs_grounding_recovery = (
+        plan_result.plan is None or compiled is None or compiled.status != "answered"
+    )
+    if llm_client is not None and needs_grounding_recovery:
+        grounding_res = ground_with_recovery(
+            question=question,
+            entities=entities,
+            retrieved=retrieved,
+            row_labels=row_labels,
+            fusion_rows=fusion_rows,
+            release_dir=release_dir,
+            execution_settings=execution_settings,
+            llm_client=llm_client,
         )
-        if refined is not None:
-            retried = compile_plan(refined, release_dir, execution_settings=execution_settings)
-            if retried.status == "answered":
-                plan, compiled = refined, retried
-                plan_source = "llm_column_refined"
-    if compiled.status != "answered":
+        if grounding_res.status == "accepted":
+            assert grounding_res.plan is not None
+            assert grounding_res.compiled is not None
+
+            # Log recovery success if it was recovered
+            if grounding_res.plan_source == "llm_cell_grounded_recovered":
+                first_tried = (
+                    plan_result.plan.metric.raw_text
+                    if plan_result.plan and plan_result.plan.metric
+                    else None
+                )
+                previous_confidence = row_label_confidence(first_tried, fusion_rows) or 0.0
+                new_confidence = (
+                    row_label_confidence(grounding_res.plan.metric.raw_text, fusion_rows) or 0.0
+                )
+                log_entry = {
+                    "question_id": raw_question.id,
+                    "attempt": grounding_res.recovery_attempts,
+                    "strategy": "candidate_switching",
+                    "previous_confidence": round(previous_confidence, 4),
+                    "new_confidence": round(new_confidence, 4),
+                    "selected_row": grounding_res.plan.metric.raw_text,
+                    "selected_column": (
+                        grounding_res.plan.metric.column_text if grounding_res.plan.metric else None
+                    ),
+                    "status": "accepted",
+                }
+                print(
+                    f"Grounding Recovery Success: {json.dumps(log_entry, ensure_ascii=False)}",
+                    file=sys.stderr,
+                )
+
+            plan_result = plan_result.model_copy(update={"plan": grounding_res.plan})
+            compiled = grounding_res.compiled
+            plan_source = grounding_res.plan_source
+            low_confidence = grounding_res.low_confidence
+        elif plan_result.plan is not None:
+            plan_result = plan_result.model_copy(
+                update={"plan": None, "abstain_codes": (grounding_res.error_code,)}
+            )
+
+    if compiled is None or compiled.status != "answered":
+        if compiled is None:
+            abstain_code = (
+                "+".join(plan_result.abstain_codes)
+                if plan_result.abstain_codes
+                else "planning_failed"
+            )
+            return (
+                QuestionOutcome.model_validate(
+                    {
+                        "id": raw_question.id,
+                        "question": question,
+                        "status": "abstained",
+                        "stage": "planning",
+                        "code": abstain_code,
+                        "plan_source": plan_source,
+                    }
+                ),
+                None,
+                None,
+            )
         assert compiled.error_code is not None
         # Day 22 plan §1 §3: no gold exists for this question set, so the
         # retrieval/planning/normalization/execution stage split
@@ -332,6 +416,7 @@ def _run_one_question(
             None,
         )
 
+    plan = plan_result.plan
     cell_ids = tuple(cell_id for cell in compiled.evidence for cell_id in cell.cell_ids)
     citation_lookup = build_citation_lookup(release_dir, cell_ids)
     package = build_answer_package(
@@ -394,6 +479,8 @@ def _run_one_question(
                 "stage": None,
                 "code": None,
                 "plan_source": plan_source,
+                "grounding_score": plan_grounding_score(plan, fusion_rows),
+                "low_confidence": low_confidence,
             }
         ),
         item,
@@ -440,28 +527,34 @@ def export_submission(
     dataset_fingerprint: str,
     k: int = 10,
     llm_client: ChatCompletionClient | None = None,
+    row_fusion: RowFusionService | None = None,
     apply_backstop: bool = True,
     allow_inferred_scope: bool = False,
 ) -> tuple[SubmissionExportReport, tuple[SubmissionItem, ...], dict[str, tuple[CsvRow, ...]]]:
     """Run every question through the live pipeline once. Returns the
-    coverage report (all questions), the `SubmissionItem`s to package into
-    `submission.json`, and their CSV rows keyed by `csv_path`.
+    coverage report (all questions), the ``SubmissionItem``s to package into
+    ``submission.json``, and their CSV rows keyed by ``csv_path``.
 
-    `llm_client=None` (the default) keeps the pre-Day-22-coverage-follow-up
+    ``llm_client=None`` (the default) keeps the pre-Day-22-coverage-follow-up
     behavior: only the rule planner ever runs. Passing a client routes every
-    rule-planner abstain through `plan_router.route_plan`'s LLM fallback
+    rule-planner abstain through ``plan_router.route_plan``'s LLM fallback
     (ADR 0006 decision A1), then a grounded LLM retry (Day 23 tier 3) -- the
     rule planner still always runs first and is never overridden once it
     succeeds.
 
-    `apply_backstop=True` (the default, Day 23 full-coverage strategy): any
+    ``row_fusion=None`` (the default) keeps the pre-evidence-aware behavior:
+    LLM grounding tiers use unranked row labels and full table context.
+    Passing a ``RowFusionService`` enables ranked, evidence-aware label lists
+    and focused context for the LLM.
+
+    ``apply_backstop=True`` (the default, Day 23 full-coverage strategy): any
     question every reasoning tier still failed gets a contract-valid but
-    not-reasoned item (tier 4, `backstop_answer.build_backstop_item`), so
-    `items` always covers every question in `raw_questions` -- required by
+    not-reasoned item (tier 4, ``backstop_answer.build_backstop_item``), so
+    ``items`` always covers every question in ``raw_questions`` -- required by
     plan.md §2.4 rule 1 (a single missing id fails the whole ZIP) and safe
     under the official scoring (Answer/Execution Accuracy macro-average over
     the *full* question set, so a wrong answer already scores the same 0
-    credit as a missing one). Pass `False` to keep the pre-Day-23 partial-
+    credit as a missing one). Pass ``False`` to keep the pre-Day-23 partial-
     coverage behavior for pure measurement runs.
     """
     ordered = tuple(sorted(raw_questions, key=lambda item: item.id))
@@ -478,6 +571,7 @@ def export_submission(
             execution_settings=execution_settings,
             k=k,
             llm_client=llm_client,
+            row_fusion=row_fusion,
             allow_inferred_scope=allow_inferred_scope,
         )
         if item is None and apply_backstop:

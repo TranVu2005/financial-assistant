@@ -369,6 +369,171 @@ def _parse_statement_scope(
     return None, ()
 
 
+
+_RATIO_KEYWORDS = ("tỷ lệ", "tỷ trọng", "tỷ số", "phần trăm", "%")
+_GROWTH_KEYWORDS = ("tăng trưởng", "biến động", "tốc độ")
+_AGGREGATE_AVERAGE_KEYWORDS = ("trung bình", "bình quân")
+_AGGREGATE_SUM_KEYWORDS = ("tổng cộng", "tổng giá trị", "tổng số", "tổng ")
+_AGGREGATE_EXCLUDE_KEYWORDS = (
+    "cao nhất",
+    "thấp nhất",
+    "nhiều nhất",
+    "lớn nhất",
+    "nhỏ nhất",
+    "vượt",
+    "trung vị",
+    "đứng đầu",
+    "dẫn đầu",
+    "có bao nhiêu",
+    "số công ty",
+    "số doanh nghiệp",
+)
+
+_PERCENT_RE = re.compile(r"\bphần\s+trăm\b|%", re.IGNORECASE)
+_BILLION_RE = re.compile(r"\btỷ\s+(?:đồng|vnd|đ)?\b|\btỷ\b", re.IGNORECASE)
+_MILLION_RE = re.compile(r"\btriệu\s+(?:đồng|vnd|đ)?\b|\btriệu\b", re.IGNORECASE)
+_VND_RE = re.compile(r"\b(?:đồng|vnd|đ)\b", re.IGNORECASE)
+
+
+def _parse_metric_phrases(
+    question: str,
+    exclude_spans: tuple[ParsedSpan, ...],
+) -> tuple[str, ...]:
+    # 1. Mask out exclude_spans (character indices)
+    mask = [False] * len(question)
+    for span in exclude_spans:
+        for i in range(span.start, span.end):
+            mask[i] = True
+
+    # Reconstruct text with masked parts replaced by spaces
+    segments = []
+    current_segment = []
+    for i, char in enumerate(question):
+        if mask[i]:
+            if current_segment:
+                segments.append("".join(current_segment))
+                current_segment = []
+        else:
+            current_segment.append(char)
+    if current_segment:
+        segments.append("".join(current_segment))
+
+    remaining_text = " ".join(segments)
+
+    # 2. Clean up question-specific particles, prefixes, suffixes, and punctuation
+    clean_re = re.compile(
+        r"^(?:tính|cho biết|hãy cho biết|tìm|lấy|xác định|so sánh|đánh giá|tra cứu|xem|quét)\s+",
+        re.IGNORECASE,
+    )
+    suffix_re = re.compile(
+        r"\s+(?:là\s+)?(?:bao\s+nhiêu|thế\s+nào|như\s+thế\s+nào|đạt\s+bao\s+nhiêu|bằng\s+bao\s+nhiêu|"
+        r"tăng\s+trưởng\s+bao\s+nhiêu|biến\s+động\s+bao\s+nhiêu|chênh\s+lệch\s+bao\s+nhiêu|"
+        r"tăng\s+bao\s+nhiêu|giảm\s+bao\s+nhiêu|thay\s+đổi\s+bao\s+nhiêu|nhiều\s+hơn\s+bao\s+nhiêu|"
+        r"ít\s+hơn\s+bao\s+nhiêu|bao\s+nhiêu\s*%\s*|bao\s+nhiêu\s+phần\s+trăm|chiếm\s+bao\s+nhiêu|"
+        r"tỷ\s+lệ\s+bao\s+nhiêu)\??$",
+        re.IGNORECASE,
+    )
+
+    text = remaining_text.strip()
+
+    # Strip any trailing punctuation (dots, question marks, commas, exclamation marks)
+    text = re.sub(r"[.\?!,\s]+$", "", text).strip()
+
+    text = clean_re.sub("", text).strip()
+    text = suffix_re.sub("", text).strip()
+
+    boundary_words_re = re.compile(
+        r"^(?:của|tại|trong|vào|với|so\s+với)\s+|\s+(?:của|tại|trong|vào|với|so\s+với)$",
+        re.IGNORECASE,
+    )
+
+    prev_text = None
+    while text != prev_text:
+        prev_text = text
+        text = clean_re.sub("", text).strip()
+        text = suffix_re.sub("", text).strip()
+        text = boundary_words_re.sub("", text).strip()
+
+    # 3. Split by common conjunctions
+    parts = re.split(r"\s+(?:và|với|so\s+với)\s+", text, flags=re.IGNORECASE)
+
+    metric_phrases = []
+    for part in parts:
+        part_clean = part.strip()
+        part_clean = re.sub(r"^[,\-\s\.\?]+|[,\-\s\.\?]+$", "", part_clean)
+        if len(part_clean.split()) >= 2:
+            metric_phrases.append(part_clean)
+
+    if not metric_phrases and text.strip():
+        text_clean = re.sub(r"^[,\-\s\.\?]+|[,\-\s\.\?]+$", "", text.strip())
+        if text_clean:
+            metric_phrases.append(text_clean)
+
+    return tuple(metric_phrases)
+
+
+def _infer_query_operation(
+    question: str,
+    *,
+    company_codes: tuple[str, ...],
+    periods: tuple[str, ...],
+    metrics: tuple[str, ...],
+    metric_phrases: tuple[str, ...],
+) -> str | None:
+    n_companies = len(company_codes)
+    n_periods = len(periods)
+    n_metrics = max(len(metrics), len(metric_phrases))
+
+    # Ratio
+    if n_metrics == 2 and n_companies == 1 and n_periods == 1:
+        if any(keyword in question.lower() for keyword in _RATIO_KEYWORDS):
+            return "ratio"
+
+    # Difference of 2 metrics
+    if n_metrics == 2 and n_companies == 1 and n_periods == 1:
+        if any(keyword in question.lower() for keyword in ("chênh lệch", "hiệu")):
+            return "difference"
+
+    # Aggregate operations (average, sum)
+    if (n_companies == 1 and n_periods >= 2) or (n_companies >= 2 and n_periods == 1):
+        lowered = question.lower()
+        if not any(kw in lowered for kw in _AGGREGATE_EXCLUDE_KEYWORDS):
+            if any(kw in lowered for kw in _AGGREGATE_AVERAGE_KEYWORDS):
+                return "average"
+            if any(kw in lowered for kw in _AGGREGATE_SUM_KEYWORDS):
+                return "sum"
+
+    # Compare companies
+    if n_companies == 2 and n_periods == 1:
+        return "compare_companies"
+
+    # Single company, single period lookup
+    if n_companies == 1 and n_periods == 1:
+        return "lookup"
+
+    # Single company, two periods (growth rate / difference)
+    if n_companies == 1 and n_periods == 2:
+        lowered = question.lower()
+        if any(keyword in lowered for keyword in _GROWTH_KEYWORDS):
+            return "growth_rate"
+        return "difference"
+
+    return None
+
+
+def _parse_requested_unit(question: str) -> str | None:
+    lowered = question.lower()
+    if _PERCENT_RE.search(lowered):
+        return "percent"
+    if _BILLION_RE.search(lowered):
+        return "billion_vnd"
+    if _MILLION_RE.search(lowered):
+        return "million_vnd"
+    if _VND_RE.search(lowered):
+        return "vnd"
+    return None
+
+
 def parse_query_entities(question: str) -> QueryEntities:
     """Extract company, period, metric, and statement-type entities from a question.
 
@@ -384,14 +549,30 @@ def parse_query_entities(question: str) -> QueryEntities:
     statement_types, statement_ambiguity, statement_spans = statement_result
     statement_scope, scope_spans = _parse_statement_scope(normalized_question)
 
-    ambiguity = tuple(
-        sorted(
-            set(company_ambiguity)
-            | set(period_ambiguity)
-            | set(metric_ambiguity)
-            | set(statement_ambiguity)
-        )
+    # 1. Parse metric phrases
+    exclude_spans = company_spans + period_spans + statement_spans + scope_spans
+    metric_phrases = _parse_metric_phrases(normalized_question, exclude_spans)
+    if not metric_phrases and metrics:
+        metric_phrases = tuple(span.surface for span in metric_spans if span.field == "metric")
+
+    # 2. Parse operation
+    operation = _infer_query_operation(
+        normalized_question,
+        company_codes=company_codes,
+        periods=periods,
+        metrics=metrics,
+        metric_phrases=metric_phrases,
     )
+
+    # 3. Parse requested unit
+    requested_unit = _parse_requested_unit(normalized_question)
+
+    # 4. Determine ambiguities
+    ambiguity_set = set(company_ambiguity) | set(period_ambiguity) | set(statement_ambiguity)
+    if not metrics:
+        ambiguity_set.add("metric_unknown")
+    ambiguity = tuple(sorted(ambiguity_set))
+
     spans = tuple(
         sorted(
             company_spans + period_spans + metric_spans + statement_spans + scope_spans,
@@ -399,15 +580,21 @@ def parse_query_entities(question: str) -> QueryEntities:
         )
     )
     return QueryEntities(
+        parser_version="entity-parser-v2",
         question=normalized_question,
         company_codes=company_codes,
         periods=periods,
         metrics=metrics,
+        metric_phrases=metric_phrases,
+        operation=operation,
+        requested_unit=requested_unit,
         statement_types=statement_types,
         statement_scope=statement_scope,
         ambiguity=ambiguity,
         spans=spans,
     )
+
+
 
 
 def ordered_metric_canonicals(entities: QueryEntities) -> tuple[str, ...]:

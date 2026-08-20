@@ -524,3 +524,123 @@ def test_build_cell_frame_reads_the_statutory_codes_once_per_release(tmp_path: P
     assert _statutory_code_connection.cache_info().hits >= 1
     assert second["statutory_code"].tolist() == first["statutory_code"].tolist()
     _statutory_code_connection.cache_clear()
+
+
+def test_build_cell_frame_populates_normalized_period_and_period_type(tmp_path: Path) -> None:
+    # 1. Test point_in_time for balance_sheet
+    cells_bs = [
+        {
+            "cell_id": "cell_bs",
+            "table_id": TABLE_ID,
+            "row_idx": 0,
+            "col_idx": 1,
+            "row_label_raw": "Tiền và tương đương tiền",
+            "row_label_canonical": "cash_and_equivalents",
+            "row_group_context_raw": None,
+            "column_label_raw": "Tại ngày 31/12/2023",
+            "column_label_canonical": None,
+            "value_raw": "100",
+            "value_numeric": Decimal("100"),
+            "period": "2023-12-31",
+            "unit": "triệu đồng",
+            "source_line_start": 1,
+            "source_line_end": 1,
+            "extraction_confidence": 0.9,
+        }
+    ]
+
+    release_dir = tmp_path / "release_bs"
+    release_dir.mkdir(exist_ok=True)
+    documents = [
+        {
+            "doc_id": DOC_ID,
+            "repo_id": "repo",
+            "revision": "1",
+            "relative_path": "ACB/2020/report.txt",
+            "company_code": "ACB",
+            "report_year": 2023,
+            "statement_scope": "consolidated",
+            "sha256": "0" * 64,
+            "file_size_bytes": 10,
+            "encoding": "utf-8",
+            "inventory_status": "ready",
+            "ruleset_version": "1",
+            "normalization_fingerprint": "0" * 64,
+        }
+    ]
+    tables_bs = [
+        {
+            "table_id": TABLE_ID,
+            "doc_id": DOC_ID,
+            "source_ordinal": 0,
+            "title_raw": "Bảng cân đối kế toán",
+            "statement_type": "balance_sheet",
+            "unit_raw": "VND",
+            "unit_normalized": "vnd",
+            "line_start": 1,
+            "line_end": 10,
+            "row_count": 1,
+            "column_count": 2,
+            "quality_score": 0.9,
+            "csv_path": None,
+        }
+    ]
+    pq.write_table(pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet")
+    pq.write_table(pa.Table.from_pylist(tables_bs, schema=TABLE_SCHEMA), release_dir / "tables.parquet")
+    pq.write_table(pa.Table.from_pylist(cells_bs, schema=CELL_SCHEMA), release_dir / "cells.parquet")
+
+    frame_bs = build_cell_frame(release_dir, [TABLE_ID])
+    row_bs = frame_bs.set_index("cell_id").loc["cell_bs"]
+    assert row_bs["normalized_period"] == "2023-12-31"
+    assert row_bs["period_type"] == "point_in_time"
+
+    # 2. Test duration for income_statement
+    cells_is = [
+        {
+            "cell_id": "cell_is",
+            "table_id": TABLE_ID,
+            "row_idx": 0,
+            "col_idx": 1,
+            "row_label_raw": "Doanh thu thuần",
+            "row_label_canonical": "net_revenue",
+            "row_group_context_raw": None,
+            "column_label_raw": "Năm 2023",
+            "column_label_canonical": None,
+            "value_raw": "200",
+            "value_numeric": Decimal("200"),
+            "period": "2023",
+            "unit": "triệu đồng",
+            "source_line_start": 1,
+            "source_line_end": 1,
+            "extraction_confidence": 0.9,
+        }
+    ]
+
+    release_dir_is = tmp_path / "release_is"
+    release_dir_is.mkdir(exist_ok=True)
+    tables_is = [
+        {
+            "table_id": TABLE_ID,
+            "doc_id": DOC_ID,
+            "source_ordinal": 0,
+            "title_raw": "Báo cáo kết quả kinh doanh",
+            "statement_type": "income_statement",
+            "unit_raw": "VND",
+            "unit_normalized": "vnd",
+            "line_start": 1,
+            "line_end": 10,
+            "row_count": 1,
+            "column_count": 2,
+            "quality_score": 0.9,
+            "csv_path": None,
+        }
+    ]
+    pq.write_table(pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir_is / "documents.parquet")
+    pq.write_table(pa.Table.from_pylist(tables_is, schema=TABLE_SCHEMA), release_dir_is / "tables.parquet")
+    pq.write_table(pa.Table.from_pylist(cells_is, schema=CELL_SCHEMA), release_dir_is / "cells.parquet")
+
+    frame_is = build_cell_frame(release_dir_is, [TABLE_ID])
+    row_is = frame_is.set_index("cell_id").loc["cell_is"]
+    assert row_is["normalized_period"] == "2023"
+    assert row_is["period_type"] == "duration"
+

@@ -90,6 +90,18 @@ from financial_report_qa.retrieval.release import (
     ResolvedRetrievalRelease,
     resolve_retrieval_release,
 )
+from financial_report_qa.retrieval.row_dense_corpus import (
+    RowDenseCorpus,
+    build_row_dense_corpus,
+    load_row_dense_corpus,
+    save_row_dense_corpus,
+)
+from financial_report_qa.retrieval.row_dense_index import (
+    build_row_dense_index,
+    save_row_dense_index,
+)
+from financial_report_qa.retrieval.row_documents import build_row_documents
+from financial_report_qa.retrieval.row_index import build_row_bm25_index, save_row_bm25_index
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.retrieval.system_evaluation import (
     SystemSourceKind,
@@ -234,6 +246,15 @@ def _checked_dense_corpus(
     return corpus
 
 
+def _checked_row_dense_corpus(
+    corpus_dir: Path, *, release_fingerprint: str, lock_sha256: str
+) -> RowDenseCorpus:
+    corpus = load_row_dense_corpus(corpus_dir, release_lock_sha256=lock_sha256)
+    if corpus.manifest.dataset_fingerprint != release_fingerprint:
+        raise DenseArtifactError("Row dense corpus fingerprint does not match release lock")
+    return corpus
+
+
 def _load_build_observation(
     path: Path,
     *,
@@ -351,7 +372,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             target = args.output_root / release.dataset_fingerprint
             save_bm25_index(index, target)
+
+            # Build and save row index
+            row_docs = build_row_documents(
+                release.release_dir / "documents.parquet",
+                release.release_dir / "tables.parquet",
+                release.release_dir / "cells.parquet",
+            )
+            row_index = build_row_bm25_index(
+                row_docs,
+                dataset_fingerprint=release.dataset_fingerprint,
+                release_lock_sha256=release.lock_sha256,
+            )
+            row_target = args.output_root / f"{release.dataset_fingerprint}_row"
+            save_row_bm25_index(row_index, row_target)
+
             print(target)
+            print(row_target)
             return 0
         if args.command == "build-dense-corpus":
             documents = build_table_documents(
@@ -366,7 +403,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             target = args.output_root / release.dataset_fingerprint / "corpus"
             save_dense_corpus(corpus, target)
+
+            # Build and save row dense corpus
+            row_docs = build_row_documents(
+                release.release_dir / "documents.parquet",
+                release.release_dir / "tables.parquet",
+                release.release_dir / "cells.parquet",
+            )
+            row_corpus = build_row_dense_corpus(
+                row_docs,
+                dataset_fingerprint=release.dataset_fingerprint,
+                release_lock_sha256=release.lock_sha256,
+            )
+            row_target = args.output_root / release.dataset_fingerprint / "row_corpus"
+            save_row_dense_corpus(row_corpus, row_target)
+
             print(target)
+            print(row_target)
             return 0
         if args.command == "build-graph":
             documents = build_table_documents(
@@ -464,6 +517,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 progress=report_progress,
             )
             save_dense_index(built, target)
+
+            # Build and save row dense index
+            row_corpus_dir = args.corpus_dir.parent / "row_corpus"
+            row_corpus = _checked_row_dense_corpus(
+                row_corpus_dir,
+                release_fingerprint=release.dataset_fingerprint,
+                lock_sha256=release.lock_sha256,
+            )
+            row_built = build_row_dense_index(
+                row_corpus,
+                encoder,
+                faiss_device=faiss_device,
+                progress=report_progress,
+            )
+            row_target = target.parent / f"{target.name}_row"
+            save_row_dense_index(row_built, row_target)
+
             print("dense-build: complete", flush=True)
             observation = _DenseBuildObservation(
                 encoder_name=encoder_name,
