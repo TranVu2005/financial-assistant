@@ -556,3 +556,50 @@ def test_ground_with_recovery_prefers_confident_alternative_over_low_rank_pick(
     assert res.plan.metric.raw_text == "Doanh thu thuan"
     assert res.grounding_score == 0.9
 
+
+
+def test_company_name_rows_are_never_offered_as_metric_rows(tmp_path: Path) -> None:
+    """Grounding recovery walks the fusion-ranked row labels until one
+    compiles. Issuer-name rows compile just fine (they sit in a numeric
+    table) but hold no metric, so a real run accepted "▪ Tập đoàn Dệt May
+    Việt Nam - Công ty mẹ" as the row for "Tổng cộng dự phòng phải trả"
+    (plan.md §19 dev benchmark, question 175). They must be dropped before
+    any tier -- LLM row choice included -- gets to pick one."""
+    release_dir = _write_release(tmp_path)
+    entities = QueryEntities(
+        question="Tổng cộng dự phòng phải trả của Tập đoàn Dệt May Việt Nam năm 2023?",
+        company_codes=("ACB",),
+        periods=("2023",),
+        metrics=(),
+        metric_phrases=("Tổng cộng dự phòng phải trả",),
+        operation="lookup",
+        spans=(),
+    )
+    offered: list[tuple[str, ...]] = []
+
+    def _capture(question: str, labels: object, *, client: object) -> str | None:
+        offered.append(tuple(labels))  # type: ignore[arg-type]
+        return "Doanh thu thuan"
+
+    with patch(
+        "financial_report_qa.planning.cell_grounding.choose_row_label", side_effect=_capture
+    ):
+        res = ground_with_recovery(
+            question=entities.question,
+            entities=entities,
+            retrieved=(TABLE_ID,),
+            row_labels=(
+                "▪ Tập đoàn Dệt May Việt Nam - Công ty mẹ",
+                "Doanh thu thuan",
+            ),
+            fusion_rows=(),
+            release_dir=release_dir,
+            execution_settings=_ALLOW_LOOKUP,
+            llm_client=MagicMock(spec=LLMClient),
+        )
+
+    assert offered, "the LLM row-choice tier was never reached"
+    for labels in offered:
+        assert "▪ Tập đoàn Dệt May Việt Nam - Công ty mẹ" not in labels
+        assert "Doanh thu thuan" in labels
+    assert res.status == "accepted"

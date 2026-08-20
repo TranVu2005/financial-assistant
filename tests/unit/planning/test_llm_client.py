@@ -110,6 +110,11 @@ def test_retries_on_5xx_then_succeeds() -> None:
 
 
 def test_retries_exhausted_on_repeated_5xx_raises_unavailable() -> None:
+    """A server erroring on both the constrained and the unconstrained form
+    is genuinely unusable: 3 constrained attempts, then 3 more without the
+    schema (see `test_constrained_5xx_falls_back_to_an_unconstrained_request`),
+    then `LLMUnavailableError` -- `LLMServerError` is a subclass, so callers
+    catching the base class are unaffected."""
     calls = {"count": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -120,7 +125,7 @@ def test_retries_exhausted_on_repeated_5xx_raises_unavailable() -> None:
     with pytest.raises(LLMUnavailableError):
         client.complete_json(system_prompt="s", user_prompt="u", json_schema={"type": "object"})
 
-    assert calls["count"] == 3
+    assert calls["count"] == 6
 
 
 def test_connection_failure_retries_then_raises_unavailable() -> None:
@@ -144,3 +149,45 @@ def test_malformed_response_envelope_raises_response_error() -> None:
     client = _client(handler)
     with pytest.raises(LLMResponseError):
         client.complete_json(system_prompt="s", user_prompt="u", json_schema={"type": "object"})
+
+
+def test_constrained_5xx_falls_back_to_an_unconstrained_request() -> None:
+    """llama.cpp/Ollama answer HTTP 500 when the constrained decoder cannot
+    satisfy the JSON-schema grammar ("The model produced output that does not
+    match the expected peg-native format"). The endpoint is healthy, so the
+    only thing left to try is the same prompt without the grammar -- the
+    reply is still validated against the schema by `llm_planner`. Measured on
+    the plan.md §19 dev benchmark: 5/144 questions died as `llm_unavailable`
+    on exactly this 500."""
+    seen: list[bool] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        constrained = "response_format" in json.loads(request.content)
+        seen.append(constrained)
+        if constrained:
+            return httpx.Response(500, text="peg-native format error")
+        return httpx.Response(200, json=_envelope('{"operation":"lookup"}'))
+
+    client = _client(handler, max_retries=1)
+    content = client.complete_json(
+        system_prompt="s", user_prompt="u", json_schema={"type": "object"}
+    )
+
+    assert content == '{"operation":"lookup"}'
+    assert seen == [True, True, False]
+
+
+def test_constrained_fallback_not_attempted_when_endpoint_unreachable() -> None:
+    """A transport failure is not a grammar problem: dropping the schema
+    cannot help, so the offline path must not double its attempts."""
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        raise httpx.ConnectTimeout("no route to host", request=request)
+
+    client = _client(handler, max_retries=1)
+    with pytest.raises(LLMUnavailableError):
+        client.complete_json(system_prompt="s", user_prompt="u", json_schema={"type": "object"})
+
+    assert calls["count"] == 2

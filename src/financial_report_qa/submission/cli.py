@@ -108,7 +108,7 @@ def _parser() -> argparse.ArgumentParser:
         help="Row-fusion weight for the dense branch (default 0.0, i.e. off, even when "
         "--row-dense-corpus/--row-dense-index/--dense-encoder are all given). plan.md §20's "
         "row-recall benchmark (58 gold questions, dense weight 0.5) measured dense making "
-        "Row Recall@3/@5 *worse* than bm25+fuzzy+alias alone (74.1%->67.2%, 82.8%->74.1%; "
+        "Row Recall@3/@5 *worse* than bm25+fuzzy+alias alone (74.1%%->67.2%%, 82.8%%->74.1%%; "
         "@1/@10 unchanged) -- re-measure with `retrieval.row_recall_evaluation` before "
         "raising this above 0.",
     )

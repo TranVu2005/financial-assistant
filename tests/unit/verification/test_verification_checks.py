@@ -251,3 +251,57 @@ def test_scope_inferred_flags_when_compiled_scope_was_inferred() -> None:
     issue = check_scope_inferred(compiled)
     assert issue is not None
     assert issue.code == "scope_inferred"
+
+
+def test_recompute_mismatch_none_when_compiler_converted_the_unit() -> None:
+    """`compile_plan` presents the answer in `plan.expected_unit` (compiler.py
+    §"expected_unit"), so the independent recompute -- which returns the value
+    in the *evidence* unit -- must be converted before comparing. Measured on
+    the plan.md §19 dev benchmark: without this, 21/144 questions were rejected
+    as `recompute_mismatch` while their answers were correct, every one of them
+    a question whose requested unit differed from the source cell's unit."""
+    plan = _plan(expected_unit="VND_billion")
+    compiled = _compiled(
+        evidence=(_cell(value=Decimal("145731366146"), unit="VND"),),
+        answer=Decimal("145.731366146"),
+        unit="VND_billion",
+    )
+    assert check_recompute_mismatch(plan, compiled) is None
+
+
+def test_recompute_mismatch_none_when_conversion_scales_up() -> None:
+    plan = _plan(expected_unit="VND")
+    compiled = _compiled(
+        evidence=(_cell(value=Decimal("154674553"), unit="VND_thousand"),),
+        answer=Decimal("154674553000"),
+        unit="VND",
+    )
+    assert check_recompute_mismatch(plan, compiled) is None
+
+
+def test_recompute_mismatch_still_flags_wrong_answer_in_converted_unit() -> None:
+    """The conversion must not become a way to accept any number: a genuinely
+    wrong answer stated in the requested unit is still a mismatch."""
+    plan = _plan(expected_unit="VND_billion")
+    compiled = _compiled(
+        evidence=(_cell(value=Decimal("145731366146"), unit="VND"),),
+        answer=Decimal("999.0"),
+        unit="VND_billion",
+    )
+    issue = check_recompute_mismatch(plan, compiled)
+    assert issue is not None
+    assert issue.code == "recompute_mismatch"
+
+
+def test_recompute_mismatch_flags_incompatible_unit_declaration() -> None:
+    """A monetary evidence cell presented as a `ratio` cannot be reconciled by
+    scaling -- `convert_scale` rejects it, and that stays a mismatch."""
+    plan = _plan(expected_unit="ratio")
+    compiled = _compiled(
+        evidence=(_cell(value=Decimal("100"), unit="VND"),),
+        answer=Decimal("100"),
+        unit="ratio",
+    )
+    issue = check_recompute_mismatch(plan, compiled)
+    assert issue is not None
+    assert issue.code == "recompute_mismatch"

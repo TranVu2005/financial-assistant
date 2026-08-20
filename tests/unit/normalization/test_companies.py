@@ -4,6 +4,7 @@ from financial_report_qa.normalization.companies import (
     COMPANY_REGISTRY,
     company_name_codes_in_text,
     company_name_for_code,
+    label_is_company_name,
     normalize_company,
     resolve_company_code,
     validate_company_codes,
@@ -210,3 +211,55 @@ def test_company_name_codes_in_text_does_not_confuse_subsidiary_with_parent() ->
     assert company_name_codes_in_text(
         "Báo cáo tài chính của CTCP Nông nghiệp Quốc tế Hoàng Anh Gia Lai năm 2023."
     ) == ("HNG",)
+
+
+# --- label_is_company_name ----------------------------------------------------
+
+
+def test_label_is_company_name_flags_an_issuer_name_row() -> None:
+    """Financial statements carry section rows that name the issuer itself
+    (subsidiary/associate listings, consolidation headers). They hold no
+    metric, so they must never be offered as a metric row -- a real run
+    (plan.md §19 dev benchmark, question 175) had grounding recovery accept
+    "▪ Tập đoàn Dệt May Việt Nam - Công ty mẹ" as the row for "Tổng cộng dự
+    phòng phải trả"."""
+    assert label_is_company_name("▪ Tập đoàn Dệt May Việt Nam - Công ty mẹ") is True
+    assert label_is_company_name("Tập đoàn Dệt May Việt Nam") is True
+    assert label_is_company_name("Tập đoàn Dệt May Việt Nam - hợp nhất") is True
+
+
+def test_label_is_company_name_keeps_metric_rows_that_mention_a_company() -> None:
+    """Only a label that is *nothing but* an issuer name (plus scope words)
+    is rejected: a metric row keeps its metric words, so it stays."""
+    assert label_is_company_name("Doanh thu thuần của Tập đoàn Dệt May Việt Nam") is False
+    assert label_is_company_name("Tổng cộng dự phòng phải trả") is False
+    assert label_is_company_name("Doanh thu thuần về bán hàng và cung cấp dịch vụ") is False
+
+
+def test_label_is_company_name_none_and_blank_are_not_company_names() -> None:
+    assert label_is_company_name(None) is False
+    assert label_is_company_name("   ") is False
+
+
+def test_label_is_company_name_flags_a_subsidiary_not_in_the_registry() -> None:
+    """The registry holds only the 100 issuers the questions ask about, but
+    statements list subsidiaries and associates by name too. Question 175 of
+    the plan.md §19 dev benchmark showed why registry membership alone is not
+    enough: with issuer rows filtered, grounding recovery simply moved to the
+    next company row ("▪ Tổng Công ty Cổ phần Dệt May Hà Nội") and answered
+    from that instead. A legal-form prefix identifies an organisation name
+    without needing the registry at all."""
+    assert label_is_company_name("▪ Tổng Công ty Cổ phần Dệt May Hà Nội") is True
+    assert label_is_company_name("Công ty TNHH MTV Thương mại Bình Minh") is True
+    assert label_is_company_name("CTCP Đầu tư Phát triển Gia Định") is True
+    assert label_is_company_name("Xí nghiệp Liên doanh Visorutex") is True
+
+
+def test_label_is_company_name_keeps_metric_rows_starting_with_generic_words() -> None:
+    """Only unambiguous legal-form prefixes count. Accounting rows that merely
+    begin with "công ty" or "ngân hàng" are real line items and must stay."""
+    assert label_is_company_name("Đầu tư vào công ty liên kết") is False
+    assert label_is_company_name("Công ty liên kết") is False
+    assert label_is_company_name("Tiền gửi ngân hàng không kỳ hạn") is False
+    assert label_is_company_name("Tổng cộng dự phòng phải trả") is False
+    assert label_is_company_name("Tổng doanh thu") is False

@@ -237,6 +237,84 @@ def company_name_codes_in_text(value: str) -> tuple[str, ...]:
     return tuple(sorted(codes))
 
 
+# Scope/consolidation qualifiers that decorate an issuer-name row without
+# turning it into a metric ("Tập đoàn X - Công ty mẹ", "X hợp nhất"). Kept
+# deliberately short: only phrases that name a reporting entity or scope,
+# never accounting words like "tổng cộng", which do belong to real metrics.
+_SCOPE_QUALIFIER_KEYS: tuple[str, ...] = (
+    "cong ty me",
+    "cong ty con",
+    "chi nhanh",
+    "hop nhat",
+    "rieng",
+)
+
+
+# Legal forms that only ever open an organisation's *name*. `_company_name_key`
+# has already expanded "CTCP"/"TMCP" and stripped accents, so these are the
+# normalized forms. Bare "cong ty" and "ngan hang" are deliberately absent:
+# they also open real line items ("Công ty liên kết", "Tiền gửi ngân hàng"),
+# and the registry lookup below already covers the issuers being asked about.
+_ORGANISATION_NAME_PREFIX_KEYS: tuple[str, ...] = (
+    "cong ty co phan",
+    "cong ty tnhh",
+    "tong cong ty",
+    "tap doan",
+    "ngan hang thuong mai co phan",
+    "xi nghiep",
+    "chi nhanh",
+)
+
+
+def label_is_company_name(label: str | None) -> bool:
+    """True when a table row label names an organisation rather than a metric.
+
+    Statements list subsidiaries, associates and consolidation headers as
+    their own rows; such a row carries no metric, so it must never be
+    grounded as one. Two independent signals, because the registry holds only
+    the 100 issuers the question set asks about while statements name their
+    subsidiaries too:
+
+    1. the label is *only* a registry issuer name plus scope words; or
+    2. the label opens with a legal form that only occurs in entity names.
+
+    A label that still has substantive words left after its issuer name and
+    any scope qualifier are removed is a metric row that merely mentions a
+    company, and stays.
+    """
+
+    if label is None or not label.strip():
+        return False
+
+    key = _company_name_key(label)
+    if not key:
+        return False
+
+    for prefix in _ORGANISATION_NAME_PREFIX_KEYS:
+        if key == prefix or key.startswith(f"{prefix} "):
+            return True
+
+    for code in company_name_codes_in_text(label):
+        record = COMPANY_REGISTRY.get(code)
+        if record is None:
+            continue
+        names = (record.canonical_name, *record.aliases)
+        variants = sorted(
+            {variant for name in names for variant in _name_variants(name) if variant},
+            key=len,
+            reverse=True,
+        )
+        for variant in variants:
+            if variant not in key:
+                continue
+            remainder = key.replace(variant, " ")
+            for qualifier in _SCOPE_QUALIFIER_KEYS:
+                remainder = remainder.replace(qualifier, " ")
+            if not remainder.split():
+                return True
+    return False
+
+
 def company_codes_in_text(value: str) -> tuple[str, ...]:
     """Find tickers unambiguously evidenced anywhere inside free text.
 

@@ -167,9 +167,13 @@ def test_llm_unavailable_abstains_without_attempting_repair() -> None:
         known_table_ids=_KNOWN_TABLES,
     )
 
-    # LLMClient itself retries (max_retries=2 -> 3 attempts) before raising;
-    # the planner must not layer a second logical repair round trip on top.
-    assert calls["count"] == 3
+    # LLMClient itself retries (max_retries=2 -> 3 attempts), then repeats
+    # them once without the JSON-schema grammar (a server that 5xx's may be
+    # failing constrained decoding, not down -- see
+    # `test_constrained_5xx_falls_back_to_an_unconstrained_request`) before
+    # raising: 6 HTTP calls, all inside the client. What matters here is that
+    # the planner does not layer a second logical repair round trip on top.
+    assert calls["count"] == 6
     assert result.plan is None
     assert result.abstain_codes == ("llm_unavailable",)
 

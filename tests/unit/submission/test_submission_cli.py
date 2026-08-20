@@ -377,3 +377,14 @@ def test_validate_expects_every_question_id_not_only_answered_ones(
         main(["validate", "--zip-path", str(output_zip), "--report-path", str(report_files[0])])
         == 0
     )
+
+
+def test_export_help_renders_without_format_error() -> None:
+    """argparse runs every `help=` string through `%`-formatting, so a literal
+    percent in one of them (e.g. "74.1%->67.2%") raises ValueError and makes
+    `--help` print nothing at all."""
+    import pytest
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["export", "--help"])
+    assert excinfo.value.code == 0

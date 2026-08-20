@@ -149,6 +149,16 @@ class LLMUnavailableError(LLMError):
     """The LLM endpoint could not be reached after bounded retries."""
 
 
+class LLMServerError(LLMUnavailableError):
+    """The endpoint answered, but with 5xx on every bounded retry.
+
+    A subclass of `LLMUnavailableError` so existing handlers are unchanged:
+    the distinction matters only where the caller can vary the request (see
+    `llm_client.complete_json`'s unconstrained retry), because a server that
+    replies at all is not offline.
+    """
+
+
 class LLMRequestError(LLMError):
     """The LLM endpoint rejected the request (4xx); retrying would not help."""
 

@@ -81,6 +81,27 @@ def check_recompute_mismatch(
             message=f"recompute raised {type(exc).__name__}: {exc}",
         )
 
+    # `compile_plan` presents the answer in `plan.expected_unit` when that
+    # differs from the evidence unit (compiler.py, "expected_unit" branch),
+    # but `operations.compile_*` returns the value in the *evidence* unit.
+    # Comparing the two directly makes every unit-converted answer a
+    # mismatch: measured on the plan.md §19 dev benchmark, that rejected
+    # 21/144 questions whose answers were correct. Mirror the compiler's
+    # conversion here, then compare.
+    compiled_unit = compiled.unit
+    if compiled_unit is not None and unit != compiled_unit:
+        try:
+            answer = operations.convert_cell_value(answer, unit, compiled_unit)
+        except ValueError as exc:
+            return VerificationIssue(
+                code="recompute_mismatch",
+                message=(
+                    f"recompute {answer!r} {unit!r} cannot be expressed in the "
+                    f"compiled unit {compiled_unit!r}: {exc}"
+                ),
+            )
+        unit = compiled_unit
+
     if answer != compiled.answer or unit != compiled.unit:
         return VerificationIssue(
             code="recompute_mismatch",

@@ -23,6 +23,7 @@ from typing import Literal
 from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.execution.compiler import compile_plan
 from financial_report_qa.execution.contracts import CompiledQuery
+from financial_report_qa.normalization.companies import label_is_company_name
 from financial_report_qa.planning.column_refinement import plan_with_column
 from financial_report_qa.planning.entity_contracts import QueryEntities
 from financial_report_qa.planning.evidence_rendering import (
@@ -87,6 +88,14 @@ def ground_with_recovery(
     max_grounding_rank: int = DEFAULT_MAX_GROUNDING_RANK,
 ) -> GroundingResult:
     """Ground query metrics to verified row and column labels with recovery."""
+    # Issuer-name rows (subsidiary listings, consolidation headers) sit in
+    # numeric tables and therefore compile, but they carry no metric. Drop
+    # them once, here, so no tier below -- LLM row choice, candidate
+    # switching, context expansion -- can select one: a real run accepted
+    # "▪ Tập đoàn Dệt May Việt Nam - Công ty mẹ" as the row for "Tổng cộng
+    # dự phòng phải trả" (plan.md §19 dev benchmark, question 175).
+    row_labels = tuple(label for label in row_labels if not label_is_company_name(label))
+
     # Attempt 0: Normal Grounding
     plan_result = RulePlanResult(abstain_codes=("operation_unknown",))
     plan_source = "rule"
