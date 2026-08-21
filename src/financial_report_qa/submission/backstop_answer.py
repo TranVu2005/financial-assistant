@@ -11,10 +11,13 @@ the full 1.012-question set, not just attempted ones) already gives a wrong
 numeric answer the same 0 credit as a missing one -- there is no scoring
 downside to filling every remaining gap, only a hard requirement to do so.
 
-This tier's only job is contract validity, never correctness: it picks one
-real numeric cell (never invents a value) and builds a trivially
-self-consistent lookup around it, so the packaged CSV + `pandas_query`
-always replay to the declared answer.
+This tier's only job is contract validity, never correctness: it never
+fabricates a row. The packaged CSV is always a real slice of
+`build_cell_frame(release_dir, table_ids)` -- the full source table(s), not a
+row synthesized backwards from the declared answer (2026-08-21 compliance
+design BI-1/BI-2). `answer` is best-effort and frequently wrong; that is an
+accepted trade-off (Answer Accuracy scores wrong and missing answers
+identically at 0 -- there is no additional penalty for guessing).
 """
 
 from __future__ import annotations
@@ -36,57 +39,52 @@ from financial_report_qa.verification.evaluation import build_citation_lookup
 
 CsvRow = Mapping[str, object]
 
-_UNIVERSAL_FALLBACK_QUERY = """
-SELECT c.cell_id, d.company_code, c.row_label_raw, c.value_numeric AS value,
-       TRY_CAST(LEFT(c.period, 4) AS INTEGER) AS period
+_ANY_TABLE_QUERY = """
+SELECT c.table_id
 FROM read_parquet(?) AS c
-JOIN read_parquet(?) AS t USING (table_id)
-JOIN read_parquet(?) AS d USING (doc_id)
 WHERE c.col_idx > 0
   AND c.value_numeric IS NOT NULL
   AND c.row_label_raw IS NOT NULL
   AND c.period IS NOT NULL
-ORDER BY c.table_id, c.row_idx, c.col_idx
 LIMIT 1
 """
 
 
-def _hardened_connection() -> duckdb.DuckDBPyConnection:
-    """Same hardening as `execution.cell_frame` (ADR 0008 decision F1)."""
+def _any_corpus_table_id(release_dir: Path) -> str:
+    """Absolute floor for the 42/1.012 `no_candidate_tables` questions:
+    retrieval returned nothing, so there is no candidate list to draw from.
+    Picks *a table*, never a synthesized row -- the caller still routes it
+    through the normal `build_cell_frame` full-table path. Raises only for a
+    genuinely empty release."""
     connection = duckdb.connect(":memory:")
     connection.execute("SET autoinstall_known_extensions = false")
     connection.execute("SET autoload_known_extensions = false")
-    return connection
-
-
-def _pick_any_corpus_cell(release_dir: Path) -> pd.Series:
-    """Absolute floor: some numeric, labeled, period-resolved cell exists
-    somewhere in the whole release (measured: 2,620,706 such cells corpus-
-    wide, day23 plan §1.1) -- raises only for a genuinely empty release."""
-    connection = _hardened_connection()
     try:
         frame = connection.execute(
-            _UNIVERSAL_FALLBACK_QUERY,
-            [
-                str(release_dir / "cells.parquet"),
-                str(release_dir / "tables.parquet"),
-                str(release_dir / "documents.parquet"),
-            ],
+            _ANY_TABLE_QUERY, [str(release_dir / "cells.parquet")]
         ).fetchdf()
     finally:
         connection.close()
     if frame.empty:
         raise RuntimeError(f"no numeric cell exists anywhere in release: {release_dir}")
-    return frame.iloc[0]
+    return str(frame.iloc[0]["table_id"])
 
 
-def _pick_backstop_cell(release_dir: Path, candidate_table_ids: Sequence[str]) -> pd.Series:
-    if candidate_table_ids:
-        frame = build_cell_frame(release_dir, tuple(candidate_table_ids))
-        resolved = frame[frame["period"].notna() & frame["row_label_raw"].notna()]
-        if not resolved.empty:
-            return resolved.iloc[0]
-    return _pick_any_corpus_cell(release_dir)
+def _uniquely_addressable_row(frame: pd.DataFrame) -> pd.Series:
+    """Chọn một ô mà predicate ngữ nghĩa định vị được duy nhất trong bảng.
+
+    Đo trên corpus: `(row_label_raw, column_label, period)` trong phạm vi một
+    bảng còn nhập nhằng 4.37%. Ưu tiên ô không nhập nhằng để `pandas_query`
+    replay được mà không cần tie-break vị trí.
+    """
+    usable = frame[frame["period"].notna() & frame["row_label_raw"].notna()]
+    if usable.empty:
+        raise RuntimeError("bảng ứng viên không có ô nào định vị được")
+    counts = usable.groupby(["row_label_raw", "column_label", "period"], dropna=False)[
+        "value"
+    ].transform("nunique")
+    unique = usable[counts == 1]
+    return (unique if not unique.empty else usable).iloc[0]
 
 
 def build_backstop_item(
@@ -94,43 +92,92 @@ def build_backstop_item(
     candidate_table_ids: Sequence[str],
     release_dir: Path,
 ) -> tuple[SubmissionItem, tuple[CsvRow, ...]]:
-    """Never abstains: always returns a valid, replayable `SubmissionItem`.
-    Correctness is not the goal (see module docstring)."""
-    cell = _pick_backstop_cell(release_dir, candidate_table_ids)
-    company = str(cell["company_code"])
-    raw_label = str(cell["row_label_raw"])
-    period = int(cell["period"])
-    value = cell["value"]
+    """Tầng cuối: luôn trả về `SubmissionItem` hợp lệ và HỢP QUY.
 
-    cell_id = str(cell["cell_id"])
-    citation = build_citation_lookup(release_dir, [cell_id])[cell_id]
-    relative_path = str(citation["doc_relative_path"])
-    report_id = relative_path.rsplit("/", 1)[-1]
-    if report_id.endswith(".txt"):
-        report_id = report_id[: -len(".txt")]
+    Khác bản trước ở hai điểm quyết định:
 
-    query = (
-        f"df1[(df1.company_code == {json.dumps(company, ensure_ascii=False)}) & "
-        f"(df1.row_label_raw == {json.dumps(raw_label, ensure_ascii=False)}) & "
-        f'(df1.period == {period})]["value"].iloc[0]'
+    1. CSV là trọn bảng nguồn (`build_cell_frame`), không phải một dòng dựng
+       ngược từ đáp án. Bản cũ vi phạm quy định "không được gán cứng, mã hóa
+       hoặc lưu sẵn kết quả" -- 826/1012 câu đi qua đây.
+    2. `relevant_tables` là MỌI bảng đã retrieve, không phải một bảng suy ra
+       từ ô được chọn. Thể lệ chấm truy hồi (50% điểm, F2 macro) độc lập với
+       việc trả lời đúng hay sai, nên vứt bỏ danh sách đã retrieve là mất
+       điểm không cần thiết.
+
+    Nếu retrieval không trả về bảng nào (42/1012 câu `no_candidate_tables`),
+    rơi về một bảng bất kỳ trong toàn kho (`_any_corpus_table_id`) rồi đi
+    tiếp cùng một đường xử lý -- vẫn không bao giờ dựng dòng thủ công.
+
+    Đáp án vẫn là best-effort và thường sai -- đó là đánh đổi chấp nhận được
+    (Answer Accuracy tính trên tổng số câu, sai và bỏ trống đều bằng 0).
+    """
+    if candidate_table_ids:
+        table_ids = tuple(dict.fromkeys(candidate_table_ids))
+    else:
+        table_ids = (_any_corpus_table_id(release_dir),)
+
+    frame = build_cell_frame(release_dir, table_ids)
+    chosen = _uniquely_addressable_row(frame)
+    table_id = str(chosen["table_id"])
+
+    # CSV thu về đúng bảng chứa ô đã chọn: predicate ngữ nghĩa chỉ duy nhất
+    # trong phạm vi một bảng (4.37% nhập nhằng), không duy nhất giữa 10 bảng.
+    table_frame = frame[frame["table_id"] == table_id]
+    rows: tuple[CsvRow, ...] = tuple(
+        {
+            "table_id": record["table_id"],
+            "row_idx": record["row_idx"],
+            "col_idx": record["col_idx"],
+            "company_code": record["company_code"],
+            "row_label_canonical": record["row_label_canonical"],
+            "row_label_raw": record["row_label_raw"],
+            "column_label": record["column_label"],
+            "period": record["period"],
+            "value": record["value"],
+        }
+        for record in table_frame.to_dict(orient="records")
     )
-    csv_path = f"data/q{raw_question.id:06d}_df1.csv"
-    row: CsvRow = {
-        "company_code": company,
-        "row_label_canonical": None,
-        "row_label_raw": raw_label,
-        "period": period,
-        "value": value,
-    }
+
+    clauses = [
+        f"(df1.row_label_raw == {json.dumps(str(chosen['row_label_raw']), ensure_ascii=False)})",
+        f"(df1.period == {int(chosen['period'])})",
+    ]
+    if chosen["column_label"] is not None and not pd.isna(chosen["column_label"]):
+        clauses.append(
+            f"(df1.column_label == {json.dumps(str(chosen['column_label']), ensure_ascii=False)})"
+        )
+    query = f'df1[{" & ".join(clauses)}]["value"].iloc[0]'
+
+    # relevant_docs/relevant_tables cover EVERY retrieved candidate table (or
+    # the single corpus-wide fallback table), not just the one the chosen
+    # cell came from -- retrieval is scored independently at 50% weight.
+    docs: dict[str, None] = {}
+    tables: dict[str, None] = {}
+    for candidate_table_id in table_ids:
+        candidate_frame = frame[frame["table_id"] == candidate_table_id]
+        if candidate_frame.empty:
+            continue
+        cell_id = str(candidate_frame.iloc[0]["cell_id"])
+        provenance = build_citation_lookup(release_dir, [cell_id])[cell_id]
+        report_id = str(provenance["doc_relative_path"]).rsplit("/", 1)[-1]
+        if report_id.endswith(".txt"):
+            report_id = report_id[: -len(".txt")]
+        docs.setdefault(report_id, None)
+        tables.setdefault(f"{report_id}|{provenance['source_line_start']}", None)
+
     item = SubmissionItem.model_validate(
         {
             "id": raw_question.id,
             "question": raw_question.question,
-            "answer": float(value),
-            "relevant_docs": (report_id,),
-            "relevant_tables": (f"{report_id}|{citation['source_line_start']}",),
-            "evidence": (SubmissionEvidence(variable="df1", csv_path=csv_path),),
+            "answer": float(chosen["value"]),
+            "relevant_docs": tuple(docs),
+            "relevant_tables": tuple(tables),
+            "evidence": (
+                SubmissionEvidence(
+                    variable="df1", csv_path=f"data/q{raw_question.id:06d}_df1.csv"
+                ),
+            ),
             "pandas_query": query,
         }
     )
-    return item, (row,)
+    return item, rows

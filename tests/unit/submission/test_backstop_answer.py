@@ -24,6 +24,28 @@ DOC_ID = "doc_" + "a" * 64
 DOC_ID_OTHER = "doc_" + "b" * 64
 
 
+@pytest.fixture
+def release_dir():
+    path = Path("data/processed/release_v2_422df141c935")
+    if not path.exists():
+        pytest.skip("release chưa có sẵn trên máy này")
+    return path
+
+
+@pytest.fixture
+def sample_table_ids(release_dir):
+    import duckdb
+
+    connection = duckdb.connect(":memory:")
+    frame = connection.execute(
+        "SELECT DISTINCT table_id FROM read_parquet(?) WHERE value_numeric IS NOT NULL "
+        "AND period IS NOT NULL LIMIT 1",
+        [str(release_dir / "cells.parquet")],
+    ).fetchdf()
+    connection.close()
+    return tuple(frame["table_id"].tolist())
+
+
 def _document(doc_id: str, company: str, year: int, path: str) -> dict[str, object]:
     return {
         "doc_id": doc_id,
@@ -177,3 +199,32 @@ def test_backstop_raises_when_release_has_no_numeric_cell_at_all(tmp_path: Path)
 
     with pytest.raises(RuntimeError):
         build_backstop_item(question, [], release_dir)
+
+
+def test_backstop_emits_full_source_table_not_one_row(release_dir, sample_table_ids) -> None:
+    """BI-4: backstop không được tổng hợp dòng nào."""
+    from financial_report_qa.submission.backstop_answer import build_backstop_item
+    from financial_report_qa.submission.contracts import RawQuestion
+
+    question = RawQuestion(id=1, question="Doanh thu thuần năm 2023?")
+    item, rows = build_backstop_item(question, sample_table_ids, release_dir)
+
+    assert len(rows) >= 2, "backstop phải xuất trọn bảng, không phải một dòng"
+    assert {"table_id", "row_idx", "col_idx"} <= set(rows[0].keys())
+
+
+def test_backstop_answer_replays_from_its_own_csv(release_dir, sample_table_ids) -> None:
+    """C7: đáp án phải tính được từ chính CSV kèm theo."""
+    import pandas as pd
+
+    from financial_report_qa.submission.backstop_answer import build_backstop_item
+    from financial_report_qa.submission.compliance import check_item
+    from financial_report_qa.submission.contracts import RawQuestion
+
+    question = RawQuestion(id=1, question="Doanh thu thuần năm 2023?")
+    item, rows = build_backstop_item(question, sample_table_ids, release_dir)
+    frame = pd.DataFrame(list(rows))
+    frame["period"] = frame["period"].astype("Int64")
+
+    violations = check_item(item, frame, timeout_seconds=5)
+    assert violations == (), f"backstop vẫn vi phạm: {violations}"
