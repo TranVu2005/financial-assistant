@@ -12,6 +12,7 @@ gì: `submission/cli.py` gọi nó và fail build khi có vi phạm.
 
 from __future__ import annotations
 
+import io
 import math
 import re
 from collections.abc import Mapping, Sequence
@@ -21,10 +22,40 @@ import pandas as pd
 
 from financial_report_qa.execution.sandbox import replay_in_sandbox
 from financial_report_qa.submission.contracts import SubmissionItem
+from financial_report_qa.submission.exporter import _render_csv_bytes
+
+# Forced dtype for every string-compared column (pandas_query.py
+# `_ALLOWED_ATTRS`), mirroring `validator.py`'s own CSV round-trip: a
+# `row_label_raw` that looks like a pure number (e.g. a footnote reference
+# such as "2") would otherwise round-trip through the CSV as pandas'
+# *inferred* int64, silently breaking `df1.row_label_raw == "2"` (int
+# compared to str never matches). `table_id` is left to type inference --
+# its values are always `tbl_<64 hex>`, never numeric-looking.
+_STRING_DTYPE_COLUMNS = {
+    "company_code": str,
+    "row_label_canonical": str,
+    "row_label_raw": str,
+    "column_label": str,
+}
 
 _ANSWER_LIKE_COLUMNS = frozenset({"answer", "result", "ans", "expected"})
 _NUMBER_LITERAL_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
 _VALUE_TOLERANCE = 1e-6
+
+# C4 (2026-08-21 final review, Important 4): a quoted string literal in the
+# query -- most commonly a `column_label` value rendered via `json.dumps`,
+# e.g. `df1.column_label == "Năm 2023"` -- can contain digits that are not a
+# numeric literal at all. Strip every quoted span before scanning for
+# numbers.
+_QUOTED_STRING_PATTERN = re.compile(r'"(?:[^"\\]|\\.)*"')
+
+# `compile_grounded`/position binding (plan.md §9/§14) routinely emits
+# `row_idx`/`col_idx`/`period` equality clauses (e.g. `df1.row_idx == 19`,
+# `df1.period == 2023`) as structural row/column/period locators, not as a
+# stand-in for the answer value. An answer that happens to numerically equal
+# one of those locators must not trip C4. Strip these comparisons (after
+# quoted strings are already gone) before the general literal scan.
+_STRUCTURAL_COMPARISON_PATTERN = re.compile(r"\b(?:row_idx|col_idx|period)\s*==\s*-?\d+(?:\.\d+)?")
 
 
 @dataclass(frozen=True)
@@ -37,8 +68,14 @@ class ComplianceViolation:
 
 
 def _numbers_in(query: str) -> list[float]:
+    """Literal numbers in `query` that are candidates for a C4 hardcode
+    match -- i.e. NOT inside a quoted string, and NOT the right-hand side of
+    a structural `row_idx`/`col_idx`/`period` equality (position-binding
+    locators, not stand-ins for the answer)."""
+    stripped = _QUOTED_STRING_PATTERN.sub("", query)
+    stripped = _STRUCTURAL_COMPARISON_PATTERN.sub("", stripped)
     out: list[float] = []
-    for token in _NUMBER_LITERAL_PATTERN.findall(query):
+    for token in _NUMBER_LITERAL_PATTERN.findall(stripped):
         try:
             out.append(float(token))
         except ValueError:  # pragma: no cover -- regex chỉ khớp số hợp lệ
@@ -115,7 +152,17 @@ def check_bundle(
     *,
     timeout_seconds: float,
 ) -> tuple[ComplianceViolation, ...]:
-    """Kiểm tra toàn bộ bundle. Trả về mọi vi phạm, sắp theo question_id."""
+    """Kiểm tra toàn bộ bundle. Trả về mọi vi phạm, sắp theo question_id.
+
+    Quan trọng (Important 3, 2026-08-21 final review): mỗi CSV được kiểm
+    tra bằng cách render qua `exporter._render_csv_bytes` -- CHÍNH bytes sẽ
+    được ghi vào ZIP -- rồi đọc lại bằng `pd.read_csv`, thay vì dựng
+    `pd.DataFrame` thẳng từ `csv_rows` trong bộ nhớ. Round-trip qua CSV thật
+    có thể lặng lẽ đổi kiểu dữ liệu (vd. `row_label_raw` toàn chữ số như
+    "2" suy luận thành int64), khiến một truy vấn khớp trên dict trong bộ
+    nhớ nhưng KHÔNG khớp trên chính CSV sẽ ship -- nghĩa là chốt chặn này
+    trước đây kiểm tra tiền thân của bundle, không phải bundle thật.
+    """
     violations: list[ComplianceViolation] = []
     for item in items:
         csv_path = item.evidence[0].csv_path
@@ -127,7 +174,8 @@ def check_bundle(
                 )
             )
             continue
-        frame = pd.DataFrame(list(rows))
+        csv_bytes = _render_csv_bytes(rows)
+        frame = pd.read_csv(io.BytesIO(csv_bytes), dtype=_STRING_DTYPE_COLUMNS)
         if "period" in frame.columns:
             frame["period"] = frame["period"].astype("Int64")
         violations.extend(check_item(item, frame, timeout_seconds=timeout_seconds))
