@@ -25,7 +25,7 @@ from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.core.errors import SubmissionInputError
 from financial_report_qa.execution.cell_frame import build_cell_frame
 from financial_report_qa.execution.compiler import compile_plan
-from financial_report_qa.execution.contracts import CompiledQuery, ReplayRow
+from financial_report_qa.execution.contracts import CompiledQuery
 from financial_report_qa.execution.sandbox import replay_in_sandbox
 from financial_report_qa.pipeline.contracts import PipelineStage
 from financial_report_qa.planning import llm_planner
@@ -110,20 +110,6 @@ def _synthetic_question_id(question_id: int) -> str:
     `AnswerPackage`/citation chain; it never appears in `submission.json`,
     which uses the real integer `id` (plan.md §2.4)."""
     return "retq_" + hashlib.sha256(f"submission:{question_id}".encode()).hexdigest()
-
-
-def _replay_rows_to_csv_rows(replay_rows: tuple[ReplayRow, ...]) -> tuple[CsvRow, ...]:
-    return tuple(
-        {
-            "company_code": row.company_code,
-            "row_label_canonical": row.row_label_canonical,
-            "row_label_raw": row.row_label_raw,
-            "column_label": row.column_label,
-            "period": row.period,
-            "value": row.value,
-        }
-        for row in replay_rows
-    )
 
 
 def _real_table_evidence_rows(
@@ -510,6 +496,30 @@ def _run_one_question(
             None,
         )
 
+    # BI-1 (design §5.1): evidence CSV luôn là lát cắt bảng nguồn thật. Khi
+    # bảng thật không replay ra đúng đáp án, câu này KHÔNG được đóng gói một
+    # dòng dựng ngược từ đáp án -- đó chính là mẫu `result = df["answer"]
+    # .iloc[0]` mà thể lệ cấm. Trả về thất bại execution để backstop (đã hợp
+    # lệ từ Task 4) tiếp quản.
+    evidence_rows = _real_table_evidence_rows(
+        compiled, release_dir, timeout_seconds=execution_settings.timeout_seconds
+    )
+    if evidence_rows is None:
+        return (
+            QuestionOutcome.model_validate(
+                {
+                    "id": raw_question.id,
+                    "question": question,
+                    "status": "error",
+                    "stage": "execution",
+                    "code": "evidence_frame_replay_mismatch",
+                    "plan_source": plan_source,
+                }
+            ),
+            None,
+            None,
+        )
+
     relevant_docs, relevant_tables = _relevant_docs_and_tables(compiled, citation_lookup)
     csv_path = f"data/q{raw_question.id:06d}_df1.csv"
     assert compiled.answer is not None
@@ -523,18 +533,6 @@ def _run_one_question(
             "evidence": (SubmissionEvidence(variable="df1", csv_path=csv_path),),
             "pandas_query": compiled.pandas_query,
         }
-    )
-    # Day 23 evidence-table fix: prefer the real extracted table(s) the
-    # compiler actually searched over the synthesized single-row fallback --
-    # see `_real_table_evidence_rows` for why this can legitimately fail
-    # (cross-table unit mismatch) and must fall back, never guess.
-    real_evidence_rows = _real_table_evidence_rows(
-        compiled, release_dir, timeout_seconds=execution_settings.timeout_seconds
-    )
-    evidence_rows = (
-        real_evidence_rows
-        if real_evidence_rows is not None
-        else _replay_rows_to_csv_rows(compiled.replay_rows)
     )
     return (
         QuestionOutcome.model_validate(

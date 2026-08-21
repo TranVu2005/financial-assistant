@@ -1110,3 +1110,27 @@ def test_render_csv_bytes_includes_position_columns() -> None:
         "period",
         "value",
     ]
+
+
+def test_answered_path_never_emits_synthesized_single_row(tmp_path) -> None:
+    """Bất biến BI-1: evidence CSV luôn là lát cắt bảng thật.
+
+    Nếu bảng thật không replay đúng, câu phải rơi xuống backstop chứ không
+    được đóng gói một dòng dựng ngược từ đáp án.
+    """
+    from financial_report_qa.submission import exporter
+
+    calls: list[str] = []
+
+    def _fake_real_rows(compiled, release_dir, *, timeout_seconds):
+        calls.append("called")
+        return None
+
+    original = exporter._real_table_evidence_rows
+    exporter._real_table_evidence_rows = _fake_real_rows
+    try:
+        assert not hasattr(exporter, "_replay_rows_to_csv_rows"), (
+            "_replay_rows_to_csv_rows là nhánh sinh CSV một dòng -- phải bị xoá"
+        )
+    finally:
+        exporter._real_table_evidence_rows = original
