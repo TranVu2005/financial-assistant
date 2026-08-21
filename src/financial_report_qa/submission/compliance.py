@@ -99,8 +99,12 @@ def check_item(
         add("C7", f"replay lỗi: {result.error_code}: {result.error_message}")
     elif result.value is None:
         add("C7", "replay không trả về giá trị")
-    elif abs(float(result.value) - item.answer) > _VALUE_TOLERANCE:
-        add("C7", f"replay ra {float(result.value)} nhưng answer là {item.answer}")
+    else:
+        value_float = float(result.value)
+        if math.isnan(value_float):
+            add("C7", "replay trả về NaN")
+        elif abs(value_float - item.answer) > _VALUE_TOLERANCE:
+            add("C7", f"replay ra {value_float} nhưng answer là {item.answer}")
 
     return tuple(violations)
 

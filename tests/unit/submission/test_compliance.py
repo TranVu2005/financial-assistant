@@ -96,3 +96,26 @@ def test_c7_wrong_replay_value_is_a_violation() -> None:
         _item(answer=999.0, query=_GOOD_QUERY), _frame(_GOOD_ROWS), timeout_seconds=5
     )
     assert "C7" in {v.code for v in violations}
+
+
+def test_c7_nan_replay_value_is_a_violation() -> None:
+    """Test that replay producing NaN is flagged as C7 violation.
+
+    Tạo DataFrame có giá trị NaN để test, truy vấn lấy ra giá trị NaN này.
+    """
+    # DataFrame có chứa NaN
+    rows_with_nan = [
+        {"company_code": "VNM", "row_label_raw": "Doanh thu thuần", "column_label": "2023",
+         "period": 2023, "value": float('nan')},
+        {"company_code": "VNM", "row_label_raw": "Lợi nhuận sau thuế", "column_label": "2023",
+         "period": 2023, "value": 120.0},
+    ]
+    # Truy vấn lấy giá trị NaN
+    query = 'df1[(df1.row_label_raw == "Doanh thu thuần") & (df1.period == 2023)]["value"].iloc[0]'
+    violations = check_item(
+        _item(answer=1200.0, query=query), _frame(rows_with_nan), timeout_seconds=5
+    )
+    assert "C7" in {v.code for v in violations}
+    # Kiểm tra detail message chứa "NaN"
+    c7_violations = [v for v in violations if v.code == "C7"]
+    assert any("NaN" in v.detail for v in c7_violations)
