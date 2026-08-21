@@ -24,7 +24,7 @@ from pathlib import Path
 
 import duckdb
 
-from financial_report_qa.normalization._shared import normalized_key
+from financial_report_qa.normalization._shared import normalized_key, sanitize_selector_text
 from financial_report_qa.planning.entity_contracts import QueryEntities
 from financial_report_qa.planning.rule_planner import RulePlanResult, build_plan
 from financial_report_qa.retrieval.contracts import TableId
@@ -94,8 +94,19 @@ def _candidate_raw_labels(release_dir: Path, table_ids: Sequence[str]) -> tuple[
 
 
 def _stable_unique_labels(labels: Sequence[str]) -> tuple[str, ...]:
-    """Return stripped, unique labels in deterministic semantic order."""
-    unique = dict.fromkeys(label.strip() for label in labels if label and label.strip())
+    """Return sanitized, unique labels in deterministic semantic order.
+
+    `sanitize_selector_text`, not just `.strip()`: a real corpus header can
+    concatenate two source lines with an embedded newline (`cell_frame.py`'s
+    own docstring -- extraction joins a header with the row above and its
+    unit row), and this menu feeds straight into a `MetricSelector`, whose
+    `raw_text`/`column_text` fields forbid control characters outright. A
+    live full-export run crashed on exactly this: a chosen column header
+    containing a literal newline raised a `ValidationError` at
+    `MetricSelector` construction.
+    """
+    sanitized = (sanitize_selector_text(label) for label in labels if label and label.strip())
+    unique = dict.fromkeys(label for label in sanitized if label)
     return tuple(sorted(unique, key=lambda label: (normalized_key(label), label)))
 
 

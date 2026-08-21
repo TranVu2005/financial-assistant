@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from financial_report_qa.normalization._shared import sanitize_selector_text
 from financial_report_qa.retrieval.row_fusion_contracts import RowFusedCandidate
 
 if TYPE_CHECKING:
@@ -38,8 +39,15 @@ def evidence_row_labels(
     seen: dict[str, None] = {}
     for candidate in fusion_results:
         label = candidate.metadata.row_label_raw
-        if label and label.strip() and label.strip() not in seen:
-            seen[label.strip()] = None
+        # `sanitize_selector_text`, not just `.strip()`: this menu is what
+        # `choose_row_label`/`choose_row_label_with_context` pick from, and
+        # the choice becomes a `MetricSelector.raw_text`, which forbids
+        # control characters outright -- a real corpus label formed by
+        # joining two source lines can carry an embedded newline that
+        # `.strip()` alone would leave in place.
+        sanitized = sanitize_selector_text(label) if label else None
+        if sanitized and sanitized not in seen:
+            seen[sanitized] = None
         if len(seen) >= max_labels:
             break
     return tuple(seen)

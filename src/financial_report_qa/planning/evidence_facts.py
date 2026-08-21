@@ -28,6 +28,7 @@ from typing import SupportsInt, cast
 import pandas as pd
 
 from financial_report_qa.execution.cell_frame import build_cell_frame
+from financial_report_qa.normalization._shared import sanitize_selector_text
 from financial_report_qa.planning.grounding_contracts import GroundedFact
 from financial_report_qa.retrieval.row_fusion_contracts import RowFusedCandidate
 
@@ -91,13 +92,19 @@ def enumerate_candidate_facts(
         if not label or not label.strip():
             continue
         column = row.column_label if isinstance(row.column_label, str) else None
+        # A real corpus header can concatenate two source lines with an
+        # embedded newline (cell_frame.py: extraction joins a header with the
+        # row above and its unit row); plan_contracts.RawMetricText forbids
+        # control characters outright, so this fact's `column`/`row_label`
+        # must already be safe to drop straight into a MetricSelector.
+        sanitized_column = sanitize_selector_text(column) if column else None
         facts.append(
             GroundedFact(
                 fact_id=f"F{len(facts) + 1}",
                 table_id=str(row.table_id),
                 row_index=_as_int(row.row_idx),
-                row_label=label.strip(),
-                column=column.strip() if column and column.strip() else None,
+                row_label=sanitize_selector_text(label),
+                column=sanitized_column or None,
                 company_code=str(row.company_code),
                 period=_as_int(row.period),
                 raw_value=Decimal(str(row.value)),

@@ -278,3 +278,42 @@ def test_enumerate_returns_nothing_without_retrieved_rows(tmp_path: Path) -> Non
         tmp_path, [_cell("a", row_idx=1, row_label_raw="Doanh thu thuan", value="63075")]
     )
     assert enumerate_candidate_facts(release_dir, []) == ()
+
+
+def test_enumerate_collapses_an_embedded_newline_in_the_column_header(tmp_path: Path) -> None:
+    """A live full-export run crashed constructing a MetricSelector from a
+    fact whose column carried a literal embedded newline (a real corpus
+    header formed by joining two source lines): plan_contracts.RawMetricText
+    forbids control characters outright. GroundedFact.column must already be
+    safe to drop straight into MetricSelector.column_text."""
+    release_dir = _write_release(
+        tmp_path,
+        [
+            _cell(
+                "a",
+                row_idx=1,
+                row_label_raw="Doanh thu thuan",
+                value="63075",
+                period="2019",
+                unit="VND",
+            )
+        ],
+    )
+    cells = tmp_path / "release" / "cells.parquet"
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(cells)
+    column_labels = table.column("column_label_raw").to_pylist()
+    column_labels[0] = "31/12/2019\nVND"
+    table = table.set_column(
+        table.schema.get_field_index("column_label_raw"),
+        "column_label_raw",
+        [column_labels],
+    )
+    pq.write_table(table, cells)
+
+    facts = enumerate_candidate_facts(
+        release_dir, [_candidate(rank=1, row_idx=1, row_label_raw="Doanh thu thuan")]
+    )
+    assert len(facts) == 1
+    assert facts[0].column == "31/12/2019 VND"

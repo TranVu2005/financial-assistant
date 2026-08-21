@@ -6,6 +6,7 @@ from financial_report_qa.normalization._shared import (
     Decision,
     issue_sort_key,
     normalized_key,
+    sanitize_selector_text,
     validate_aliases,
 )
 from financial_report_qa.schemas.normalization import NormalizationIssue
@@ -45,3 +46,26 @@ def test_issue_sort_key_orders_none_before_identifiers() -> None:
         document_issue,
         table_issue,
     ]
+
+
+def test_sanitize_selector_text_collapses_an_embedded_newline() -> None:
+    """A real corpus column header can concatenate two source lines with a
+    literal newline (e.g. "31/12/2019" + newline + "VND"); plan_contracts's
+    RawMetricText forbids control characters (the 0x00-0x1f range, which
+    includes newline), so a MetricSelector built directly from such text
+    raises a ValidationError. Collapsing whitespace -- not stripping it --
+    keeps the header readable ("31/12/2019 VND") instead of losing the
+    boundary between its parts."""
+    assert sanitize_selector_text("31/12/2019\nVND") == "31/12/2019 VND"
+
+
+def test_sanitize_selector_text_preserves_case() -> None:
+    """Unlike normalized_key, this has to survive as a literal
+    MetricSelector.raw_text/column_text value, not just a comparison key --
+    casefolding it would make the selector no longer name the row it was
+    built from."""
+    assert sanitize_selector_text("Doanh Thu Thuần") == "Doanh Thu Thuần"
+
+
+def test_sanitize_selector_text_strips_and_collapses_ordinary_whitespace() -> None:
+    assert sanitize_selector_text("  Tiền   mặt  ") == "Tiền mặt"

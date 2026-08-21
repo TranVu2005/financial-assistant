@@ -62,13 +62,22 @@ def test_evidence_row_labels_ranked_by_score() -> None:
     candidates = (
         _candidate(row_idx=0, rank=1, fused_score=0.9, row_label_raw="Chi phí lãi vay"),
         _candidate(row_idx=1, rank=2, fused_score=0.7, row_label_raw="Doanh thu bán hàng"),
-        _candidate(table_id=TABLE_B, row_idx=0, rank=3, fused_score=0.5, row_label_raw="Cho vay khách hàng"),
-        _candidate(table_id=TABLE_B, row_idx=1, rank=4, fused_score=0.3, row_label_raw="Tiền gửi NHNN"),
+        _candidate(
+            table_id=TABLE_B, row_idx=0, rank=3, fused_score=0.5, row_label_raw="Cho vay khách hàng"
+        ),
+        _candidate(
+            table_id=TABLE_B, row_idx=1, rank=4, fused_score=0.3, row_label_raw="Tiền gửi NHNN"
+        ),
     )
 
     labels = evidence_row_labels(candidates)
 
-    assert labels == ("Chi phí lãi vay", "Doanh thu bán hàng", "Cho vay khách hàng", "Tiền gửi NHNN")
+    assert labels == (
+        "Chi phí lãi vay",
+        "Doanh thu bán hàng",
+        "Cho vay khách hàng",
+        "Tiền gửi NHNN",
+    )
 
 
 def test_evidence_row_labels_deduplicates() -> None:
@@ -117,6 +126,17 @@ def test_evidence_row_labels_skips_none_labels() -> None:
     labels = evidence_row_labels(candidates)
 
     assert labels == ("Doanh thu",)
+
+
+def test_evidence_row_labels_collapses_an_embedded_newline() -> None:
+    """A live full-export run crashed constructing a MetricSelector from a
+    row label `choose_row_label` picked out of this exact menu: a real
+    corpus label formed by joining two source lines carried a literal
+    embedded newline, and plan_contracts.RawMetricText forbids control
+    characters outright. This menu must already be safe to hand straight to
+    a MetricSelector."""
+    candidates = (_candidate(row_idx=0, rank=1, row_label_raw="Doanh thu\nthuần"),)
+    assert evidence_row_labels(candidates) == ("Doanh thu thuần",)
 
 
 def test_evidence_table_context_top_rows() -> None:

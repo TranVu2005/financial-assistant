@@ -422,3 +422,16 @@ def test_candidate_column_labels_are_stable_across_query_row_orders(
     second = candidate_column_labels(release_dir, [TABLE_A], "Thuế GTGT")
 
     assert first == second == ("Số cuối năm", "Số đầu năm")
+
+
+def test_candidate_column_labels_collapses_an_embedded_newline(tmp_path: Path) -> None:
+    """A live full-export run crashed constructing a MetricSelector from a
+    column choose_column_label offered: a real corpus header formed by
+    joining two source lines carried a literal embedded newline, and
+    plan_contracts.RawMetricText forbids control characters outright. This
+    menu must already be safe to hand straight to a MetricSelector."""
+    release_dir = _write_cells(
+        tmp_path,
+        [_cell("c1", TABLE_A, row_label_raw="Thuế GTGT", column_label_raw="31/12/2019\nVND")],
+    )
+    assert candidate_column_labels(release_dir, [TABLE_A], "Thuế GTGT") == ("31/12/2019 VND",)
