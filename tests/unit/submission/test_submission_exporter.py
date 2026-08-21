@@ -137,6 +137,180 @@ def _write_release(tmp_path: Path) -> Path:
     return release_dir
 
 
+@pytest.fixture
+def release_dir(tmp_path: Path) -> Path:
+    """Release with two distinct table_ids (each with a numeric, dated
+    cell) so retrieval-rank-order tests can pick a pair whose rank order
+    disagrees with alphabetical order."""
+    release_dir = tmp_path / "release"
+    release_dir.mkdir(exist_ok=True)
+    table_id_low = "tbl_" + "1" * 64
+    table_id_high = "tbl_" + "9" * 64
+    cell_id_low = "cell_" + "1" * 64
+    cell_id_high = "cell_" + "9" * 64
+    documents = [
+        {
+            "doc_id": DOC_ID,
+            "repo_id": "repo",
+            "revision": "1",
+            "relative_path": "ACB/2023/ACB_financial_statements_2023_consolidated_extracted.txt",
+            "company_code": "ACB",
+            "report_year": 2023,
+            "statement_scope": "consolidated",
+            "sha256": "0" * 64,
+            "file_size_bytes": 10,
+            "encoding": "utf-8",
+            "inventory_status": "ready",
+            "ruleset_version": "1",
+            "normalization_fingerprint": "0" * 64,
+        }
+    ]
+    tables = [
+        {
+            "table_id": table_id,
+            "doc_id": DOC_ID,
+            "source_ordinal": ordinal,
+            "title_raw": "Bao cao ket qua kinh doanh",
+            "statement_type": "income_statement",
+            "unit_raw": "VND",
+            "unit_normalized": "vnd",
+            "line_start": 1,
+            "line_end": 10,
+            "row_count": 1,
+            "column_count": 2,
+            "quality_score": 0.9,
+            "csv_path": None,
+        }
+        for ordinal, table_id in enumerate((table_id_low, table_id_high))
+    ]
+    cells = [
+        {
+            "cell_id": cell_id,
+            "table_id": table_id,
+            "row_idx": 0,
+            "col_idx": 1,
+            "row_label_raw": "Doanh thu thuan",
+            "row_label_canonical": "net_revenue",
+            "row_group_context_raw": None,
+            "column_label_raw": "Năm 2023",
+            "column_label_canonical": None,
+            "value_raw": "100",
+            "value_numeric": Decimal("100"),
+            "period": "2023",
+            "unit": "VND",
+            "source_line_start": 5,
+            "source_line_end": 5,
+            "extraction_confidence": 0.9,
+        }
+        for table_id, cell_id in (
+            (table_id_low, cell_id_low),
+            (table_id_high, cell_id_high),
+        )
+    ]
+    # Distinct source_line_start per table so their reported "doc|line"
+    # strings differ -- otherwise the two tables' output tokens would
+    # collide and order could never be observed.
+    cells[0]["source_line_start"] = 5
+    cells[0]["source_line_end"] = 5
+    cells[1]["source_line_start"] = 50
+    cells[1]["source_line_end"] = 50
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(tables, schema=TABLE_SCHEMA), release_dir / "tables.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(cells, schema=CELL_SCHEMA), release_dir / "cells.parquet"
+    )
+    placements = [
+        {
+            "table_id": cell["table_id"],
+            "row_idx": cell["row_idx"],
+            "col_idx": cell["col_idx"],
+            "cell_id": cell["cell_id"],
+        }
+        for cell in cells
+    ]
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(placements, schema=PLACEMENT_SCHEMA),
+        release_dir / "placements.parquet",
+    )
+    return release_dir
+
+
+@pytest.fixture
+def two_ranked_table_ids(release_dir: Path) -> tuple[str, str]:
+    """Two real table_ids in the release, deliberately picked so the first
+    element sorts AFTER the second alphabetically -- if code mistakenly uses
+    build_cell_frame (ORDER BY table_id) as the order source, this test
+    should catch the reversal."""
+    import duckdb
+
+    connection = duckdb.connect(":memory:")
+    frame = connection.execute(
+        "SELECT DISTINCT table_id FROM read_parquet(?) "
+        "WHERE value_numeric IS NOT NULL AND period IS NOT NULL "
+        "ORDER BY table_id DESC LIMIT 2",
+        [str(release_dir / "cells.parquet")],
+    ).fetchdf()
+    connection.close()
+    ids = frame["table_id"].tolist()
+    return ids[0], ids[1]  # ids[0] > ids[1] alphabetically (ORDER BY DESC)
+
+
+def test_relevant_tables_come_from_retrieval_not_from_evidence(release_dir: Path) -> None:
+    """Retrieval score (50%) is graded independently of answering success,
+    so the reported table list must reflect retrieval, not the tables the
+    answer happened to use."""
+    import inspect
+
+    from financial_report_qa.submission.exporter import _relevant_docs_and_tables
+
+    signature = inspect.signature(_relevant_docs_and_tables)
+    assert "compiled" not in signature.parameters, (
+        "this function must not depend on the execution result"
+    )
+    assert "retrieved_table_ids" in signature.parameters
+
+
+def test_relevant_tables_preserve_retrieval_rank_order(
+    release_dir: Path, two_ranked_table_ids: tuple[str, str]
+) -> None:
+    """MRR5 (dashboard column TABLES MRR5) scores rank, not set membership.
+
+    The rank-1 table in the input must be the first element of the output --
+    even when it does not come first alphabetically by table_id
+    (build_cell_frame's ORDER BY table_id would sort it wrong if used as the
+    order source)."""
+    from financial_report_qa.submission.exporter import _relevant_docs_and_tables
+
+    rank1_table_id, rank2_table_id = two_ranked_table_ids
+    # Deliberately choose a pair where rank1 sorts AFTER rank2 alphabetically,
+    # so the test cannot pass by coincidence with build_cell_frame's
+    # alphabetical ORDER BY table_id.
+    assert rank1_table_id > rank2_table_id, (
+        "fixture must produce rank1 after rank2 alphabetically for this test to be meaningful"
+    )
+
+    _docs_a, tables_rank1_first = _relevant_docs_and_tables(
+        (rank1_table_id, rank2_table_id), release_dir
+    )
+    _docs_b, tables_rank2_first = _relevant_docs_and_tables(
+        (rank2_table_id, rank1_table_id), release_dir
+    )
+
+    # The two tables must map to distinct output tokens (otherwise order
+    # could never be observed), and swapping the input rank order must swap
+    # the output order. An implementation that (re)sources its order from
+    # build_cell_frame's alphabetical ORDER BY table_id would produce the
+    # SAME output regardless of input order -- this assertion catches that.
+    assert tables_rank1_first[0] != tables_rank1_first[1]
+    assert tables_rank1_first == (tables_rank2_first[1], tables_rank2_first[0]), (
+        "output order must track retrieval-rank input order, not table_id alphabetical order"
+    )
+
+
 def _service() -> RetrievalService:
     document = TableDocument(
         table_id=TABLE_ID,

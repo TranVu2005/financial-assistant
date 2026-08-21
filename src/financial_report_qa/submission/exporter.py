@@ -161,21 +161,53 @@ def _real_table_evidence_rows(
 
 
 def _relevant_docs_and_tables(
-    compiled: CompiledQuery, citation_lookup: Mapping[str, Mapping[str, object]]
+    retrieved_table_ids: Sequence[str], release_dir: Path
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Day 22 plan §2 decision C: uses each evidence CELL's own resolved
-    source line (not a table-level line_start) -- see the plan doc for why."""
+    """Table list reported for retrieval scoring.
+
+    The dashboard grades 8 retrieval metrics (TABLES/DOCS x
+    Precision/Recall/F2/MRR5), INDEPENDENTLY of Answer/Execution Accuracy.
+    Before this fix, this function derived tables from `compiled.evidence`
+    -- only the tables actually used to compute an answer -- so any question
+    that failed to answer also lost retrieval credit, even when the
+    retriever found the right table.
+
+    Mandatory invariant: the order of elements in the returned tuple MUST
+    match the order of `retrieved_table_ids` (retrieval-rank, highest score
+    first) -- the dashboard grades MRR5 (rank of the first correct result
+    in the top 5), not just set membership. This function therefore must
+    NOT get its table list from `build_cell_frame()` (it `ORDER BY
+    table_id` -- alphabetical, not rank) and iterate in that order; it may
+    only use it to look up citation info for a single already-known
+    table_id.
+    """
+    if not retrieved_table_ids:
+        return ((), ())
+
+    ordered_table_ids = tuple(dict.fromkeys(retrieved_table_ids))
+    frame = build_cell_frame(release_dir, ordered_table_ids)
+
+    # Any one cell per table is enough to look up citation info (doc + source
+    # line are both stable within a table_id) -- no need for the whole cell.
+    first_cell_by_table: dict[str, str] = {}
+    for record in frame.to_dict(orient="records"):
+        table_id = str(record["table_id"])
+        first_cell_by_table.setdefault(table_id, str(record["cell_id"]))
+
+    lookup = build_citation_lookup(release_dir, tuple(first_cell_by_table.values()))
+
     docs: dict[str, None] = {}
     tables: dict[str, None] = {}
-    for cell in compiled.evidence:
-        for cell_id in cell.cell_ids:
-            provenance = citation_lookup[cell_id]
-            relative_path = str(provenance["doc_relative_path"])
-            report_id = PurePosixPath(relative_path).name
-            if report_id.endswith(".txt"):
-                report_id = report_id[: -len(".txt")]
-            docs.setdefault(report_id, None)
-            tables.setdefault(f"{report_id}|{provenance['source_line_start']}", None)
+    for table_id in ordered_table_ids:  # <-- rank order, NOT frame order
+        cell_id = first_cell_by_table.get(table_id)
+        if cell_id is None:
+            continue  # retrieved but has no numeric cell left (rare, safe to skip)
+        provenance = lookup[cell_id]
+        report_id = PurePosixPath(str(provenance["doc_relative_path"])).name
+        if report_id.endswith(".txt"):
+            report_id = report_id[: -len(".txt")]
+        docs.setdefault(report_id, None)
+        tables.setdefault(f"{report_id}|{provenance['source_line_start']}", None)
     return tuple(docs), tuple(tables)
 
 
@@ -522,7 +554,7 @@ def _run_one_question(
             None,
         )
 
-    relevant_docs, relevant_tables = _relevant_docs_and_tables(compiled, citation_lookup)
+    relevant_docs, relevant_tables = _relevant_docs_and_tables(retrieved, release_dir)
     csv_path = f"data/q{raw_question.id:06d}_df1.csv"
     assert compiled.answer is not None
     item = SubmissionItem.model_validate(
