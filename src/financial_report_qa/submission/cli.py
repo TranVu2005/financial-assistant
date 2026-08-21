@@ -29,6 +29,7 @@ from financial_report_qa.planning.llm_client import LLMClient
 from financial_report_qa.retrieval.index import load_bm25_index
 from financial_report_qa.retrieval.release import resolve_retrieval_release
 from financial_report_qa.retrieval.service import RetrievalService
+from financial_report_qa.submission.compliance import check_bundle
 from financial_report_qa.submission.contracts import SubmissionExportReport
 from financial_report_qa.submission.exporter import (
     export_submission,
@@ -276,6 +277,32 @@ def main(argv: Sequence[str] | None = None) -> int:
                     row_fusion=row_fusion,
                     allow_inferred_scope=args.allow_inferred_scope,
                 )
+            # Chốt chặn cứng (design §5.3): thể lệ ghi "Các câu hỏi vi phạm quy định
+            # này sẽ không được tính điểm", và mục VIII liệt kê hardcode đáp án là căn
+            # cứ loại đội thi. Không bao giờ ghi ra ZIP một bundle vi phạm.
+            violations = check_bundle(
+                items, csv_rows, timeout_seconds=execution_settings.timeout_seconds
+            )
+            if violations:
+                args.report_dir.mkdir(parents=True, exist_ok=True)
+                (args.report_dir / "compliance-violations.json").write_text(
+                    json.dumps(
+                        [
+                            {"id": v.question_id, "code": v.code, "detail": v.detail}
+                            for v in violations
+                        ],
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                affected = len({v.question_id for v in violations})
+                print(
+                    f"COMPLIANCE FAIL: {len(violations)} vi phạm trên {affected} câu. "
+                    f"Chi tiết: {args.report_dir / 'compliance-violations.json'}"
+                )
+                return 2
             sha256 = write_submission_zip(items, csv_rows, args.output_zip)
             json_path, markdown_path = write_export_report(report, args.report_dir)
             print(args.output_zip)

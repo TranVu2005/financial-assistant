@@ -59,13 +59,16 @@ def _fixture_release(tmp_path: Path) -> ResolvedRetrievalRelease:
             "unit_raw": "VND",
             "unit_normalized": "vnd",
             "line_start": 1,
-            "line_end": 2,
-            "row_count": 1,
+            "line_end": 3,
+            "row_count": 2,
             "column_count": 1,
             "quality_score": 0.9,
             "csv_path": None,
         }
     ]
+    # Two distinct rows (plan.md submission compliance C1 requires >= 2 rows
+    # of real table data) -- a single-row table reads as a hardcoded-answer
+    # CSV to the compliance linter (Task 5).
     cells = [
         {
             "cell_id": "cell_" + "a" * 64,
@@ -84,7 +87,25 @@ def _fixture_release(tmp_path: Path) -> ResolvedRetrievalRelease:
             "source_line_start": 2,
             "source_line_end": 2,
             "extraction_confidence": 0.9,
-        }
+        },
+        {
+            "cell_id": "cell_" + "b" * 64,
+            "table_id": _TABLE_ID,
+            "row_idx": 2,
+            "col_idx": 1,
+            "row_label_raw": "Tổng nợ phải trả",
+            "row_label_canonical": "total_liabilities",
+            "row_group_context_raw": None,
+            "column_label_raw": "Năm 2023",
+            "column_label_canonical": None,
+            "value_raw": "100",
+            "value_numeric": Decimal("100"),
+            "period": "2023",
+            "unit": "VND",
+            "source_line_start": 3,
+            "source_line_end": 3,
+            "extraction_confidence": 0.9,
+        },
     ]
     pq.write_table(  # type: ignore[no-untyped-call]
         pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet"
@@ -196,6 +217,58 @@ def test_export_then_validate_roundtrip(tmp_path: Path, monkeypatch: MonkeyPatch
         ["validate", "--zip-path", str(output_zip), "--report-path", str(report_files[0])]
     )
     assert exit_code == 0
+
+
+def test_export_fails_build_when_bundle_has_violations(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    """Bundle vi phạm không bao giờ được ghi ra ZIP."""
+    from financial_report_qa.submission import cli as submission_cli
+    from financial_report_qa.submission.compliance import ComplianceViolation
+
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    index_dir = tmp_path / "index"
+    _write_bm25_index(index_dir)
+    config_path = tmp_path / "execution.yaml"
+    _write_execution_config(config_path)
+    questions_path = tmp_path / "questions.jsonl"
+    _write_questions(questions_path)
+    output_zip = tmp_path / "submission.zip"
+    report_dir = tmp_path / "report"
+
+    monkeypatch.setattr(
+        submission_cli,
+        "check_bundle",
+        lambda items, csv_rows, *, timeout_seconds: (
+            ComplianceViolation(question_id=1, code="C1", detail="CSV chỉ có 1 dòng"),
+        ),
+    )
+
+    exit_code = submission_cli.main(
+        [
+            "export",
+            "--release-lock",
+            "lock.json",
+            "--bm25-index",
+            str(index_dir),
+            "--questions-path",
+            str(questions_path),
+            "--execution-config",
+            str(config_path),
+            "--output-zip",
+            str(output_zip),
+            "--report-dir",
+            str(report_dir),
+        ]
+    )
+
+    assert exit_code == 2
+    assert not output_zip.exists(), "ZIP vi phạm không được ghi ra đĩa"
+    violations_path = report_dir / "compliance-violations.json"
+    assert violations_path.exists()
+    payload = json.loads(violations_path.read_text(encoding="utf-8"))
+    assert payload == [{"id": 1, "code": "C1", "detail": "CSV chỉ có 1 dòng"}]
 
 
 def _write_llm_config(path: Path) -> None:
