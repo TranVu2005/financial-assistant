@@ -124,10 +124,12 @@ def _real_table_evidence_rows(
     which cannot introduce new ambiguity: any row `locate()` uniquely found
     in the wider candidate frame stays uniquely findable here.
 
-    Returns `None` (caller falls back to the old synthetic single-row CSV)
-    when this frame does not independently replay to the same answer --
-    e.g. two evidence cells drawn from tables in different units, where
-    `compile_plan` reconverted one but this raw multi-row frame cannot.
+    Returns `None` when this frame does not independently replay to the
+    same answer -- e.g. two evidence cells drawn from tables in different
+    units, where `compile_plan` reconverted one but this raw multi-row frame
+    cannot. There is no synthetic single-row CSV fallback for that case: the
+    caller must treat a `None` return as an execution failure
+    (`evidence_frame_replay_mismatch`), not synthesize a replacement row.
     Never trusts the coincidence; always re-verifies via the sandbox.
     """
     evidence_table_ids: tuple[str, ...] = tuple(

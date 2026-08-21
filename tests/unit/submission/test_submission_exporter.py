@@ -1112,13 +1112,22 @@ def test_render_csv_bytes_includes_position_columns() -> None:
     ]
 
 
-def test_answered_path_never_emits_synthesized_single_row(tmp_path) -> None:
+def test_answered_path_never_emits_synthesized_single_row(tmp_path: Path) -> None:
     """Bất biến BI-1: evidence CSV luôn là lát cắt bảng thật.
 
-    Nếu bảng thật không replay đúng, câu phải rơi xuống backstop chứ không
-    được đóng gói một dòng dựng ngược từ đáp án.
+    Khi `_real_table_evidence_rows` không thể replay bảng thật ra đúng đáp
+    án (trả về `None`), câu hỏi phải thất bại execution với
+    `evidence_frame_replay_mismatch` -- không còn nhánh dựng ngược một dòng
+    CSV từ đáp án (`_replay_rows_to_csv_rows`, đã bị xoá) để rơi vào.
     """
     from financial_report_qa.submission import exporter
+
+    assert not hasattr(exporter, "_replay_rows_to_csv_rows"), (
+        "_replay_rows_to_csv_rows là nhánh sinh CSV một dòng -- phải bị xoá"
+    )
+
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=1, question="Tra cứu doanh thu thuần của ACB năm 2023.")
 
     calls: list[str] = []
 
@@ -1129,8 +1138,23 @@ def test_answered_path_never_emits_synthesized_single_row(tmp_path) -> None:
     original = exporter._real_table_evidence_rows
     exporter._real_table_evidence_rows = _fake_real_rows
     try:
-        assert not hasattr(exporter, "_replay_rows_to_csv_rows"), (
-            "_replay_rows_to_csv_rows là nhánh sinh CSV một dòng -- phải bị xoá"
+        report, items, csv_rows = exporter.export_submission(
+            [question],
+            _service(),
+            release_dir,
+            execution_settings=_ALLOW_LOOKUP,
+            dataset_fingerprint="0" * 64,
+            k=10,
+            apply_backstop=False,
         )
     finally:
         exporter._real_table_evidence_rows = original
+
+    assert calls == ["called"]
+    assert report.answered_count == 0
+    assert items == ()
+    assert csv_rows == {}
+    outcome = report.outcomes[0]
+    assert outcome.status == "error"
+    assert outcome.stage == "execution"
+    assert outcome.code == "evidence_frame_replay_mismatch"
