@@ -86,12 +86,16 @@ def _write_release(tmp_path: Path) -> Path:
             "unit_normalized": "vnd",
             "line_start": 1,
             "line_end": 10,
-            "row_count": 1,
+            "row_count": 2,
             "column_count": 2,
             "quality_score": 0.9,
             "csv_path": None,
         }
     ]
+    # >= 2 numeric cells (plan.md submission compliance C1, and the Critical
+    # 1 backstop/evidence guard added in the 2026-08-21 final review both
+    # require it): a table with a single numeric cell reads as a hardcoded
+    # answer -- its one CSV row's `value` equals `item.answer`.
     cells = [
         {
             "cell_id": CELL_ID,
@@ -110,7 +114,25 @@ def _write_release(tmp_path: Path) -> Path:
             "source_line_start": 5,
             "source_line_end": 5,
             "extraction_confidence": 0.9,
-        }
+        },
+        {
+            "cell_id": "cell_" + "d" * 64,
+            "table_id": TABLE_ID,
+            "row_idx": 1,
+            "col_idx": 1,
+            "row_label_raw": "Gia von hang ban",
+            "row_label_canonical": "cost_of_goods_sold",
+            "row_group_context_raw": None,
+            "column_label_raw": "Năm 2023",
+            "column_label_canonical": None,
+            "value_raw": "60",
+            "value_numeric": Decimal("60"),
+            "period": "2023",
+            "unit": "VND",
+            "source_line_start": 6,
+            "source_line_end": 6,
+            "extraction_confidence": 0.9,
+        },
     ]
     pq.write_table(  # type: ignore[no-untyped-call]
         pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet"
@@ -586,12 +608,14 @@ def test_export_submission_grounds_raw_metric_when_rule_planner_would_abstain(
             "unit_normalized": "vnd",
             "line_start": 1,
             "line_end": 10,
-            "row_count": 1,
+            "row_count": 2,
             "column_count": 2,
             "quality_score": 0.9,
             "csv_path": None,
         }
     ]
+    # >= 2 numeric cells: see the `_write_release` comment above -- a
+    # single-cell table now fails the Critical 1 backstop/evidence guard.
     cells = [
         {
             "cell_id": CELL_ID,
@@ -610,7 +634,25 @@ def test_export_submission_grounds_raw_metric_when_rule_planner_would_abstain(
             "source_line_start": 5,
             "source_line_end": 5,
             "extraction_confidence": 0.9,
-        }
+        },
+        {
+            "cell_id": "cell_" + "e" * 64,
+            "table_id": TABLE_ID,
+            "row_idx": 1,
+            "col_idx": 1,
+            "row_label_raw": "Lãi tiền vay",
+            "row_label_canonical": None,
+            "row_group_context_raw": None,
+            "column_label_raw": "Năm 2020",
+            "column_label_canonical": None,
+            "value_raw": "30",
+            "value_numeric": Decimal("30"),
+            "period": "2020",
+            "unit": "VND",
+            "source_line_start": 6,
+            "source_line_end": 6,
+            "extraction_confidence": 0.9,
+        },
     ]
     pq.write_table(  # type: ignore[no-untyped-call]
         pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet"
