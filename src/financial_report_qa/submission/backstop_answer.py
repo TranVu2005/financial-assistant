@@ -45,6 +45,16 @@ from financial_report_qa.submission.contracts import (
 
 CsvRow = Mapping[str, object]
 
+#: Minor 2 (2026-08-21 final review round 2): this is the corpus-wide
+#: fallback used when retrieval returned zero candidates at all. It must
+#: only ever hand back a table `_uniquely_addressable_row` can actually use
+#: -- i.e. one with >= 2 usable numeric cells, the same invariant that
+#: function itself enforces (`len(table_frame) < 2` -> `None`). Without the
+#: `HAVING COUNT(*) >= 2` guard, an unlucky `LIMIT 1` pick could land on a
+#: singleton-cell table and fall straight into the last-resort `RuntimeError`
+#: below -- a case that RuntimeError was never meant to cover, since a
+#: perfectly usable table exists elsewhere in the corpus. `ORDER BY
+#: c.table_id` makes the pick deterministic/reproducible across runs.
 _ANY_TABLE_QUERY = """
 SELECT c.table_id
 FROM read_parquet(?) AS c
@@ -52,6 +62,9 @@ WHERE c.col_idx > 0
   AND c.value_numeric IS NOT NULL
   AND c.row_label_raw IS NOT NULL
   AND c.period IS NOT NULL
+GROUP BY c.table_id
+HAVING COUNT(*) >= 2
+ORDER BY c.table_id
 LIMIT 1
 """
 

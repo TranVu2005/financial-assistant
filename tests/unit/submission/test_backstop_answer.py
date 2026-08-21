@@ -342,6 +342,50 @@ def test_backstop_raises_when_release_has_no_numeric_cell_at_all(tmp_path: Path)
         build_backstop_item(question, [], release_dir)
 
 
+def test_backstop_raises_when_any_corpus_fallback_table_is_unusable(tmp_path: Path) -> None:
+    """Minor 3 (2026-08-21 final review round 2): exercises the *other*
+    RuntimeError site -- not `_any_corpus_table_id`'s own "release is
+    completely empty" raise (covered by
+    `test_backstop_raises_when_release_has_no_numeric_cell_at_all`), but the
+    one in `build_backstop_item` right after it, for when
+    `_any_corpus_table_id` *does* find a table satisfying its own >= 2
+    numeric-cell guard, yet that table still fails
+    `_uniquely_addressable_row`'s stricter usability check.
+
+    Constructed via a `period` mismatch: `_ANY_TABLE_QUERY` only checks the
+    *raw* `c.period IS NOT NULL`, but `build_cell_frame` recomputes `period`
+    via `TRY_CAST(LEFT(c.period, 4) AS INTEGER)`. A raw `period` value that
+    is non-null but not a parseable year (e.g. "??") passes the raw-period
+    filter yet resolves to a NULL computed `period` in `build_cell_frame`'s
+    output -- so `_uniquely_addressable_row`'s `period.notna()` usable-filter
+    rejects every row of that table, and no other table exists in this
+    release for the fallback to try instead.
+    """
+    release_dir = tmp_path / "release_bad_period"
+    release_dir.mkdir()
+    bad_table_id = "tbl_" + "7" * 64
+    bad_doc_id = "doc_" + "7" * 64
+    documents = [_document(bad_doc_id, "BAD", 2023, "BAD/2023/report.txt")]
+    tables = [_table(bad_table_id, bad_doc_id)]
+    cells = [
+        _cell("cell_bad1", bad_table_id, row_label_raw="Doanh thu", value="1", period="??", row_idx=0),
+        _cell("cell_bad2", bad_table_id, row_label_raw="Chi phí", value="2", period="??", row_idx=1),
+    ]
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(tables, schema=TABLE_SCHEMA), release_dir / "tables.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(cells, schema=CELL_SCHEMA), release_dir / "cells.parquet"
+    )
+    question = RawQuestion(id=8, question="Câu hỏi không xác định được.")
+
+    with pytest.raises(RuntimeError, match="bảng dự phòng toàn kho"):
+        build_backstop_item(question, [], release_dir)
+
+
 def test_backstop_emits_full_source_table_not_one_row(release_dir, sample_table_ids) -> None:
     """BI-4: backstop không được tổng hợp dòng nào."""
     from financial_report_qa.submission.backstop_answer import build_backstop_item
