@@ -41,7 +41,7 @@ from financial_report_qa.planning.evidence_rendering import (
 from financial_report_qa.planning.llm_cell_grounding import choose_column_label
 from financial_report_qa.planning.llm_client import ChatCompletionClient
 from financial_report_qa.planning.llm_evidence_planner import plan_with_evidence
-from financial_report_qa.planning.plan_contracts import map_requested_unit
+from financial_report_qa.planning.plan_contracts import _PERIOD_PATTERN, map_requested_unit
 from financial_report_qa.planning.plan_router import route_plan
 from financial_report_qa.planning.raw_metric_grounding import (
     candidate_column_labels,
@@ -85,6 +85,22 @@ def load_raw_questions(path: Path) -> tuple[RawQuestion, ...]:
             seen_ids.add(question.id)
             records.append(question)
     return tuple(sorted(records, key=lambda item: item.id))
+
+
+def _bare_year_periods(periods: Sequence[str]) -> tuple[int, ...]:
+    """plan.md §12: the periods `enumerate_candidate_facts` filters on.
+
+    `entities.periods` (entity_parser.py) is not always a bare 4-digit year
+    -- a question naming an explicit date ("ngày 31/12/2015") resolves to an
+    ISO date string ("2015-12-31"), and a quarter can resolve to its own
+    non-year token. `rule_planner.py` already guards this: it abstains with
+    `period_grammar_unsupported` unless every period matches
+    `_PERIOD_PATTERN`. This tier has to apply the same filter -- silently
+    dropping a non-bare-year entry, rather than crashing the whole export on
+    one question's phrasing, since a live full-export run did exactly that
+    (`int('2015-12-31')` raising `ValueError` out of `_run_one_question`).
+    """
+    return tuple(int(period) for period in periods if _PERIOD_PATTERN.match(period))
 
 
 def _synthetic_question_id(question_id: int) -> str:
@@ -291,7 +307,7 @@ def _run_one_question(
                 release_dir,
                 client=llm_client,
                 company_code=entities.company_codes[0] if entities.company_codes else None,
-                periods=tuple(int(period) for period in entities.periods),
+                periods=_bare_year_periods(entities.periods),
                 expected_unit=map_requested_unit(entities.requested_unit),
             )
             if fusion_rows

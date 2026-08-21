@@ -32,6 +32,7 @@ from financial_report_qa.retrieval.index import build_bm25_index
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.contracts import RawQuestion
 from financial_report_qa.submission.exporter import (
+    _bare_year_periods,
     export_submission,
     load_raw_questions,
     write_submission_zip,
@@ -1053,3 +1054,29 @@ def test_export_submission_evidence_planner_is_skipped_without_row_fusion(
         row_fusion=None,
     )
     assert report.outcomes[0].plan_source == "llm"
+
+
+def test_bare_year_periods_keeps_bare_four_digit_years() -> None:
+    assert _bare_year_periods(("2022", "2023")) == (2022, 2023)
+
+
+def test_bare_year_periods_drops_a_full_iso_date() -> None:
+    r"""A live full-export run crashed on question text naming an explicit
+    date ("ngày 31/12/2015") rather than a bare year: `entity_parser`
+    resolves such a question's `entities.periods` to an ISO date string
+    ("2015-12-31"), which the §12 wiring passed straight into `int(...)` and
+    blew up with an uncaught `ValueError` -- taking down the whole export,
+    not just this one question. `rule_planner.py` already guards this exact
+    case (only ever building a plan when every period matches the bare-year
+    pattern, `_PERIOD_PATTERN = re.compile(r"^\d{4}$")`); the evidence-planner
+    wiring must apply the same filter instead of assuming every parsed
+    period is a bare year."""
+    assert _bare_year_periods(("2015-12-31",)) == ()
+
+
+def test_bare_year_periods_drops_only_the_non_year_entries() -> None:
+    assert _bare_year_periods(("2023", "2015-12-31", "2022")) == (2023, 2022)
+
+
+def test_bare_year_periods_of_no_periods_is_empty() -> None:
+    assert _bare_year_periods(()) == ()
