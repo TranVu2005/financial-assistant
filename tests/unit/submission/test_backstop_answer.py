@@ -142,7 +142,9 @@ def test_backstop_uses_candidate_table_when_available(tmp_path: Path) -> None:
 
 def test_backstop_falls_back_to_whole_corpus_when_no_candidate_tables(tmp_path: Path) -> None:
     """Retrieval returning nothing (42/1.012 real questions) must not
-    prevent a valid backstop -- some numeric cell exists somewhere."""
+    prevent a valid backstop -- some numeric cell exists somewhere. But the
+    arbitrary fallback table must never be reported as relevant (spec §6.1:
+    "không được emit bảng tuỳ ý")."""
     release_dir = _write_release(tmp_path)
     question = RawQuestion(id=2, question="Câu hỏi không xác định được.")
 
@@ -151,6 +153,8 @@ def test_backstop_falls_back_to_whole_corpus_when_no_candidate_tables(tmp_path: 
     assert item.id == 2
     assert item.answer in (1000.0, 500.0)
     assert rows[0]["value"] in (Decimal("1000"), Decimal("500"))
+    assert item.relevant_docs == ()
+    assert item.relevant_tables == ()
 
 
 def test_backstop_item_is_contract_valid_and_replayable(tmp_path: Path) -> None:

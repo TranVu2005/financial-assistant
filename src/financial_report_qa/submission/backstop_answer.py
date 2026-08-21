@@ -18,6 +18,12 @@ row synthesized backwards from the declared answer (2026-08-21 compliance
 design BI-1/BI-2). `answer` is best-effort and frequently wrong; that is an
 accepted trade-off (Answer Accuracy scores wrong and missing answers
 identically at 0 -- there is no additional penalty for guessing).
+
+For the 42/1.012 `no_candidate_tables` questions (retrieval returned no
+candidates at all), an arbitrary corpus-wide table is still used to produce
+a best-effort answer/CSV/pandas_query -- but it is never reported as a
+retrieval result: `relevant_docs`/`relevant_tables` are emitted as empty
+tuples for that path, per spec §6.1 ("khong duoc emit bang tuy y").
 """
 
 from __future__ import annotations
@@ -105,12 +111,16 @@ def build_backstop_item(
        điểm không cần thiết.
 
     Nếu retrieval không trả về bảng nào (42/1012 câu `no_candidate_tables`),
-    rơi về một bảng bất kỳ trong toàn kho (`_any_corpus_table_id`) rồi đi
-    tiếp cùng một đường xử lý -- vẫn không bao giờ dựng dòng thủ công.
+    rơi về một bảng bất kỳ trong toàn kho (`_any_corpus_table_id`) để vẫn có
+    answer/CSV/pandas_query, nhưng KHÔNG báo bảng đó là "relevant": spec
+    §6.1 cấm emit một bảng tuỳ ý như thể nó liên quan. Trong nhánh này
+    `relevant_docs`/`relevant_tables` luôn là tuple rỗng `()` -- hợp lệ vì
+    hai trường này không có ràng buộc độ dài tối thiểu trong contracts.py.
 
     Đáp án vẫn là best-effort và thường sai -- đó là đánh đổi chấp nhận được
     (Answer Accuracy tính trên tổng số câu, sai và bỏ trống đều bằng 0).
     """
+    is_no_candidate_fallback = not candidate_table_ids
     if candidate_table_ids:
         table_ids = tuple(dict.fromkeys(candidate_table_ids))
     else:
@@ -148,22 +158,27 @@ def build_backstop_item(
         )
     query = f'df1[{" & ".join(clauses)}]["value"].iloc[0]'
 
-    # relevant_docs/relevant_tables cover EVERY retrieved candidate table (or
-    # the single corpus-wide fallback table), not just the one the chosen
-    # cell came from -- retrieval is scored independently at 50% weight.
+    # relevant_docs/relevant_tables cover EVERY retrieved candidate table, not
+    # just the one the chosen cell came from -- retrieval is scored
+    # independently at 50% weight. But when there were no candidate tables
+    # at all, `table_ids` holds only the arbitrary corpus-wide fallback
+    # table (_any_corpus_table_id), and that table is NOT a retrieval
+    # result -- reporting it as relevant would violate spec §6.1. Skip the
+    # citation lookup entirely for that path and emit empty tuples.
     docs: dict[str, None] = {}
     tables: dict[str, None] = {}
-    for candidate_table_id in table_ids:
-        candidate_frame = frame[frame["table_id"] == candidate_table_id]
-        if candidate_frame.empty:
-            continue
-        cell_id = str(candidate_frame.iloc[0]["cell_id"])
-        provenance = build_citation_lookup(release_dir, [cell_id])[cell_id]
-        report_id = str(provenance["doc_relative_path"]).rsplit("/", 1)[-1]
-        if report_id.endswith(".txt"):
-            report_id = report_id[: -len(".txt")]
-        docs.setdefault(report_id, None)
-        tables.setdefault(f"{report_id}|{provenance['source_line_start']}", None)
+    if not is_no_candidate_fallback:
+        for candidate_table_id in table_ids:
+            candidate_frame = frame[frame["table_id"] == candidate_table_id]
+            if candidate_frame.empty:
+                continue
+            cell_id = str(candidate_frame.iloc[0]["cell_id"])
+            provenance = build_citation_lookup(release_dir, [cell_id])[cell_id]
+            report_id = str(provenance["doc_relative_path"]).rsplit("/", 1)[-1]
+            if report_id.endswith(".txt"):
+                report_id = report_id[: -len(".txt")]
+            docs.setdefault(report_id, None)
+            tables.setdefault(f"{report_id}|{provenance['source_line_start']}", None)
 
     item = SubmissionItem.model_validate(
         {
