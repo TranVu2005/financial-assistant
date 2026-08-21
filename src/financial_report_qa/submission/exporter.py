@@ -150,6 +150,9 @@ def _real_table_evidence_rows(
     frame = build_cell_frame(release_dir, evidence_table_ids)
     rows: tuple[CsvRow, ...] = tuple(
         {
+            "table_id": record["table_id"],
+            "row_idx": record["row_idx"],
+            "col_idx": record["col_idx"],
             "company_code": record["company_code"],
             "row_label_canonical": record["row_label_canonical"],
             "row_label_raw": record["row_label_raw"],
@@ -662,32 +665,33 @@ def export_submission(
     return report, tuple(items), csv_rows
 
 
+_CSV_COLUMNS = (
+    "table_id",
+    "row_idx",
+    "col_idx",
+    "company_code",
+    "row_label_canonical",
+    "row_label_raw",
+    "column_label",
+    "period",
+    "value",
+)
+
+
 def _render_csv_bytes(rows: Sequence[CsvRow]) -> bytes:
+    """Ghi lát cắt bảng nguồn theo schema cố định.
+
+    `table_id`/`row_idx`/`col_idx` bắt buộc phải có: `pandas_query.py`
+    `_position_clauses` sinh predicate tham chiếu trực tiếp `df1.table_id` và
+    `df1.row_idx`, và trước Day 27 hai cột đó bị bỏ khỏi CSV -- khiến 84 câu
+    ném `KeyError` khi replay trên chính CSV đóng gói kèm.
+    """
     buffer = io.StringIO(newline="")
     writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(
-        [
-            "company_code",
-            "row_label_canonical",
-            "row_label_raw",
-            "column_label",
-            "period",
-            "value",
-        ]
-    )
+    writer.writerow(list(_CSV_COLUMNS))
     for row in rows:
-        canonical = row["row_label_canonical"]
-        raw = row["row_label_raw"]
-        column = row.get("column_label")
         writer.writerow(
-            [
-                row["company_code"],
-                "" if canonical is None else canonical,
-                "" if raw is None else raw,
-                "" if column is None else column,
-                row["period"],
-                row["value"],
-            ]
+            ["" if row.get(column) is None else row.get(column) for column in _CSV_COLUMNS]
         )
     return buffer.getvalue().encode("utf-8")
 

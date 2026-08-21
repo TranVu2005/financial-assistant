@@ -33,6 +33,7 @@ from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.contracts import RawQuestion
 from financial_report_qa.submission.exporter import (
     _bare_year_periods,
+    _render_csv_bytes,
     export_submission,
     load_raw_questions,
     write_submission_zip,
@@ -1080,3 +1081,32 @@ def test_bare_year_periods_drops_only_the_non_year_entries() -> None:
 
 def test_bare_year_periods_of_no_periods_is_empty() -> None:
     assert _bare_year_periods(()) == ()
+
+
+def test_render_csv_bytes_includes_position_columns() -> None:
+    """84 query dùng df1.table_id/df1.row_idx; CSV phải mang theo hai cột đó."""
+    rows = [
+        {
+            "table_id": "tbl_abc",
+            "row_idx": 19,
+            "col_idx": 2,
+            "company_code": "VNM",
+            "row_label_canonical": None,
+            "row_label_raw": "Doanh thu thuần",
+            "column_label": "2023",
+            "period": 2023,
+            "value": 1200.0,
+        }
+    ]
+    header = _render_csv_bytes(rows).decode("utf-8").splitlines()[0]
+    assert header.split(",") == [
+        "table_id",
+        "row_idx",
+        "col_idx",
+        "company_code",
+        "row_label_canonical",
+        "row_label_raw",
+        "column_label",
+        "period",
+        "value",
+    ]
