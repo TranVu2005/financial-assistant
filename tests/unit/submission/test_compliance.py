@@ -126,6 +126,45 @@ def test_c4_still_catches_a_genuine_bare_literal_answer() -> None:
     assert "C4" in {v.code for v in violations}
 
 
+def test_c4_does_not_false_positive_on_identifier_digit_when_answer_is_one() -> None:
+    """Important 1 (2026-08-21 final review round 2): `df1` contains a bare
+    digit `1` that is part of the variable name, not a numeric literal. An
+    answer of exactly 1.0 must not spuriously trip C4 via that identifier."""
+    violations = check_item(
+        _item(answer=1.0, query=_GOOD_QUERY), _frame(_GOOD_ROWS), timeout_seconds=5
+    )
+    assert "C4" not in {v.code for v in violations}
+
+
+def test_c4_does_not_false_positive_on_iloc_index_when_answer_is_zero() -> None:
+    """`.iloc[0]` appears in virtually every generated query. An answer of
+    exactly 0.0 must not spuriously trip C4 via that positional index."""
+    violations = check_item(
+        _item(answer=0.0, query=_GOOD_QUERY), _frame(_GOOD_ROWS), timeout_seconds=5
+    )
+    assert "C4" not in {v.code for v in violations}
+
+
+def test_c4_still_catches_genuine_literal_zero() -> None:
+    """The identifier/index stripping must not blanket-disable C4 for a
+    genuine hardcoded 0.0 that is neither an identifier digit nor an index."""
+    violations = check_item(
+        _item(answer=0.0, query='df1.row_idx == 3 and 0.0'),
+        _frame(_GOOD_ROWS),
+        timeout_seconds=5,
+    )
+    assert "C4" in {v.code for v in violations}
+
+
+def test_c4_still_catches_genuine_literal_one() -> None:
+    violations = check_item(
+        _item(answer=1.0, query='df1.row_idx == 3 and 1.0'),
+        _frame(_GOOD_ROWS),
+        timeout_seconds=5,
+    )
+    assert "C4" in {v.code for v in violations}
+
+
 def test_c7_query_that_cannot_replay_is_a_violation() -> None:
     query = 'df1.loc[(df1.table_id == "t1") & (df1.row_idx == 3), "value"].iloc[0]'
     violations = check_item(

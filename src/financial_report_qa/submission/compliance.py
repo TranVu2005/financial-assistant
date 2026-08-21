@@ -39,7 +39,14 @@ _STRING_DTYPE_COLUMNS = {
 }
 
 _ANSWER_LIKE_COLUMNS = frozenset({"answer", "result", "ans", "expected"})
-_NUMBER_LITERAL_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
+# C4 (2026-08-21 final review round 2, Important 1): a bare numeric literal
+# must not be flagged when the digit is actually part of an identifier
+# (`df1`, `df2` -- the variable-name convention used throughout this
+# codebase's generated queries) rather than a standalone number. The
+# lookbehind/lookahead reject any digit run that touches a word character
+# (letter/digit/underscore) on either side, so `df1` never contributes a
+# literal `1` and `1200.0` still matches in full.
+_NUMBER_LITERAL_PATTERN = re.compile(r"(?<![A-Za-z0-9_])-?\d+(?:\.\d+)?(?![A-Za-z0-9_])")
 _VALUE_TOLERANCE = 1e-6
 
 # C4 (2026-08-21 final review, Important 4): a quoted string literal in the
@@ -57,6 +64,14 @@ _QUOTED_STRING_PATTERN = re.compile(r'"(?:[^"\\]|\\.)*"')
 # quoted strings are already gone) before the general literal scan.
 _STRUCTURAL_COMPARISON_PATTERN = re.compile(r"\b(?:row_idx|col_idx|period)\s*==\s*-?\d+(?:\.\d+)?")
 
+# C4 (2026-08-21 final review round 2, Important 1): `.iloc[0]`/`.iat[0]`
+# (and any other positional index) is a structural row-position accessor,
+# not a stand-in for the answer -- it appears in virtually every generated
+# query (see `_GOOD_QUERY` in the test suite). Strip the bracketed index of
+# an `.iloc[...]`/`.iat[...]` accessor before scanning for literals, the same
+# way `_STRUCTURAL_COMPARISON_PATTERN` strips `row_idx == N` clauses.
+_POSITIONAL_INDEX_PATTERN = re.compile(r"\.(?:iloc|iat)\s*\[\s*-?\d+(?:\.\d+)?\s*\]")
+
 
 @dataclass(frozen=True)
 class ComplianceViolation:
@@ -69,11 +84,15 @@ class ComplianceViolation:
 
 def _numbers_in(query: str) -> list[float]:
     """Literal numbers in `query` that are candidates for a C4 hardcode
-    match -- i.e. NOT inside a quoted string, and NOT the right-hand side of
-    a structural `row_idx`/`col_idx`/`period` equality (position-binding
-    locators, not stand-ins for the answer)."""
+    match -- i.e. NOT inside a quoted string, NOT the right-hand side of a
+    structural `row_idx`/`col_idx`/`period` equality (position-binding
+    locators, not stand-ins for the answer), NOT a positional `.iloc[N]`/
+    `.iat[N]` index, and NOT a digit that is actually part of an identifier
+    such as `df1`/`df2` (handled by `_NUMBER_LITERAL_PATTERN`'s word-boundary
+    lookaround)."""
     stripped = _QUOTED_STRING_PATTERN.sub("", query)
     stripped = _STRUCTURAL_COMPARISON_PATTERN.sub("", stripped)
+    stripped = _POSITIONAL_INDEX_PATTERN.sub("", stripped)
     out: list[float] = []
     for token in _NUMBER_LITERAL_PATTERN.findall(stripped):
         try:
