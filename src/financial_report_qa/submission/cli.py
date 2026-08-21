@@ -277,6 +277,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                     row_fusion=row_fusion,
                     allow_inferred_scope=args.allow_inferred_scope,
                 )
+            # Write the per-question coverage report BEFORE the compliance gate
+            # (Important 5, 2026-08-21 final review): it writes only to
+            # --report-dir, never to the ZIP, so writing it first cannot ship a
+            # violating bundle. A failed run used to `return 2` before this
+            # call ever ran, leaving nothing but compliance-violations.json on
+            # disk -- exactly the per-question outcomes/stage/code data needed
+            # to debug the violation (and the input the `validate` subcommand
+            # requires) was silently discarded.
+            json_path, markdown_path = write_export_report(report, args.report_dir)
             # Chốt chặn cứng (design §5.3): thể lệ ghi "Các câu hỏi vi phạm quy định
             # này sẽ không được tính điểm", và mục VIII liệt kê hardcode đáp án là căn
             # cứ loại đội thi. Không bao giờ ghi ra ZIP một bundle vi phạm.
@@ -304,7 +313,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 return 2
             sha256 = write_submission_zip(items, csv_rows, args.output_zip)
-            json_path, markdown_path = write_export_report(report, args.report_dir)
             print(args.output_zip)
             print(f"sha256:{sha256}")
             print(json_path)

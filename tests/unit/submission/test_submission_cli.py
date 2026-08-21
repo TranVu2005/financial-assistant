@@ -270,6 +270,15 @@ def test_export_fails_build_when_bundle_has_violations(
     payload = json.loads(violations_path.read_text(encoding="utf-8"))
     assert payload == [{"id": 1, "code": "C1", "detail": "CSV chỉ có 1 dòng"}]
 
+    # Important 5 (2026-08-21 final review): the per-question coverage
+    # report must still be written even though the bundle failed compliance
+    # -- it's the diagnostic data needed to debug the violation (and the
+    # `validate` subcommand's own input), and it never touches the ZIP.
+    report_files = list(report_dir.glob("submission-export-*.json"))
+    assert len(report_files) == 1, "coverage report phải được ghi dù compliance fail"
+    markdown_files = list(report_dir.glob("submission-export-*.md"))
+    assert len(markdown_files) == 1
+
 
 def _write_llm_config(path: Path) -> None:
     path.write_text(
