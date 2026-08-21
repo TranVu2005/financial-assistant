@@ -83,12 +83,18 @@ def _table(table_id: str, doc_id: str) -> dict[str, object]:
 
 
 def _cell(
-    cell_id: str, table_id: str, *, row_label_raw: str, value: str, period: str
+    cell_id: str,
+    table_id: str,
+    *,
+    row_label_raw: str,
+    value: str,
+    period: str,
+    row_idx: int = 0,
 ) -> dict[str, object]:
     return {
         "cell_id": cell_id,
         "table_id": table_id,
-        "row_idx": 0,
+        "row_idx": row_idx,
         "col_idx": 1,
         "row_label_raw": row_label_raw,
         "row_label_canonical": None,
@@ -113,9 +119,29 @@ def _write_release(tmp_path: Path) -> Path:
         _document(DOC_ID_OTHER, "MBB", 2022, "MBB/2022/report.txt"),
     ]
     tables = [_table(TABLE_ID, DOC_ID), _table(TABLE_ID_OTHER, DOC_ID_OTHER)]
+    # Each table carries >= 2 numeric cells (Critical 1, 2026-08-21 final
+    # review): a singleton-cell table is now rejected by
+    # `_uniquely_addressable_row` -- its one row's `value` would equal
+    # `item.answer`, reproducing the exact hardcode shape compliance checks
+    # C1+C2 exist to catch. `row_idx=0` on the primary cell keeps it first
+    # in `build_cell_frame`'s `ORDER BY table_id, row_idx, col_idx`, so the
+    # existing assertions on which value gets chosen still hold.
     cells = [
-        _cell("cell_a", TABLE_ID, row_label_raw="Doanh thu", value="1000", period="2023"),
-        _cell("cell_b", TABLE_ID_OTHER, row_label_raw="Lợi nhuận", value="500", period="2022"),
+        _cell("cell_a", TABLE_ID, row_label_raw="Doanh thu", value="1000", period="2023", row_idx=0),
+        _cell(
+            "cell_a2", TABLE_ID, row_label_raw="Chi phí", value="200", period="2023", row_idx=1
+        ),
+        _cell(
+            "cell_b", TABLE_ID_OTHER, row_label_raw="Lợi nhuận", value="500", period="2022", row_idx=0
+        ),
+        _cell(
+            "cell_b2",
+            TABLE_ID_OTHER,
+            row_label_raw="Chi phí khác",
+            value="50",
+            period="2022",
+            row_idx=1,
+        ),
     ]
     pq.write_table(  # type: ignore[no-untyped-call]
         pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet"
@@ -127,6 +153,29 @@ def _write_release(tmp_path: Path) -> Path:
         pa.Table.from_pylist(cells, schema=CELL_SCHEMA), release_dir / "cells.parquet"
     )
     return release_dir
+
+
+def _append_rows(
+    release_dir: Path,
+    *,
+    documents: list[dict[str, object]],
+    tables: list[dict[str, object]],
+    cells: list[dict[str, object]],
+) -> None:
+    """Append extra documents/tables/cells onto an already-written release
+    (used to add a singleton-cell table alongside `_write_release`'s
+    normal, >= 2-cell tables, without disturbing the existing fixture)."""
+    for name, schema, new_rows in (
+        ("documents.parquet", DOCUMENT_SCHEMA, documents),
+        ("tables.parquet", TABLE_SCHEMA, tables),
+        ("cells.parquet", CELL_SCHEMA, cells),
+    ):
+        path = release_dir / name
+        existing = pq.read_table(path)  # type: ignore[no-untyped-call]
+        appended = pa.concat_tables(
+            [existing, pa.Table.from_pylist(new_rows, schema=schema)]  # type: ignore[no-untyped-call]
+        )
+        pq.write_table(appended, path)  # type: ignore[no-untyped-call]
 
 
 def test_backstop_uses_candidate_table_when_available(tmp_path: Path) -> None:
@@ -183,6 +232,87 @@ def test_backstop_pandas_query_replays_to_the_declared_answer(tmp_path: Path) ->
     assert result.error_code is None
     assert result.value is not None
     assert float(result.value) == item.answer
+
+
+def test_backstop_rejects_singleton_cell_table_and_falls_through_to_next_candidate(
+    tmp_path: Path,
+) -> None:
+    """Critical 1: a table with exactly 1 numeric cell must never be chosen
+    -- its one CSV row's `value` would equal `item.answer`, reproducing the
+    exact hardcode shape (`result = df["answer"].iloc[0]`) the whole plan
+    exists to eliminate (measured on the real corpus: 2.446/130.518 tables).
+    A singleton-cell candidate ranked first must be skipped in favor of the
+    next usable candidate, not silently selected.
+    """
+    release_dir = _write_release(tmp_path)
+    singleton_table_id = "tbl_" + "9" * 64
+    singleton_doc_id = "doc_" + "9" * 64
+    _append_rows(
+        release_dir,
+        documents=[_document(singleton_doc_id, "SGT", 2023, "SGT/2023/report.txt")],
+        tables=[_table(singleton_table_id, singleton_doc_id)],
+        cells=[
+            _cell(
+                "cell_singleton",
+                singleton_table_id,
+                row_label_raw="Doanh thu",
+                value="9999",
+                period="2023",
+            )
+        ],
+    )
+    question = RawQuestion(id=6, question="Câu hỏi không xác định được.")
+
+    # Singleton table ranked first (would have been chosen under the old
+    # first-usable-cell logic); TABLE_ID (>= 2 numeric cells) ranked second.
+    item, rows = build_backstop_item(question, [singleton_table_id, TABLE_ID], release_dir)
+
+    assert item.answer != 9999.0, "phải bỏ qua bảng chỉ có 1 ô numeric"
+    assert len(rows) >= 2
+    assert {row["table_id"] for row in rows} == {TABLE_ID}
+
+
+def test_backstop_falls_through_to_any_corpus_table_when_all_candidates_are_singletons(
+    tmp_path: Path,
+) -> None:
+    """Critical 2: when every ranked candidate table is unusable (e.g. all
+    singleton-cell tables), `build_backstop_item` must NOT raise and abort
+    the whole export -- it must fall through to `_any_corpus_table_id`
+    (the same floor already used for the `no_candidate_tables` case), same
+    as an empty candidate list. `relevant_docs`/`relevant_tables` must stay
+    empty for this path, per spec §6.1.
+    """
+    release_dir = _write_release(tmp_path)
+    singleton_table_id = "tbl_" + "8" * 64
+    singleton_doc_id = "doc_" + "8" * 64
+    # col_idx=0 keeps this cell out of `_any_corpus_table_id`'s own query
+    # (`col_idx > 0`) so the fallback deterministically lands on a real,
+    # non-singleton table (TABLE_ID / TABLE_ID_OTHER) rather than this one.
+    _append_rows(
+        release_dir,
+        documents=[_document(singleton_doc_id, "SGT", 2023, "SGT/2023/report.txt")],
+        tables=[_table(singleton_table_id, singleton_doc_id)],
+        cells=[
+            {
+                **_cell(
+                    "cell_singleton2",
+                    singleton_table_id,
+                    row_label_raw="Doanh thu",
+                    value="9999",
+                    period="2023",
+                ),
+                "col_idx": 0,
+            }
+        ],
+    )
+    question = RawQuestion(id=7, question="Câu hỏi không xác định được.")
+
+    item, rows = build_backstop_item(question, [singleton_table_id], release_dir)
+
+    assert item.id == 7
+    assert len(rows) >= 2
+    assert item.relevant_docs == ()
+    assert item.relevant_tables == ()
 
 
 def test_backstop_raises_when_release_has_no_numeric_cell_at_all(tmp_path: Path) -> None:

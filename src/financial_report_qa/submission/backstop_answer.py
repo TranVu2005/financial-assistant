@@ -36,12 +36,12 @@ import duckdb
 import pandas as pd
 
 from financial_report_qa.execution.cell_frame import build_cell_frame
+from financial_report_qa.submission.citation_summary import relevant_docs_and_tables
 from financial_report_qa.submission.contracts import (
     RawQuestion,
     SubmissionEvidence,
     SubmissionItem,
 )
-from financial_report_qa.verification.evaluation import build_citation_lookup
 
 CsvRow = Mapping[str, object]
 
@@ -76,16 +76,29 @@ def _any_corpus_table_id(release_dir: Path) -> str:
     return str(frame.iloc[0]["table_id"])
 
 
-def _uniquely_addressable_row(frame: pd.DataFrame) -> pd.Series:
-    """Chọn một ô mà predicate ngữ nghĩa định vị được duy nhất trong bảng.
+def _uniquely_addressable_row(table_frame: pd.DataFrame) -> pd.Series | None:
+    """Chọn một ô mà predicate ngữ nghĩa định vị được duy nhất trong MỘT
+    bảng (`table_frame` đã lọc theo đúng một `table_id`).
 
     Đo trên corpus: `(row_label_raw, column_label, period)` trong phạm vi một
     bảng còn nhập nhằng 4.37%. Ưu tiên ô không nhập nhằng để `pandas_query`
     replay được mà không cần tie-break vị trí.
+
+    Trả về `None` -- thay vì raise -- khi bảng này không dùng được, để caller
+    thử bảng ứng viên tiếp theo trong danh sách xếp hạng:
+
+    - Bảng có < 2 ô numeric: CSV đóng gói sẽ chỉ có 1 dòng, và dòng đó CHÍNH
+      LÀ `answer` -- tái tạo đúng hình dạng hardcode (`result =
+      df["answer"].iloc[0]`) mà cả kế hoạch tồn tại để loại bỏ (Critical 1:
+      đo trên corpus thật, 2.446/130.518 bảng chỉ có 1 ô numeric).
+    - Bảng có >= 2 ô nhưng không ô nào có đủ `period` + `row_label_raw` để
+      định vị.
     """
-    usable = frame[frame["period"].notna() & frame["row_label_raw"].notna()]
+    if len(table_frame) < 2:
+        return None
+    usable = table_frame[table_frame["period"].notna() & table_frame["row_label_raw"].notna()]
     if usable.empty:
-        raise RuntimeError("bảng ứng viên không có ô nào định vị được")
+        return None
     counts = usable.groupby(["row_label_raw", "column_label", "period"], dropna=False)[
         "value"
     ].transform("nunique")
@@ -111,24 +124,55 @@ def build_backstop_item(
        điểm không cần thiết.
 
     Nếu retrieval không trả về bảng nào (42/1012 câu `no_candidate_tables`),
-    rơi về một bảng bất kỳ trong toàn kho (`_any_corpus_table_id`) để vẫn có
-    answer/CSV/pandas_query, nhưng KHÔNG báo bảng đó là "relevant": spec
-    §6.1 cấm emit một bảng tuỳ ý như thể nó liên quan. Trong nhánh này
-    `relevant_docs`/`relevant_tables` luôn là tuple rỗng `()` -- hợp lệ vì
-    hai trường này không có ràng buộc độ dài tối thiểu trong contracts.py.
+    HOẶC mọi bảng ứng viên đều không dùng được (Critical 2: bảng chỉ có 1 ô
+    numeric, hoặc không ô nào định vị được), rơi về một bảng bất kỳ trong
+    toàn kho (`_any_corpus_table_id`) để vẫn có answer/CSV/pandas_query,
+    nhưng KHÔNG báo bảng đó là "relevant": spec §6.1 cấm emit một bảng tuỳ ý
+    như thể nó liên quan. Trong nhánh này `relevant_docs`/`relevant_tables`
+    luôn là tuple rỗng `()` -- hợp lệ vì hai trường này không có ràng buộc
+    độ dài tối thiểu trong contracts.py.
+
+    `RuntimeError` chỉ còn được raise khi bảng dự phòng toàn kho
+    (`_any_corpus_table_id`) cũng không dùng được -- tức là cả release
+    không có nổi một bảng chứa >= 2 ô numeric định vị được, một trường hợp
+    gần như không xảy ra. Trước đây hàm này raise ngay khi 10 bảng ứng viên
+    đầu tiên không dùng được, dù kho vẫn còn hàng chục nghìn bảng khác --
+    lỗi đó làm sập TOÀN BỘ lượt export 1012 câu (Critical 2).
 
     Đáp án vẫn là best-effort và thường sai -- đó là đánh đổi chấp nhận được
     (Answer Accuracy tính trên tổng số câu, sai và bỏ trống đều bằng 0).
     """
-    is_no_candidate_fallback = not candidate_table_ids
-    if candidate_table_ids:
-        table_ids = tuple(dict.fromkeys(candidate_table_ids))
-    else:
-        table_ids = (_any_corpus_table_id(release_dir),)
+    ranked_table_ids = tuple(dict.fromkeys(candidate_table_ids))
 
-    frame = build_cell_frame(release_dir, table_ids)
-    chosen = _uniquely_addressable_row(frame)
-    table_id = str(chosen["table_id"])
+    chosen: pd.Series | None = None
+    chosen_table_id: str | None = None
+    frame: pd.DataFrame | None = None
+    if ranked_table_ids:
+        frame = build_cell_frame(release_dir, ranked_table_ids)
+        for candidate_id in ranked_table_ids:
+            row = _uniquely_addressable_row(frame[frame["table_id"] == candidate_id])
+            if row is not None:
+                chosen = row
+                chosen_table_id = candidate_id
+                break
+
+    is_no_candidate_fallback = chosen is None
+    if is_no_candidate_fallback:
+        fallback_table_id = _any_corpus_table_id(release_dir)
+        frame = build_cell_frame(release_dir, (fallback_table_id,))
+        chosen = _uniquely_addressable_row(frame[frame["table_id"] == fallback_table_id])
+        if chosen is None:
+            raise RuntimeError(
+                "bảng dự phòng toàn kho cũng không có ô nào định vị được: "
+                f"{fallback_table_id}"
+            )
+        chosen_table_id = fallback_table_id
+        table_ids = (fallback_table_id,)
+    else:
+        table_ids = ranked_table_ids
+
+    assert frame is not None and chosen_table_id is not None
+    table_id = chosen_table_id
 
     # CSV thu về đúng bảng chứa ô đã chọn: predicate ngữ nghĩa chỉ duy nhất
     # trong phạm vi một bảng (4.37% nhập nhằng), không duy nhất giữa 10 bảng.
@@ -160,33 +204,27 @@ def build_backstop_item(
 
     # relevant_docs/relevant_tables cover EVERY retrieved candidate table, not
     # just the one the chosen cell came from -- retrieval is scored
-    # independently at 50% weight. But when there were no candidate tables
-    # at all, `table_ids` holds only the arbitrary corpus-wide fallback
-    # table (_any_corpus_table_id), and that table is NOT a retrieval
-    # result -- reporting it as relevant would violate spec §6.1. Skip the
-    # citation lookup entirely for that path and emit empty tuples.
-    docs: dict[str, None] = {}
-    tables: dict[str, None] = {}
-    if not is_no_candidate_fallback:
-        for candidate_table_id in table_ids:
-            candidate_frame = frame[frame["table_id"] == candidate_table_id]
-            if candidate_frame.empty:
-                continue
-            cell_id = str(candidate_frame.iloc[0]["cell_id"])
-            provenance = build_citation_lookup(release_dir, [cell_id])[cell_id]
-            report_id = str(provenance["doc_relative_path"]).rsplit("/", 1)[-1]
-            if report_id.endswith(".txt"):
-                report_id = report_id[: -len(".txt")]
-            docs.setdefault(report_id, None)
-            tables.setdefault(f"{report_id}|{provenance['source_line_start']}", None)
+    # independently at 50% weight. But when there were no usable candidate
+    # tables at all, `table_ids` holds only the arbitrary corpus-wide
+    # fallback table (_any_corpus_table_id), and that table is NOT a
+    # retrieval result -- reporting it as relevant would violate spec §6.1.
+    # Skip the lookup entirely for that path and emit empty tuples.
+    #
+    # Shared with `exporter.py`'s answered path (Important 6, 2026-08-21
+    # final review): this used to be a separate, subtly divergent
+    # reimplementation with no test coverage of its own, despite handling
+    # ~82% of submitted items.
+    relevant_docs, relevant_tables = (
+        ((), ()) if is_no_candidate_fallback else relevant_docs_and_tables(table_ids, release_dir)
+    )
 
     item = SubmissionItem.model_validate(
         {
             "id": raw_question.id,
             "question": raw_question.question,
             "answer": float(chosen["value"]),
-            "relevant_docs": tuple(docs),
-            "relevant_tables": tuple(tables),
+            "relevant_docs": relevant_docs,
+            "relevant_tables": relevant_tables,
             "evidence": (
                 SubmissionEvidence(
                     variable="df1", csv_path=f"data/q{raw_question.id:06d}_df1.csv"

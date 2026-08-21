@@ -16,7 +16,7 @@ import sys
 import zipfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Literal
 
 import pandas as pd
@@ -54,6 +54,9 @@ from financial_report_qa.retrieval.live_query import retrieve_candidate_table_id
 from financial_report_qa.retrieval.row_fusion import RowFusionService
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.backstop_answer import build_backstop_item
+from financial_report_qa.submission.citation_summary import (
+    relevant_docs_and_tables as _relevant_docs_and_tables,
+)
 from financial_report_qa.submission.contracts import (
     QuestionOutcome,
     RawQuestion,
@@ -131,11 +134,21 @@ def _real_table_evidence_rows(
     caller must treat a `None` return as an execution failure
     (`evidence_frame_replay_mismatch`), not synthesize a replacement row.
     Never trusts the coincidence; always re-verifies via the sandbox.
+
+    Also returns `None` when the evidence table(s) together carry fewer than
+    2 numeric cells (Critical 1, 2026-08-21 final review): a 1-row CSV would
+    have its single `value` equal to `item.answer`, which is the exact
+    hardcode shape (`result = df["answer"].iloc[0]`) compliance checks
+    C1+C2 exist to catch. The caller treats this identically to a replay
+    mismatch -- fall through to the backstop tier, which independently
+    guards against the same singleton-table shape.
     """
     evidence_table_ids: tuple[str, ...] = tuple(
         dict.fromkeys(cell.table_id for cell in compiled.evidence)
     )
     frame = build_cell_frame(release_dir, evidence_table_ids)
+    if len(frame) < 2:
+        return None
     rows: tuple[CsvRow, ...] = tuple(
         {
             "table_id": record["table_id"],
@@ -158,57 +171,6 @@ def _real_table_evidence_rows(
     if sandbox_result.error_code is not None or sandbox_result.value != compiled.answer:
         return None
     return rows
-
-
-def _relevant_docs_and_tables(
-    retrieved_table_ids: Sequence[str], release_dir: Path
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Table list reported for retrieval scoring.
-
-    The dashboard grades 8 retrieval metrics (TABLES/DOCS x
-    Precision/Recall/F2/MRR5), INDEPENDENTLY of Answer/Execution Accuracy.
-    Before this fix, this function derived tables from `compiled.evidence`
-    -- only the tables actually used to compute an answer -- so any question
-    that failed to answer also lost retrieval credit, even when the
-    retriever found the right table.
-
-    Mandatory invariant: the order of elements in the returned tuple MUST
-    match the order of `retrieved_table_ids` (retrieval-rank, highest score
-    first) -- the dashboard grades MRR5 (rank of the first correct result
-    in the top 5), not just set membership. This function therefore must
-    NOT get its table list from `build_cell_frame()` (it `ORDER BY
-    table_id` -- alphabetical, not rank) and iterate in that order; it may
-    only use it to look up citation info for a single already-known
-    table_id.
-    """
-    if not retrieved_table_ids:
-        return ((), ())
-
-    ordered_table_ids = tuple(dict.fromkeys(retrieved_table_ids))
-    frame = build_cell_frame(release_dir, ordered_table_ids)
-
-    # Any one cell per table is enough to look up citation info (doc + source
-    # line are both stable within a table_id) -- no need for the whole cell.
-    first_cell_by_table: dict[str, str] = {}
-    for record in frame.to_dict(orient="records"):
-        table_id = str(record["table_id"])
-        first_cell_by_table.setdefault(table_id, str(record["cell_id"]))
-
-    lookup = build_citation_lookup(release_dir, tuple(first_cell_by_table.values()))
-
-    docs: dict[str, None] = {}
-    tables: dict[str, None] = {}
-    for table_id in ordered_table_ids:  # <-- rank order, NOT frame order
-        cell_id = first_cell_by_table.get(table_id)
-        if cell_id is None:
-            continue  # retrieved but has no numeric cell left (rare, safe to skip)
-        provenance = lookup[cell_id]
-        report_id = PurePosixPath(str(provenance["doc_relative_path"])).name
-        if report_id.endswith(".txt"):
-            report_id = report_id[: -len(".txt")]
-        docs.setdefault(report_id, None)
-        tables.setdefault(f"{report_id}|{provenance['source_line_start']}", None)
-    return tuple(docs), tuple(tables)
 
 
 def _run_one_question(
