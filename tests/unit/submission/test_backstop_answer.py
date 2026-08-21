@@ -34,12 +34,19 @@ def release_dir():
 
 @pytest.fixture
 def sample_table_ids(release_dir):
+    """A real table_id with >= 2 numeric cells (Minor finding 9, 2026-08-21
+    final review: "Critical 1 wearing a disguise" -- without the `HAVING`
+    filter, this fixture could pick a real singleton-cell table (2,446 of
+    130,518 exist), which `build_backstop_item` now correctly refuses to
+    answer from, making these two tests flaky depending on which table the
+    unfiltered `LIMIT 1` happened to return."""
     import duckdb
 
     connection = duckdb.connect(":memory:")
     frame = connection.execute(
-        "SELECT DISTINCT table_id FROM read_parquet(?) WHERE value_numeric IS NOT NULL "
-        "AND period IS NOT NULL LIMIT 1",
+        "SELECT table_id FROM read_parquet(?) WHERE value_numeric IS NOT NULL "
+        "AND period IS NOT NULL GROUP BY table_id HAVING COUNT(*) >= 2 "
+        "ORDER BY table_id LIMIT 1",
         [str(release_dir / "cells.parquet")],
     ).fetchdf()
     connection.close()
