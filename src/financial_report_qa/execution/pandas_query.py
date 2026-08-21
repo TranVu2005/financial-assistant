@@ -41,7 +41,17 @@ import pandas as pd
 from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
 
 _ALLOWED_ATTRS = frozenset(
-    {"company_code", "row_label_canonical", "row_label_raw", "column_label", "period", "value"}
+    {
+        "company_code",
+        "row_label_canonical",
+        "row_label_raw",
+        "column_label",
+        "period",
+        "value",
+        # plan.md §14 positional extraction.
+        "table_id",
+        "row_idx",
+    }
 )
 _ALLOWED_METHODS = frozenset({"isin", "sort_values", "mean", "sum"})
 
@@ -75,7 +85,30 @@ def _metric_column_and_value(selector: MetricSelector) -> tuple[str, str]:
     return "row_label_raw", selector.raw_text
 
 
+def _position_clauses(selector: MetricSelector) -> list[str]:
+    """plan.md §14: the predicate for a grounded selector -- position only.
+
+    No `row_label_*` clause appears at all, which is the observable difference
+    the design asks for: semantic matching happened during grounding, and the
+    rendered query is pure deterministic extraction. `column_label` survives
+    because a row is not a cell -- Vietnamese note tables routinely put four
+    amounts on one row, two of which resolve to the same period.
+    """
+    assert selector.table_id is not None and selector.row_index is not None
+    clauses = [
+        f"(df1.table_id == {_lit(selector.table_id)})",
+        f"(df1.row_idx == {int(selector.row_index)})",
+    ]
+    if selector.column_text is not None:
+        clauses.append(f"(df1.column_label == {_lit(selector.column_text)})")
+    return clauses
+
+
 def _cell_expr(*, company: str | None, selector: MetricSelector, period: str) -> str:
+    if selector.is_position_bound:
+        clauses = _position_clauses(selector)
+        clauses.append(f"(df1.period == {int(period)})")
+        return f'df1.loc[{" & ".join(clauses)}, "value"].iloc[0]'
     column, value = _metric_column_and_value(selector)
     clauses = []
     if company is not None:
@@ -91,6 +124,11 @@ def _cell_expr(*, company: str | None, selector: MetricSelector, period: str) ->
 def _aggregate_expr(
     *, company: str | None, selector: MetricSelector, periods: Sequence[str], method: str
 ) -> str:
+    period_list = ", ".join(str(int(period)) for period in periods)
+    if selector.is_position_bound:
+        clauses = _position_clauses(selector)
+        clauses.append(f"(df1.period.isin([{period_list}]))")
+        return f'df1.loc[{" & ".join(clauses)}, "value"].{method}()'
     column, value = _metric_column_and_value(selector)
     clauses = []
     if company is not None:
@@ -98,7 +136,6 @@ def _aggregate_expr(
     clauses.append(f"(df1.{column} == {_lit(value)})")
     if selector.column_text is not None:
         clauses.append(f"(df1.column_label == {_lit(selector.column_text)})")
-    period_list = ", ".join(str(int(period)) for period in periods)
     clauses.append(f"(df1.period.isin([{period_list}]))")
     condition = " & ".join(clauses)
     return f'df1[{condition}]["value"].{method}()'
@@ -244,6 +281,10 @@ def _eval_node(node: ast.AST, frame: pd.DataFrame) -> Any:
         raise ValueError(f"unsupported name: {node.id}")
 
     if isinstance(node, ast.Attribute):
+        # `.loc` is checked before the column whitelist: `df1.loc` is an
+        # indexer, not a column, and would otherwise be rejected as one.
+        if node.attr == "loc":
+            return _eval_node(node.value, frame).loc
         if isinstance(node.value, ast.Name) and node.value.id == "df1":
             if node.attr not in _ALLOWED_ATTRS:
                 raise ValueError(f"unsupported column: {node.attr}")
@@ -252,6 +293,9 @@ def _eval_node(node: ast.AST, frame: pd.DataFrame) -> Any:
             operand = _eval_node(node.value, frame)
             return operand.iloc
         raise ValueError(f"unsupported attribute: {node.attr}")
+
+    if isinstance(node, ast.Tuple):
+        return tuple(_eval_node(element, frame) for element in node.elts)
 
     if isinstance(node, ast.Compare):
         if len(node.ops) != 1 or not isinstance(node.ops[0], ast.Eq):

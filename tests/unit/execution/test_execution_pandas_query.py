@@ -428,3 +428,127 @@ def test_render_escapes_backslash_in_raw_text() -> None:
     )
     replayed = replay_pandas_query(query, frame)
     assert replayed == Decimal("7")
+
+
+def _bound_row(
+    *,
+    table_id: str = "tbl_" + "1" * 64,
+    row_idx: int = 14,
+    value: str,
+    period: int,
+    column_label: str | None = None,
+) -> dict[str, object]:
+    # Decoy labels: they deliberately do NOT match the selector's metric, so
+    # any query that still resolves by label finds nothing and the test fails.
+    row = _row(
+        value=value,
+        period=period,
+        column_label=column_label,
+        row_label_canonical="revenue",
+        row_label_raw="Doanh thu",
+    )
+    row["table_id"] = table_id
+    row["row_idx"] = row_idx
+    return row
+
+
+def test_render_position_bound_lookup_uses_df_loc_on_the_row_index() -> None:
+    """plan.md §14: a grounded plan extracts by position -- `df.loc[row, col]`
+    -- and never re-runs label matching inside Pandas."""
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=TABLE_IDS,
+        metric=MetricSelector(
+            canonical="cash_and_cash_equivalents", table_id=TABLE_IDS[0], row_index=14
+        ),
+    )
+    query = render_pandas_query(plan)
+    assert "df1.loc[" in query
+    assert "df1.row_idx == 14" in query
+    assert "row_label_canonical" not in query
+    assert "row_label_raw" not in query
+
+
+def test_replay_position_bound_lookup_returns_the_grounded_cell() -> None:
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=TABLE_IDS,
+        metric=MetricSelector(
+            canonical="cash_and_cash_equivalents", table_id=TABLE_IDS[0], row_index=14
+        ),
+    )
+    frame = _frame(
+        [
+            _bound_row(row_idx=3, value="100", period=2023),
+            _bound_row(row_idx=14, value="900", period=2023),
+        ]
+    )
+    assert replay_pandas_query(render_pandas_query(plan), frame) == Decimal("900")
+
+
+def test_replay_position_bound_difference_selects_both_periods_by_position() -> None:
+    plan = FinancialQueryPlan(
+        operation="difference",
+        companies=("ACB",),
+        periods=("2022", "2023"),
+        candidate_table_ids=TABLE_IDS,
+        metric=MetricSelector(
+            canonical="cash_and_cash_equivalents", table_id=TABLE_IDS[0], row_index=14
+        ),
+    )
+    frame = _frame(
+        [
+            _bound_row(row_idx=14, value="100", period=2022),
+            _bound_row(row_idx=14, value="180", period=2023),
+        ]
+    )
+    assert replay_pandas_query(render_pandas_query(plan), frame) == Decimal("80")
+
+
+def test_replay_position_bound_average_aggregates_over_periods() -> None:
+    plan = FinancialQueryPlan(
+        operation="average",
+        companies=("ACB",),
+        periods=("2022", "2023"),
+        candidate_table_ids=TABLE_IDS,
+        metric=MetricSelector(
+            canonical="cash_and_cash_equivalents", table_id=TABLE_IDS[0], row_index=14
+        ),
+    )
+    frame = _frame(
+        [
+            _bound_row(row_idx=14, value="100", period=2022),
+            _bound_row(row_idx=14, value="200", period=2023),
+        ]
+    )
+    assert replay_pandas_query(render_pandas_query(plan), frame) == Decimal("150")
+
+
+def test_replay_position_bound_query_keeps_the_column_predicate() -> None:
+    """A row is not a cell: the PC1 tax note puts four amounts on one row, two
+    of which resolve to the same period. The grounded column still narrows."""
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=TABLE_IDS,
+        metric=MetricSelector(
+            canonical="cash_and_cash_equivalents",
+            column_text="Số phải nộp cuối năm",
+            table_id=TABLE_IDS[0],
+            row_index=14,
+        ),
+    )
+    query = render_pandas_query(plan)
+    assert "column_label" in query
+    frame = _frame(
+        [
+            _bound_row(row_idx=14, value="10", period=2023, column_label="Số phải nộp đầu năm"),
+            _bound_row(row_idx=14, value="70", period=2023, column_label="Số phải nộp cuối năm"),
+        ]
+    )
+    assert replay_pandas_query(query, frame) == Decimal("70")

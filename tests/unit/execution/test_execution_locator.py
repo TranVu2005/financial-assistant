@@ -407,3 +407,69 @@ def test_locate_reports_metric_not_found_when_the_column_selector_matches_nothin
     )
     assert result.match is None
     assert result.error_code == "metric_not_found"
+
+
+def test_locate_carries_row_index_and_column_provenance() -> None:
+    """plan.md §9: a resolved cell must report the exact row it came from, so
+    grounding can pin the fact positionally instead of by label string."""
+    row = _row(cell_id=CELL_A, value="100")
+    row["row_idx"] = 14
+    result = locate(_frame([row]), MetricSelector(canonical="cash_and_cash_equivalents"), 2020)
+    assert result.match is not None
+    assert result.match.row_index == 14
+    assert result.match.column_label == "Năm 2020"
+
+
+def test_locate_resolves_by_row_index_when_selector_is_position_bound() -> None:
+    """plan.md §14: once grounding has pinned the row, Pandas does positional
+    extraction only -- two rows sharing a label are no longer ambiguous."""
+    first = _row(cell_id=CELL_A, value="100")
+    first["row_idx"] = 3
+    second = _row(cell_id=CELL_B, value="900")
+    second["row_idx"] = 14
+    selector = MetricSelector(
+        canonical="cash_and_cash_equivalents", table_id=TABLE_ID, row_index=14
+    )
+    result = locate(_frame([first, second]), selector, 2020)
+    assert result.error_code is None
+    assert result.match is not None
+    assert result.match.value == Decimal("900")
+    assert result.match.row_index == 14
+
+
+def test_locate_by_row_index_ignores_the_label_entirely() -> None:
+    """The bound row wins even when its label does not match the selector's --
+    semantic matching happened at grounding time, not here."""
+    row = _row(cell_id=CELL_A, row_label_canonical="revenue", row_label_raw="Doanh thu", value="55")
+    row["row_idx"] = 14
+    selector = MetricSelector(
+        canonical="cash_and_cash_equivalents", table_id=TABLE_ID, row_index=14
+    )
+    result = locate(_frame([row]), selector, 2020)
+    assert result.match is not None
+    assert result.match.value == Decimal("55")
+
+
+def test_locate_by_row_index_reports_metric_not_found_when_position_is_absent() -> None:
+    """Positional grounding never falls back to guessing by label."""
+    row = _row(cell_id=CELL_A, value="100")
+    row["row_idx"] = 3
+    selector = MetricSelector(
+        canonical="cash_and_cash_equivalents", table_id=TABLE_ID, row_index=14
+    )
+    result = locate(_frame([row]), selector, 2020)
+    assert result.match is None
+    assert result.error_code == "metric_not_found"
+
+
+def test_locate_by_row_index_is_scoped_to_its_own_table() -> None:
+    other_table = "tbl_" + "2" * 64
+    row = _row(cell_id=CELL_A, value="100")
+    row["row_idx"] = 14
+    row["table_id"] = other_table
+    selector = MetricSelector(
+        canonical="cash_and_cash_equivalents", table_id=TABLE_ID, row_index=14
+    )
+    result = locate(_frame([row]), selector, 2020)
+    assert result.match is None
+    assert result.error_code == "metric_not_found"

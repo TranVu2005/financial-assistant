@@ -419,6 +419,10 @@ def test_compile_plan_column_refinement_is_preserved_in_replay_contract(tmp_path
         "column_label": "Số phải nộp cuối năm",
         "period": 2025,
         "value": Decimal("200"),
+        # plan.md §14: unset on an unbound selector -- the rendered query for
+        # this plan still filters by label, so `df1` carries no position.
+        "table_id": None,
+        "row_index": None,
     }
 
 
@@ -997,3 +1001,62 @@ def test_planners_propagate_expected_unit() -> None:
     assert result.plan is not None
     assert result.plan.expected_unit == "VND_billion"
 
+
+
+def test_compile_plan_position_bound_selector_resolves_a_row_label_collision(
+    tmp_path: Path,
+) -> None:
+    """plan.md §9/§14 end to end: two rows share one label and disagree, which
+    an unbound plan can only report as `cell_ambiguous`. Grounding pins the
+    row, and the compiler extracts it positionally -- and the replay of the
+    rendered `df.loc[...]` string must agree, which is the real proof that
+    no semantic matching is left anywhere in the execution path."""
+    cells = [
+        _cell(
+            "cell_" + "a" * 64,
+            TABLE_ID,
+            3,
+            1,
+            row_label_raw="Tien mat",
+            row_label_canonical="cash_and_cash_equivalents",
+            value_numeric="100",
+            period="2023",
+        ),
+        _cell(
+            "cell_" + "b" * 64,
+            TABLE_ID,
+            14,
+            1,
+            row_label_raw="Tien mat",
+            row_label_canonical="cash_and_cash_equivalents",
+            value_numeric="900",
+            period="2023",
+        ),
+    ]
+    release_dir = _write_release(tmp_path, cells)
+    unbound = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="cash_and_cash_equivalents"),
+    )
+    assert compile_plan(unbound, release_dir, execution_settings=_ALLOW_ALL).error_code == (
+        "cell_ambiguous"
+    )
+
+    bound = unbound.model_copy(
+        update={
+            "metric": MetricSelector(
+                canonical="cash_and_cash_equivalents", table_id=TABLE_ID, row_index=14
+            )
+        }
+    )
+    result = compile_plan(bound, release_dir, execution_settings=_ALLOW_ALL)
+    assert result.status == "answered"
+    assert result.answer == Decimal("900")
+    assert "df1.loc[" in result.pandas_query
+    assert "row_label" not in result.pandas_query
+    assert result.evidence[0].row_index == 14
+    assert result.replay_rows[0].row_index == 14
+    assert result.replay_rows[0].table_id == TABLE_ID

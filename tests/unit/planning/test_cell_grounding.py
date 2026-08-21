@@ -189,13 +189,16 @@ def test_ground_with_recovery_candidate_switching_attempt_1(tmp_path: Path) -> N
     fusion_rows = (
         RowFusedCandidate(
             row_id="1",
+            # Row 99 does not exist in the release: this candidate is the
+            # decoy the LLM picks at Attempt 0, so binding it positionally
+            # (plan.md §14) must fail exactly as matching its label does.
             table_id=TABLE_ID,
-            row_idx=0,
+            row_idx=99,
             rank=1,
             snippet="",
             metadata=RowMetadata(
                 table_id=TABLE_ID,
-                row_idx=0,
+                row_idx=99,
                 row_label_raw="Doanh thu ao",
                 row_label_canonical="unknown",
             ),
@@ -261,12 +264,12 @@ def test_ground_with_recovery_context_expansion_attempt_2(tmp_path: Path) -> Non
         RowFusedCandidate(
             row_id="1",
             table_id=TABLE_ID,
-            row_idx=0,
+            row_idx=99,
             rank=1,
             snippet="Doanh thu ao snippet",
             metadata=RowMetadata(
                 table_id=TABLE_ID,
-                row_idx=0,
+                row_idx=99,
                 row_label_raw="Doanh thu ao",
                 row_label_canonical="unknown",
             ),
@@ -603,3 +606,152 @@ def test_company_name_rows_are_never_offered_as_metric_rows(tmp_path: Path) -> N
         assert "▪ Tập đoàn Dệt May Việt Nam - Công ty mẹ" not in labels
         assert "Doanh thu thuan" in labels
     assert res.status == "accepted"
+
+
+def _write_release_with_duplicate_label(tmp_path: Path) -> Path:
+    """A release where one raw label names two rows that disagree -- the shape
+    that made 71 of 88 wrong dev-benchmark answers land on a plausible number
+    from the wrong row (plan.md §19 / v2-remaining-gaps)."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
+
+    release_dir = _write_release(tmp_path)
+    cells = [
+        {
+            "cell_id": "cell_" + character * 64,
+            "table_id": TABLE_ID,
+            "row_idx": row_idx,
+            "col_idx": 1,
+            "row_label_raw": "Doanh thu thuan",
+            "row_label_canonical": None,
+            "row_group_context_raw": None,
+            "column_label_raw": "Năm 2023",
+            "column_label_canonical": None,
+            "value_raw": value,
+            "value_numeric": Decimal(value),
+            "period": "2023",
+            "unit": "VND",
+            "source_line_start": 5,
+            "source_line_end": 5,
+            "extraction_confidence": 0.9,
+        }
+        for character, row_idx, value in (("b", 1, "100"), ("c", 2, "900"))
+    ]
+    pq.write_table(
+        pa.Table.from_pylist(cells, schema=CELL_SCHEMA), release_dir / "cells.parquet"
+    )
+    # `documents`/`tables` are rewritten identically so the release stays whole.
+    for name, schema in (("documents", DOCUMENT_SCHEMA), ("tables", TABLE_SCHEMA)):
+        table = pq.read_table(release_dir / f"{name}.parquet")
+        pq.write_table(table.cast(schema), release_dir / f"{name}.parquet")
+    return release_dir
+
+
+def _duplicate_label_fusion_row(row_idx: int, rank: int) -> RowFusedCandidate:
+    return RowFusedCandidate(
+        row_id=f"{TABLE_ID}|row_{row_idx}",
+        table_id=TABLE_ID,
+        row_idx=row_idx,
+        rank=rank,
+        fused_score=1.0 / rank,
+        snippet="Doanh thu thuan",
+        metadata=RowMetadata(
+            table_id=TABLE_ID,
+            row_idx=row_idx,
+            company_code="ACB",
+            row_label_raw="Doanh thu thuan",
+            row_label_canonical=None,
+        ),
+    )
+
+
+def _duplicate_label_entities() -> QueryEntities:
+    return QueryEntities(
+        question="Doanh thu thuan của ACB năm 2023 là bao nhiêu?",
+        company_codes=("ACB",),
+        periods=("2023",),
+        metrics=(),
+        metric_phrases=("Doanh thu thuan",),
+        operation="lookup",
+        spans=(),
+    )
+
+
+def test_ground_with_recovery_uses_the_retrieved_row_position_to_break_a_label_tie(
+    tmp_path: Path,
+) -> None:
+    """plan.md §9/§14: retrieval already ranked one of the two identically
+    labelled rows first. Binding the plan to that position answers from it,
+    where label matching can only report the pair as ambiguous."""
+    release_dir = _write_release_with_duplicate_label(tmp_path)
+    res = ground_with_recovery(
+        question="Doanh thu thuan của ACB năm 2023 là bao nhiêu?",
+        entities=_duplicate_label_entities(),
+        retrieved=(TABLE_ID,),
+        row_labels=("Doanh thu thuan",),
+        fusion_rows=(
+            _duplicate_label_fusion_row(row_idx=2, rank=1),
+            _duplicate_label_fusion_row(row_idx=1, rank=2),
+        ),
+        release_dir=release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+    )
+
+    assert res.status == "accepted"
+    assert res.compiled is not None
+    assert res.compiled.answer == Decimal("900")
+    assert "df1.loc[" in res.compiled.pandas_query
+    assert res.plan is not None and res.plan.metric is not None
+    assert res.plan.metric.is_position_bound
+
+
+def test_ground_with_recovery_exposes_grounded_facts_for_the_accepted_answer(
+    tmp_path: Path,
+) -> None:
+    """plan.md §9: the accepted result carries per-fact provenance, keyed by
+    row index rather than by the label string."""
+    release_dir = _write_release_with_duplicate_label(tmp_path)
+    res = ground_with_recovery(
+        question="Doanh thu thuan của ACB năm 2023 là bao nhiêu?",
+        entities=_duplicate_label_entities(),
+        retrieved=(TABLE_ID,),
+        row_labels=("Doanh thu thuan",),
+        fusion_rows=(_duplicate_label_fusion_row(row_idx=2, rank=1),),
+        release_dir=release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+    )
+
+    assert res.status == "accepted"
+    assert len(res.facts) == 1
+    fact = res.facts[0]
+    assert fact.fact_id == "F1"
+    assert fact.table_id == TABLE_ID
+    assert fact.row_index == 2
+    assert fact.row_label == "Doanh thu thuan"
+    assert fact.column == "Năm 2023"
+    assert fact.period == 2023
+    assert fact.raw_value == Decimal("900")
+    assert fact.unit == "VND"
+
+
+def test_ground_with_recovery_still_answers_when_no_position_can_be_bound(
+    tmp_path: Path,
+) -> None:
+    """Binding is an improvement, not a new failure mode: with no fusion rows
+    to bind against, grounding behaves exactly as it did before."""
+    release_dir = _write_release(tmp_path)
+    res = ground_with_recovery(
+        question="Tra cứu Doanh thu thuan của ACB năm 2023.",
+        entities=_duplicate_label_entities(),
+        retrieved=(TABLE_ID,),
+        row_labels=("Doanh thu thuan",),
+        fusion_rows=(),
+        release_dir=release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+    )
+    assert res.status == "accepted"
+    assert res.compiled is not None and res.compiled.answer == Decimal("100")
+    assert res.plan is not None and res.plan.metric is not None
+    assert res.plan.metric.is_position_bound is False

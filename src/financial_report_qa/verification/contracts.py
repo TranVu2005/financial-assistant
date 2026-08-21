@@ -35,6 +35,10 @@ VerificationIssueCode = Literal[
     "display_roundtrip_mismatch",
     "period_inferred_warning",
     "scope_inferred",
+    # plan.md §15: per-fact re-location, independent of the compile that
+    # produced the fact in the first place (`fact_checks.verify_fact`).
+    "fact_not_found",
+    "fact_value_mismatch",
 ]
 
 # Day 20 plan Sec 3 (task 20.5): four checks block verification, one is a
@@ -53,6 +57,11 @@ _BLOCKING_ISSUE_CODES = frozenset(
         "evidence_outside_retrieval",
         "display_roundtrip_mismatch",
         "scope_inferred",
+        # plan.md §15: a fact that cannot be independently re-confirmed is
+        # exactly the failure mode the recovery ladder (cell_grounding.py)
+        # exists to avoid presenting as certain.
+        "fact_not_found",
+        "fact_value_mismatch",
     }
 )
 

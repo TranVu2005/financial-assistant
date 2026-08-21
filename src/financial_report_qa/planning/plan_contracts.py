@@ -62,6 +62,7 @@ def map_requested_unit(req_unit: str | None) -> ExpectedUnit | None:
     }
     return mapping.get(req_unit)
 
+
 # Day 21 plan §1.3/§1.4: `documents.statement_scope` distinguishes separate
 # ("riêng"/"công ty mẹ") from consolidated ("hợp nhất") reports; 64.9% of
 # (company, period, metric) groups exist in both with 92.8% disagreeing in
@@ -88,6 +89,15 @@ class MetricSelector(_FrozenModel):
     # dimension the release can actually support. Optional because most
     # questions name only a row; when absent, period remains the sole narrowing.
     column_text: RawMetricText | None = None
+    # plan.md §9/§14: once cell grounding has decided which physical row the
+    # question means, the selector stops being a search key and becomes a
+    # pointer. `table_id` + `row_index` together pin exactly one row, and the
+    # locator switches to positional extraction -- no label matching at query
+    # time at all. Both unset on an unbound selector, which keeps every
+    # pre-grounding plan (rule planner, LLM planner, stored fixtures) valid
+    # and behaving exactly as before.
+    table_id: TableId | None = None
+    row_index: int | None = None
 
     @model_validator(mode="after")
     def validate_exactly_one_branch(self) -> Self:
@@ -95,7 +105,19 @@ class MetricSelector(_FrozenModel):
             raise ValueError("metric selector requires exactly one of canonical, raw_text")
         if self.canonical is not None and self.canonical not in CANONICAL_METRICS:
             raise ValueError(f"'{self.canonical}' is not a canonical metric")
+        # A row index without its table is not a position: `row_idx` is only
+        # unique within one table, so half a binding would silently select
+        # row 14 of whatever table happened to be scanned.
+        if (self.table_id is None) != (self.row_index is None):
+            raise ValueError("table_id and row_index must be set together or both omitted")
+        if self.row_index is not None and self.row_index < 0:
+            raise ValueError("row_index must not be negative")
         return self
+
+    @property
+    def is_position_bound(self) -> bool:
+        """True when grounding has pinned this selector to a physical row."""
+        return self.table_id is not None and self.row_index is not None
 
 
 class FinancialQueryPlan(_FrozenModel):

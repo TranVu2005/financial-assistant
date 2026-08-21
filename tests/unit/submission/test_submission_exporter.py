@@ -657,7 +657,9 @@ def test_export_submission_with_row_fusion(tmp_path: Path) -> None:
     # 2. Test when row_fusion is a mock service. It should be called during planning fallback.
     # To force fallback to LLM planners (where row_fusion results are actually used),
     # we use a question that the rule planner is guaranteed to abstain on (e.g. unknown metric).
-    unsupported_question = RawQuestion(id=2, question="Tra cứu chỉ số không tồn tại của ACB năm 2023.")
+    unsupported_question = RawQuestion(
+        id=2, question="Tra cứu chỉ số không tồn tại của ACB năm 2023."
+    )
 
     mock_fusion = MagicMock(spec=RowFusionService)
     # Set up mock to return an empty trace
@@ -709,7 +711,9 @@ def test_export_submission_semantic_grounding_recovery(tmp_path: Path) -> None:
 
     # We want rule planner to abstain (by passing a question that metric parser cannot canonically map)
     # so that LLM cell grounding gets invoked.
-    unsupported_question = RawQuestion(id=11, question="Tra cứu chỉ số không rõ ràng của ACB năm 2023.")
+    unsupported_question = RawQuestion(
+        id=11, question="Tra cứu chỉ số không rõ ràng của ACB năm 2023."
+    )
 
     # Top candidates from row fusion:
     # 1. "Doanh thu ao" (which will fail compile with metric_not_found)
@@ -747,15 +751,7 @@ def test_export_submission_semantic_grounding_recovery(tmp_path: Path) -> None:
 
     # Mock LLM to choose option 1: "Doanh thu ao" (index 1)
     def handler(request: httpx.Request) -> httpx.Response:
-        payload = {
-            "choices": [
-                {
-                    "message": {
-                        "content": '{"choice": 1}'
-                    }
-                }
-            ]
-        }
+        payload = {"choices": [{"message": {"content": '{"choice": 1}'}}]}
         return httpx.Response(200, json=payload)
 
     llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
@@ -781,3 +777,279 @@ def test_export_submission_semantic_grounding_recovery(tmp_path: Path) -> None:
     assert len(items) == 1
     assert items[0].answer == Decimal("100")
 
+
+def _duplicate_label_release(tmp_path: Path) -> Path:
+    """The release shape that produced the dev benchmark's dominant error:
+    two identically-labelled rows holding different figures (plan.md §19)."""
+    release_dir = _write_release(tmp_path)
+    cells = [
+        {
+            "cell_id": "cell_" + character * 64,
+            "table_id": TABLE_ID,
+            "row_idx": row_idx,
+            "col_idx": 1,
+            "row_label_raw": "Doanh thu thuan",
+            "row_label_canonical": "net_revenue",
+            "row_group_context_raw": None,
+            "column_label_raw": "Năm 2023",
+            "column_label_canonical": None,
+            "value_raw": value,
+            "value_numeric": Decimal(value),
+            "period": "2023",
+            "unit": "VND",
+            "source_line_start": 5,
+            "source_line_end": 5,
+            "extraction_confidence": 0.9,
+        }
+        for character, row_idx, value in (("b", 0, "100"), ("c", 1, "900"))
+    ]
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(cells, schema=CELL_SCHEMA), release_dir / "cells.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(
+            [
+                {
+                    "table_id": TABLE_ID,
+                    "row_idx": cell["row_idx"],
+                    "col_idx": cell["col_idx"],
+                    "cell_id": cell["cell_id"],
+                }
+                for cell in cells
+            ],
+            schema=PLACEMENT_SCHEMA,
+        ),
+        release_dir / "placements.parquet",
+    )
+    return release_dir
+
+
+def test_export_submission_grounds_the_rule_plan_to_the_retrieved_row_position(
+    tmp_path: Path,
+) -> None:
+    """plan.md §9/§14 on the primary path: the rule planner answers most
+    questions without ever entering grounding recovery, so position binding
+    has to apply there too -- otherwise the wrong-row answers the dev
+    benchmark measured are never touched, because they are answers."""
+    from unittest.mock import MagicMock
+
+    from financial_report_qa.retrieval.row_documents import RowMetadata
+    from financial_report_qa.retrieval.row_fusion import RowFusionService
+    from financial_report_qa.retrieval.row_fusion_contracts import (
+        RowFusedCandidate,
+        RowFusionTrace,
+        RowFusionWeights,
+    )
+
+    release_dir = _duplicate_label_release(tmp_path)
+    question = RawQuestion(id=1, question="Tra cứu doanh thu thuần của ACB năm 2023.")
+
+    row_fusion = MagicMock(spec=RowFusionService)
+    row_fusion.retrieve_rows.return_value = RowFusionTrace(
+        query=question.question,
+        weights=RowFusionWeights(bm25=1, dense=1),
+        candidate_table_ids=(TABLE_ID,),
+        bm25_candidate_count=1,
+        dense_candidate_count=0,
+        results=(
+            RowFusedCandidate(
+                row_id=f"{TABLE_ID}|row_1",
+                table_id=TABLE_ID,
+                row_idx=1,
+                rank=1,
+                fused_score=0.9,
+                snippet="Doanh thu thuan | 900",
+                metadata=RowMetadata(
+                    table_id=TABLE_ID,
+                    row_idx=1,
+                    company_code="ACB",
+                    row_label_raw="Doanh thu thuan",
+                    row_label_canonical="net_revenue",
+                ),
+            ),
+        ),
+    )
+
+    report, items, _ = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        row_fusion=row_fusion,
+    )
+
+    assert report.answered_count == 1
+    assert items[0].answer == 900.0
+    assert "df1.loc[" in items[0].pandas_query
+    assert "row_label" not in items[0].pandas_query
+
+
+def _evidence_planner_fusion(row_idx: int = 0) -> object:
+    from unittest.mock import MagicMock
+
+    from financial_report_qa.retrieval.row_documents import RowMetadata
+    from financial_report_qa.retrieval.row_fusion import RowFusionService
+    from financial_report_qa.retrieval.row_fusion_contracts import (
+        RowFusedCandidate,
+        RowFusionTrace,
+        RowFusionWeights,
+    )
+
+    row_fusion = MagicMock(spec=RowFusionService)
+    row_fusion.retrieve_rows.return_value = RowFusionTrace(
+        query="q",
+        weights=RowFusionWeights(bm25=1, dense=1),
+        candidate_table_ids=(TABLE_ID,),
+        bm25_candidate_count=1,
+        dense_candidate_count=0,
+        results=(
+            RowFusedCandidate(
+                row_id=f"{TABLE_ID}|row_{row_idx}",
+                table_id=TABLE_ID,
+                row_idx=row_idx,
+                rank=1,
+                fused_score=0.9,
+                snippet="Doanh thu thuan | 100",
+                metadata=RowMetadata(
+                    table_id=TABLE_ID,
+                    row_idx=row_idx,
+                    company_code="ACB",
+                    row_label_raw="Doanh thu thuan",
+                    row_label_canonical="net_revenue",
+                ),
+            ),
+        ),
+    )
+    return row_fusion
+
+
+def test_export_submission_uses_the_evidence_aware_planner_when_rules_abstain(
+    tmp_path: Path,
+) -> None:
+    """plan.md §12: with grounded facts in hand the planner only has to name
+    `{operation, operands}` -- it is never asked to invent a table, a row
+    locator, a column locator or a metric name."""
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=7, question="Tra cứu chỉ tiêu không rõ ràng của ACB năm 2023.")
+
+    seen: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps({"operation": "lookup", "operands": ["F1"]})
+                        }
+                    }
+                ]
+            },
+        )
+
+    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
+
+    report, items, _ = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        llm_client=llm_client,
+        row_fusion=_evidence_planner_fusion(),
+    )
+
+    assert report.answered_count == 1
+    assert items[0].answer == 100.0
+    assert report.outcomes[0].plan_source == "llm_evidence_planner"
+    # §9/§14: the plan it produced is position-bound, so execution is a
+    # deterministic positional read rather than another label match.
+    assert "df1.loc[" in items[0].pandas_query
+    # The very first model call is the evidence-planner one: the facts are in
+    # the prompt and no locator field is in the schema.
+    first_prompt = "\n".join(str(m["content"]) for m in seen[0]["messages"])  # type: ignore[index,union-attr]
+    assert "F1:" in first_prompt
+    assert "Doanh thu thuan" in first_prompt
+
+
+def test_export_submission_evidence_planner_falls_through_when_the_model_declines(
+    tmp_path: Path,
+) -> None:
+    """The tier is additive: a planner that cannot name an operation must
+    leave the existing LLM planner chain exactly as it was."""
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=8, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
+    typed_plan = json.dumps(
+        {
+            "operation": "lookup",
+            "companies": ["ACB"],
+            "periods": ["2023"],
+            "metric": {"canonical": "net_revenue"},
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        prompt = "\n".join(str(m["content"]) for m in body["messages"])
+        # Decline only the evidence-planner call; answer the typed-plan one.
+        content = "không rõ" if "Các số liệu đã trích sẵn" in prompt else typed_plan
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
+
+    report, items, _ = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        llm_client=llm_client,
+        row_fusion=_evidence_planner_fusion(),
+    )
+
+    assert report.answered_count == 1
+    assert items[0].answer == 100.0
+    assert report.outcomes[0].plan_source == "llm"
+
+
+def test_export_submission_evidence_planner_is_skipped_without_row_fusion(
+    tmp_path: Path,
+) -> None:
+    """No row retrieval means no grounded facts, and §12 explicitly refuses to
+    let the planner work without them -- so the tier must not fire at all."""
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=9, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
+    typed_plan = json.dumps(
+        {
+            "operation": "lookup",
+            "companies": ["ACB"],
+            "periods": ["2023"],
+            "metric": {"canonical": "net_revenue"},
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        prompt = "\n".join(str(m["content"]) for m in body["messages"])
+        assert "Các số liệu đã trích sẵn" not in prompt
+        return httpx.Response(200, json={"choices": [{"message": {"content": typed_plan}}]})
+
+    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
+
+    report, _, _ = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        llm_client=llm_client,
+        row_fusion=None,
+    )
+    assert report.outcomes[0].plan_source == "llm"

@@ -31,6 +31,8 @@ from financial_report_qa.planning.evidence_rendering import (
     plan_grounding_rank,
     plan_grounding_score,
 )
+from financial_report_qa.planning.fact_grounding import bind_plan_to_rows, grounded_facts
+from financial_report_qa.planning.grounding_contracts import GroundedFact
 from financial_report_qa.planning.llm_cell_grounding import (
     choose_column_label,
     choose_row_label,
@@ -66,6 +68,58 @@ class GroundingResult(_FrozenModel):
     # `max_grounding_rank` in fusion, and the ladder never found (or was
     # never given the means to find) a more confidently-ranked alternative.
     low_confidence: bool = False
+    # plan.md §9: per-fact provenance for the accepted answer -- each cell it
+    # was computed from, identified by `(table_id, row_index)`. Empty when
+    # grounding failed, and also when the answer's cells could not be
+    # attributed to a row (see `fact_grounding.grounded_facts`).
+    facts: tuple[GroundedFact, ...] = ()
+
+
+def compile_grounded(
+    plan: FinancialQueryPlan,
+    fusion_rows: Sequence[RowFusedCandidate],
+    release_dir: Path,
+    execution_settings: ExecutionSettings,
+) -> tuple[FinancialQueryPlan, CompiledQuery]:
+    """Compile `plan`, positionally if retrieval can pin its rows (plan.md §14).
+
+    The bound attempt goes first: it is the one that extracts by
+    `df.loc[row_index, column]` with no label matching left in Pandas, so it
+    resolves the label collisions that make a label-based compile abstain with
+    `cell_ambiguous` or answer off the wrong row. Falling back to the unbound
+    plan when binding is impossible or does not compile keeps every question
+    that already worked working -- binding can only add answers here, never
+    remove them.
+    """
+    bound = bind_plan_to_rows(plan, fusion_rows)
+    if bound is not None:
+        compiled = compile_plan(bound, release_dir, execution_settings=execution_settings)
+        if compiled.status == "answered":
+            return bound, compiled
+    return plan, compile_plan(plan, release_dir, execution_settings=execution_settings)
+
+
+def _accepted(
+    *,
+    plan: FinancialQueryPlan,
+    compiled: CompiledQuery,
+    plan_source: str,
+    fusion_rows: Sequence[RowFusedCandidate],
+    recovery_attempts: int = 0,
+    low_confidence: bool = False,
+) -> GroundingResult:
+    """One accepted result, with its §9 facts derived from the same compile."""
+    score = plan_grounding_score(plan, fusion_rows)
+    return GroundingResult(
+        status="accepted",
+        plan=plan,
+        compiled=compiled,
+        plan_source=plan_source,
+        recovery_attempts=recovery_attempts,
+        grounding_score=score,
+        low_confidence=low_confidence,
+        facts=grounded_facts(compiled, grounding_score=score),
+    )
 
 
 DEFAULT_MAX_GROUNDING_RANK = 3
@@ -108,9 +162,7 @@ def ground_with_recovery(
             {
                 **entities.model_dump(mode="python"),
                 "metrics": (raw_metric,),
-                "ambiguity": tuple(
-                    code for code in entities.ambiguity if code != "metric_unknown"
-                ),
+                "ambiguity": tuple(code for code in entities.ambiguity if code != "metric_unknown"),
             }
         )
         plan_result = build_plan(
@@ -156,8 +208,9 @@ def ground_with_recovery(
             plan_source=plan_source,
         )
 
-    plan = plan_result.plan
-    compiled = compile_plan(plan, release_dir, execution_settings=execution_settings)
+    plan, compiled = compile_grounded(
+        plan_result.plan, fusion_rows, release_dir, execution_settings
+    )
 
     # Day 26 Column Refinement on Attempt 0
     if compiled.error_code == "cell_ambiguous" and llm_client is not None:
@@ -171,11 +224,11 @@ def ground_with_recovery(
             ),
         )
         if refined is not None:
-            retried_compiled = compile_plan(
-                refined, release_dir, execution_settings=execution_settings
+            retried_plan, retried_compiled = compile_grounded(
+                refined, fusion_rows, release_dir, execution_settings
             )
             if retried_compiled.status == "answered":
-                plan = refined
+                plan = retried_plan
                 compiled = retried_compiled
                 plan_source = "llm_column_refined"
 
@@ -189,19 +242,14 @@ def ground_with_recovery(
     if compiled.status == "answered":
         rank = plan_grounding_rank(plan, fusion_rows)
         if rank is None or rank <= max_grounding_rank:
-            return GroundingResult(
-                status="accepted",
-                plan=plan,
-                compiled=compiled,
-                plan_source=plan_source,
-                grounding_score=plan_grounding_score(plan, fusion_rows),
+            return _accepted(
+                plan=plan, compiled=compiled, plan_source=plan_source, fusion_rows=fusion_rows
             )
-        fallback = GroundingResult(
-            status="accepted",
+        fallback = _accepted(
             plan=plan,
             compiled=compiled,
             plan_source=plan_source,
-            grounding_score=plan_grounding_score(plan, fusion_rows),
+            fusion_rows=fusion_rows,
             low_confidence=True,
         )
 
@@ -253,48 +301,46 @@ def ground_with_recovery(
                 known_table_ids=frozenset(retrieved),
             )
             if relabelled.plan is not None:
-                candidate_compiled = compile_plan(
-                    relabelled.plan, release_dir, execution_settings=execution_settings
+                candidate_plan, candidate_compiled = compile_grounded(
+                    relabelled.plan, fusion_rows, release_dir, execution_settings
                 )
 
                 # Day 26 cell_ambiguous recovery inside candidate switching:
                 if candidate_compiled.error_code == "cell_ambiguous" and llm_client is not None:
                     refined = plan_with_column(
-                        relabelled.plan,
+                        candidate_plan,
                         lambda row_label, columns: choose_column_label(
                             question, row_label, columns, client=llm_client
                         ),
                         columns_for=lambda row_label: candidate_column_labels(
-                            release_dir, relabelled.plan.candidate_table_ids, row_label
+                            release_dir, candidate_plan.candidate_table_ids, row_label
                         ),
                     )
                     if refined is not None:
-                        retried_compiled = compile_plan(
-                            refined, release_dir, execution_settings=execution_settings
+                        retried_plan, retried_compiled = compile_grounded(
+                            refined, fusion_rows, release_dir, execution_settings
                         )
                         if retried_compiled.status == "answered":
-                            relabelled = relabelled.model_copy(update={"plan": refined})
+                            candidate_plan = retried_plan
                             candidate_compiled = retried_compiled
 
                 if candidate_compiled.status == "answered":
-                    candidate_rank = plan_grounding_rank(relabelled.plan, fusion_rows)
+                    candidate_rank = plan_grounding_rank(candidate_plan, fusion_rows)
                     if candidate_rank is None or candidate_rank <= max_grounding_rank:
-                        return GroundingResult(
-                            status="accepted",
-                            plan=relabelled.plan,
+                        return _accepted(
+                            plan=candidate_plan,
                             compiled=candidate_compiled,
                             plan_source="llm_cell_grounded_recovered",
+                            fusion_rows=fusion_rows,
                             recovery_attempts=recovery_attempts,
-                            grounding_score=plan_grounding_score(relabelled.plan, fusion_rows),
                         )
                     if fallback is None:
-                        fallback = GroundingResult(
-                            status="accepted",
-                            plan=relabelled.plan,
+                        fallback = _accepted(
+                            plan=candidate_plan,
                             compiled=candidate_compiled,
                             plan_source="llm_cell_grounded_recovered",
+                            fusion_rows=fusion_rows,
                             recovery_attempts=recovery_attempts,
-                            grounding_score=plan_grounding_score(relabelled.plan, fusion_rows),
                             low_confidence=True,
                         )
 
@@ -327,47 +373,45 @@ def ground_with_recovery(
                 known_table_ids=frozenset(retrieved),
             )
             if relabelled.plan is not None:
-                candidate_compiled = compile_plan(
-                    relabelled.plan, release_dir, execution_settings=execution_settings
+                candidate_plan, candidate_compiled = compile_grounded(
+                    relabelled.plan, fusion_rows, release_dir, execution_settings
                 )
 
                 if candidate_compiled.error_code == "cell_ambiguous":
                     refined = plan_with_column(
-                        relabelled.plan,
+                        candidate_plan,
                         lambda row_label, columns: choose_column_label(
                             question, row_label, columns, client=llm_client
                         ),
                         columns_for=lambda row_label: candidate_column_labels(
-                            release_dir, relabelled.plan.candidate_table_ids, row_label
+                            release_dir, candidate_plan.candidate_table_ids, row_label
                         ),
                     )
                     if refined is not None:
-                        retried_compiled = compile_plan(
-                            refined, release_dir, execution_settings=execution_settings
+                        retried_plan, retried_compiled = compile_grounded(
+                            refined, fusion_rows, release_dir, execution_settings
                         )
                         if retried_compiled.status == "answered":
-                            relabelled = relabelled.model_copy(update={"plan": refined})
+                            candidate_plan = retried_plan
                             candidate_compiled = retried_compiled
 
                 if candidate_compiled.status == "answered":
-                    candidate_rank = plan_grounding_rank(relabelled.plan, fusion_rows)
+                    candidate_rank = plan_grounding_rank(candidate_plan, fusion_rows)
                     if candidate_rank is None or candidate_rank <= max_grounding_rank:
-                        return GroundingResult(
-                            status="accepted",
-                            plan=relabelled.plan,
+                        return _accepted(
+                            plan=candidate_plan,
                             compiled=candidate_compiled,
                             plan_source="llm_cell_grounded_context_expanded",
+                            fusion_rows=fusion_rows,
                             recovery_attempts=recovery_attempts + 1,
-                            grounding_score=plan_grounding_score(relabelled.plan, fusion_rows),
                         )
                     if fallback is None:
-                        fallback = GroundingResult(
-                            status="accepted",
-                            plan=relabelled.plan,
+                        fallback = _accepted(
+                            plan=candidate_plan,
                             compiled=candidate_compiled,
                             plan_source="llm_cell_grounded_context_expanded",
+                            fusion_rows=fusion_rows,
                             recovery_attempts=recovery_attempts + 1,
-                            grounding_score=plan_grounding_score(relabelled.plan, fusion_rows),
                             low_confidence=True,
                         )
 

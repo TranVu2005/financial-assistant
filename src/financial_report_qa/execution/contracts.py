@@ -51,6 +51,14 @@ class CellMatch(_FrozenModel):
     unit: CanonicalUnit
     period: int = Field(ge=1900, le=2100)
     period_inferred: bool
+    # plan.md §9 provenance: the physical position the value was read from.
+    # `row_index` is `cells.row_idx` of the first matched row -- taken from
+    # the same row as `table_id`, and, like it, representative of a group
+    # that already agreed on `(value, unit)` before the locator returned.
+    # Optional so a frame assembled without positional columns (older
+    # fixtures, hand-built replay frames) still validates.
+    row_index: int | None = Field(default=None, ge=0)
+    column_label: NonEmptyString | None = None
 
     @model_validator(mode="after")
     def validate_cell_ids_non_empty(self) -> Self:
@@ -73,6 +81,11 @@ class ReplayRow(_FrozenModel):
     column_label: NonEmptyString | None = None
     period: int = Field(ge=1900, le=2100)
     value: Decimal
+    # plan.md §14: present only for a position-bound selector, because only
+    # then does the rendered `df.loc[...]` read these two columns. An unbound
+    # plan's replay frame is unchanged.
+    table_id: TableId | None = None
+    row_index: int | None = Field(default=None, ge=0)
 
 
 class CompiledQuery(_FrozenModel):

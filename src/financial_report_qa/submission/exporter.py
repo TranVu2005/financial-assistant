@@ -29,7 +29,7 @@ from financial_report_qa.execution.contracts import CompiledQuery, ReplayRow
 from financial_report_qa.execution.sandbox import replay_in_sandbox
 from financial_report_qa.pipeline.contracts import PipelineStage
 from financial_report_qa.planning import llm_planner
-from financial_report_qa.planning.cell_grounding import ground_with_recovery
+from financial_report_qa.planning.cell_grounding import compile_grounded, ground_with_recovery
 from financial_report_qa.planning.column_refinement import plan_with_column
 from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.evidence_rendering import (
@@ -40,6 +40,8 @@ from financial_report_qa.planning.evidence_rendering import (
 )
 from financial_report_qa.planning.llm_cell_grounding import choose_column_label
 from financial_report_qa.planning.llm_client import ChatCompletionClient
+from financial_report_qa.planning.llm_evidence_planner import plan_with_evidence
+from financial_report_qa.planning.plan_contracts import map_requested_unit
 from financial_report_qa.planning.plan_router import route_plan
 from financial_report_qa.planning.raw_metric_grounding import (
     candidate_column_labels,
@@ -236,80 +238,123 @@ def _run_one_question(
         "llm_cell_grounded_recovered",
         "llm_cell_grounded_context_expanded",
         "llm_column_refined",
+        "llm_evidence_planner",
     ]
     compiled: CompiledQuery | None = None
     low_confidence = False
 
     if plan_result.plan is not None:
         plan_source = "rule_raw_grounded" if grounded else "rule"
-        compiled = compile_plan(
-            plan_result.plan, release_dir, execution_settings=execution_settings
+        # plan.md §9/§14: bind the plan's row selector to the position row
+        # retrieval ranked first, and extract with `df.loc[row_index, column]`.
+        # This has to happen on the primary path, not only inside the recovery
+        # ladder below: a plan that picked the wrong row still *compiles*, so
+        # recovery never sees it -- which is exactly how 71 of 88 wrong dev
+        # benchmark answers were produced.
+        primary_plan, compiled = compile_grounded(
+            plan_result.plan, fusion_rows, release_dir, execution_settings
         )
+        plan_result = plan_result.model_copy(update={"plan": primary_plan})
         # Column refinement on deterministic rule plan if ambiguous
         if compiled.error_code == "cell_ambiguous" and llm_client is not None:
             refined = plan_with_column(
-                plan_result.plan,
+                primary_plan,
                 lambda row_label, columns: choose_column_label(
                     question, row_label, columns, client=llm_client
                 ),
                 columns_for=lambda row_label: candidate_column_labels(
-                    release_dir, plan_result.plan.candidate_table_ids, row_label
+                    release_dir, primary_plan.candidate_table_ids, row_label
                 ),
             )
             if refined is not None:
-                retried = compile_plan(refined, release_dir, execution_settings=execution_settings)
+                retried_plan, retried = compile_grounded(
+                    refined, fusion_rows, release_dir, execution_settings
+                )
                 if retried.status == "answered":
-                    plan_result = plan_result.model_copy(update={"plan": refined})
+                    plan_result = plan_result.model_copy(update={"plan": retried_plan})
                     compiled = retried
                     plan_source = "llm_column_refined"
     elif llm_client is not None:
-        # LLM Planner (Attempt 0 LLM)
-        routed = route_plan(
-            entities,
-            client=llm_client,
-            candidate_table_ids=retrieved,
-            known_table_ids=frozenset(retrieved),
-        )
-        plan_result, plan_source = routed.result, routed.source
-
-        if plan_result.plan is None:
-            table_context = (
-                evidence_table_context(fusion_rows)
-                if fusion_rows
-                else render_table_context(release_dir, retrieved)
-            )
-            grounded_result = llm_planner.build_plan_grounded(
+        # plan.md §12 Evidence-Aware Planner, tried before the typed-plan
+        # router. Given the facts row retrieval already grounded, the model
+        # only has to name `{operation, operands}` -- it is never asked to
+        # invent a table, a row locator, a column locator or a metric name,
+        # which is the reasoning chain §12 blames for the 231
+        # `llm_plan_invalid` questions. Purely additive: every decline path
+        # (no rows, no facts, a model that will not choose, an operand set
+        # that fails `build_plan_from_facts`) returns None and leaves the
+        # existing router chain below exactly as it was.
+        evidence_plan = (
+            plan_with_evidence(
                 question,
+                fusion_rows,
+                release_dir,
+                client=llm_client,
+                company_code=entities.company_codes[0] if entities.company_codes else None,
+                periods=tuple(int(period) for period in entities.periods),
+                expected_unit=map_requested_unit(entities.requested_unit),
+            )
+            if fusion_rows
+            else None
+        )
+        plan_source = "llm_evidence_planner"
+        if evidence_plan is not None:
+            evidence_compiled = compile_plan(
+                evidence_plan, release_dir, execution_settings=execution_settings
+            )
+            if evidence_compiled.status == "answered":
+                plan_result = plan_result.model_copy(update={"plan": evidence_plan})
+                compiled = evidence_compiled
+
+        if compiled is None:
+            # LLM Planner (Attempt 0 LLM)
+            routed = route_plan(
+                entities,
                 client=llm_client,
                 candidate_table_ids=retrieved,
                 known_table_ids=frozenset(retrieved),
-                table_context=table_context,
             )
-            if grounded_result.plan is not None:
-                plan_result, plan_source = grounded_result, "llm_grounded"
+            plan_result, plan_source = routed.result, routed.source
 
-        if plan_result.plan is not None:
-            compiled = compile_plan(
-                plan_result.plan, release_dir, execution_settings=execution_settings
-            )
-            if compiled.error_code == "cell_ambiguous":
-                refined = plan_with_column(
-                    plan_result.plan,
-                    lambda row_label, columns: choose_column_label(
-                        question, row_label, columns, client=llm_client
-                    ),
-                    columns_for=lambda row_label: candidate_column_labels(
-                        release_dir, plan_result.plan.candidate_table_ids, row_label
-                    ),
+            if plan_result.plan is None:
+                table_context = (
+                    evidence_table_context(fusion_rows)
+                    if fusion_rows
+                    else render_table_context(release_dir, retrieved)
                 )
-                if refined is not None:
-                    retried = compile_plan(
-                        refined, release_dir, execution_settings=execution_settings
+                grounded_result = llm_planner.build_plan_grounded(
+                    question,
+                    client=llm_client,
+                    candidate_table_ids=retrieved,
+                    known_table_ids=frozenset(retrieved),
+                    table_context=table_context,
+                )
+                if grounded_result.plan is not None:
+                    plan_result, plan_source = grounded_result, "llm_grounded"
+
+            if plan_result.plan is not None:
+                routed_plan, compiled = compile_grounded(
+                    plan_result.plan, fusion_rows, release_dir, execution_settings
+                )
+                plan_result = plan_result.model_copy(update={"plan": routed_plan})
+                if compiled.error_code == "cell_ambiguous":
+                    refined = plan_with_column(
+                        routed_plan,
+                        lambda row_label, columns: choose_column_label(
+                            question, row_label, columns, client=llm_client
+                        ),
+                        columns_for=lambda row_label: candidate_column_labels(
+                            release_dir, routed_plan.candidate_table_ids, row_label
+                        ),
                     )
-                    if retried.status == "answered":
-                        plan_result = plan_result.model_copy(update={"plan": refined})
-                        compiled = retried
-                        plan_source = "llm_column_refined"
+                    if refined is not None:
+                        retried_plan, retried = compile_grounded(
+                            refined, fusion_rows, release_dir, execution_settings
+                        )
+                        if retried.status == "answered":
+                            plan_result = plan_result.model_copy(update={"plan": retried_plan})
+                            compiled = retried
+                            plan_source = "llm_column_refined"
     else:
         plan_source = "rule"
         compiled = None
@@ -427,6 +472,8 @@ def _run_one_question(
         retrieved_table_ids=frozenset(retrieved),
         citation_lookup=citation_lookup,
         allow_inferred_scope=allow_inferred_scope,
+        # plan.md §15: independently re-locate every fact behind the answer.
+        release_dir=release_dir,
     )
     if package.verification_status == "rejected":
         return (

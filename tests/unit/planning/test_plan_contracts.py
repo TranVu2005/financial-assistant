@@ -206,3 +206,26 @@ def test_plan_rejects_company_code_over_sixteen_chars() -> None:
 def test_plan_accepts_real_company_code() -> None:
     plan = _plan(companies=("ACB",))
     assert plan.companies == ("ACB",)
+
+
+def test_metric_selector_rejects_row_index_without_its_table() -> None:
+    """plan.md §14: `row_idx` is only unique within a table, so half a
+    position binding would point at row 14 of an arbitrary table."""
+    with pytest.raises(ValidationError):
+        MetricSelector(canonical="revenue", row_index=14)
+
+
+def test_metric_selector_rejects_table_without_row_index() -> None:
+    with pytest.raises(ValidationError):
+        MetricSelector(canonical="revenue", table_id="tbl_" + "1" * 64)
+
+
+def test_metric_selector_rejects_negative_row_index() -> None:
+    with pytest.raises(ValidationError):
+        MetricSelector(canonical="revenue", table_id="tbl_" + "1" * 64, row_index=-1)
+
+
+def test_metric_selector_is_position_bound_only_when_both_are_set() -> None:
+    assert MetricSelector(canonical="revenue").is_position_bound is False
+    bound = MetricSelector(canonical="revenue", table_id="tbl_" + "1" * 64, row_index=0)
+    assert bound.is_position_bound is True

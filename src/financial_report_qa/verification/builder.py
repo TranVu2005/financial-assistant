@@ -11,12 +11,15 @@ missing entry is a hard error, not a placeholder.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Literal
 
 from financial_report_qa.execution.contracts import CompiledQuery
+from financial_report_qa.planning.fact_grounding import grounded_facts
 from financial_report_qa.planning.plan_contracts import FinancialQueryPlan
 from financial_report_qa.verification import checks
 from financial_report_qa.verification.contracts import AnswerPackage, Citation, is_blocking_issue
+from financial_report_qa.verification.fact_checks import verify_facts
 from financial_report_qa.verification.templates import render_answer, render_sentence
 
 
@@ -55,6 +58,7 @@ def build_answer_package(
     retrieved_table_ids: frozenset[str],
     citation_lookup: Mapping[str, Mapping[str, object]] | None = None,
     allow_inferred_scope: bool = False,
+    release_dir: Path | None = None,
 ) -> AnswerPackage:
     """Compile a verified `AnswerPackage` from one answered `CompiledQuery`.
 
@@ -67,6 +71,14 @@ def build_answer_package(
     an abstention costs (0) while retaining a chance of being right. Scoped
     to `scope_inferred` alone -- every genuine correctness block still
     rejects.
+
+    `release_dir=...` (plan.md §15) additionally re-locates every fact
+    behind the answer independently of the compile that produced it -- see
+    `fact_checks.verify_fact`. Omitted by default so a caller with no
+    release on hand (e.g. most of this module's own unit tests) sees no
+    behavior change; harmless even when given, since a `CompiledQuery`
+    built without position-bound evidence (no `row_index`) simply yields no
+    facts to check.
 
     Raises `ValueError` if `compiled.status != "answered"` -- there is
     nothing to verify or cite for an error result (it is already a typed
@@ -94,6 +106,10 @@ def build_answer_package(
         )
         if issue is not None
     ]
+    if release_dir is not None:
+        # plan.md §15: verify row/column/unit per fact, before the answer is
+        # trusted on the strength of `check_recompute_mismatch` alone.
+        issues.extend(verify_facts(grounded_facts(compiled, grounding_score=None), release_dir))
     status: Literal["verified", "rejected"] = (
         "rejected"
         if any(

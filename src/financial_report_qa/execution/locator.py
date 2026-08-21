@@ -52,7 +52,20 @@ def _canonical_of_raw_label(label: str) -> str | None:
     return normalize_metric(label).value
 
 
+def _position_mask(frame: pd.DataFrame, selector: MetricSelector) -> pd.Series:
+    """plan.md §14: select the one grounded row by position, nothing else.
+
+    No label is consulted. Grounding already decided which row the question
+    means; re-deriving that decision here from `row_label_raw` is exactly the
+    semantic search this design moved out of Pandas.
+    """
+    assert selector.table_id is not None and selector.row_index is not None
+    return (frame["table_id"] == selector.table_id) & (frame["row_idx"] == selector.row_index)
+
+
 def _metric_mask(frame: pd.DataFrame, selector: MetricSelector) -> pd.Series:
+    if selector.is_position_bound:
+        return _position_mask(frame, selector)
     if selector.canonical is not None:
         by_column = frame["row_label_canonical"] == selector.canonical
         by_raw_label = frame["row_label_raw"].map(
@@ -122,6 +135,22 @@ def _prefer_statutory_rows(rows: pd.DataFrame) -> pd.DataFrame:
     if coded.empty or coded["value"].nunique() != 1:
         return rows
     return coded
+
+
+def _first_optional_int(rows: pd.DataFrame, column: str) -> int | None:
+    if column not in rows.columns:
+        return None
+    value = rows[column].iloc[0]
+    return None if pd.isna(value) else int(value)
+
+
+def _first_optional_str(rows: pd.DataFrame, column: str) -> str | None:
+    if column not in rows.columns:
+        return None
+    value = rows[column].iloc[0]
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value
 
 
 def locate(
@@ -208,6 +237,8 @@ def locate(
             unit=cast(CanonicalUnit, str(resolved_unit)),
             period=period,
             period_inferred=bool(period_rows["period_inferred"].iloc[0]),
+            row_index=_first_optional_int(period_rows, "row_idx"),
+            column_label=_first_optional_str(period_rows, "column_label"),
         ),
         error_code=None,
         error_message=None,

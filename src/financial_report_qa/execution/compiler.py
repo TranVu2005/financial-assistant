@@ -78,7 +78,27 @@ def _replay_row(
         "column_label": selector.column_text,
         "period": period,
         "value": value,
+        # plan.md §14: the replay frame must carry whatever the rendered
+        # query reads. A position-bound selector renders `df.loc[(df1.table_id
+        # == ...) & (df1.row_idx == ...)]`, so those columns have to exist in
+        # `df1` -- otherwise the sandbox replay fails on a column it was
+        # itself asked to filter by.
+        "table_id": selector.table_id,
+        "row_idx": selector.row_index,
     }
+
+
+def _replay_row_contract(row: dict[str, object]) -> ReplayRow:
+    """Project one replay-frame row onto the exported contract.
+
+    The frame column is `row_idx` because that is the name the rendered
+    `df.loc[...]` filters on; the contract field is `row_index` to match
+    `CellMatch`/`GroundedFact`. Renamed here rather than in either place, so
+    neither the query grammar nor the provenance vocabulary has to bend.
+    """
+    payload = {key: value for key, value in row.items() if key != "row_idx"}
+    payload["row_index"] = row.get("row_idx")
+    return ReplayRow.model_validate(payload)
 
 
 def _replay_frame(rows: list[dict[str, object]]) -> pd.DataFrame:
@@ -155,6 +175,7 @@ def compile_plan(
             unit = plan.expected_unit
 
             from financial_report_qa.normalization.units import _MONETARY_UNITS, unit_multiplier
+
             if orig_unit in _MONETARY_UNITS:
                 factor = unit_multiplier(orig_unit) / unit_multiplier(plan.expected_unit)
                 updated_rows = []
@@ -202,7 +223,7 @@ def compile_plan(
         error_code=None,
         error_message=None,
         scope_inferred=scope_inferred,
-        replay_rows=tuple(ReplayRow.model_validate(row) for row in replay_rows),
+        replay_rows=tuple(_replay_row_contract(row) for row in replay_rows),
     )
 
 

@@ -157,6 +157,10 @@ class QuestionOutcome(_FrozenModel):
             "llm_cell_grounded_recovered",
             "llm_cell_grounded_context_expanded",
             "llm_column_refined",
+            # plan.md §12: the Evidence-Aware Planner chose `{operation,
+            # operands}` over facts grounding had already resolved, rather
+            # than emitting a whole typed plan of its own.
+            "llm_evidence_planner",
         ]
         | None
     ) = None
