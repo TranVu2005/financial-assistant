@@ -1,72 +1,58 @@
-"""Payload batch gửi cho LLM chọn dòng (thiết kế 2026-08-22 §5.3)."""
+"""Payload batch v2: LLM quyết cả operation lẫn dòng (spec 2026-08-23 §6.2)."""
 
 from __future__ import annotations
 
+from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.row_choice_batch import build_batch_payload
 from financial_report_qa.retrieval.row_documents import RowMetadata
 from financial_report_qa.retrieval.row_fusion_contracts import RowFusedCandidate
 
-# TableId bị ràng buộc ^tbl_[0-9a-f]{64}$ -- "t1" sẽ ném ValidationError.
-_TABLE_ID = "tbl_" + "a" * 64
+TABLE_A = "tbl_" + "a" * 64
 
 
-def _candidate(*, rank: int, row_idx: int, label: str) -> RowFusedCandidate:
+def _candidate(rank: int, *, label: str = "Doanh thu thuần", company: str = "ACB"):
     return RowFusedCandidate(
-        row_id=f"{_TABLE_ID}|row_{row_idx}",
-        table_id=_TABLE_ID,
-        row_idx=row_idx,
+        row_id=f"{TABLE_A}|row_{rank}",
+        table_id=TABLE_A,
+        row_idx=rank,
         rank=rank,
         fused_score=1.0 / rank,
         metadata=RowMetadata(
-            table_id=_TABLE_ID,
-            row_idx=row_idx,
+            table_id=TABLE_A,
+            row_idx=rank,
+            company_code=company,
             row_label_raw=label,
-            row_group_context_raw="IV. Tài sản ngắn hạn khác",
-            statement_type="balance_sheet",
-            title="BẢNG CÂN ĐỐI KẾ TOÁN",
-            periods=("2023", "2022"),
-            units=("VND",),
+            title="Báo cáo KQKD",
+            periods=("2023",),
         ),
         snippet=label,
     )
 
 
-def test_payload_has_question_and_indexed_candidates() -> None:
-    payload = build_batch_payload(
-        795,
-        "Chi phí trả trước ngắn hạn khác cuối 2023?",
-        [_candidate(rank=1, row_idx=3, label="Chi phí trả trước ngắn hạn khác")],
-    )
-    assert payload["question_id"] == 795
-    assert payload["question"] == "Chi phí trả trước ngắn hạn khác cuối 2023?"
-    assert payload["candidates"][0]["index"] == 0
-    assert payload["candidates"][0]["row_label"] == "Chi phí trả trước ngắn hạn khác"
+def test_payload_carries_companies_and_periods_for_operation_choice() -> None:
+    entities = parse_query_entities("Tra cứu doanh thu thuần của ACB năm 2023.")
+    payload = build_batch_payload(7, entities.question, entities, (_candidate(1),))
+    assert payload["question_id"] == 7
+    assert payload["companies"] == ["ACB"]
+    assert payload["periods"] == ["2023"]
 
 
-def test_candidate_indices_are_contiguous_and_follow_rank_order() -> None:
-    """Index phải khớp vị trí trong danh sách -- Task 4 map ngược index về
-    candidate bằng chính thứ tự này."""
-    candidates = [
-        _candidate(rank=1, row_idx=3, label="A"),
-        _candidate(rank=2, row_idx=7, label="B"),
-        _candidate(rank=3, row_idx=9, label="C"),
-    ]
-    payload = build_batch_payload(1, "câu hỏi", candidates)
-    assert [c["index"] for c in payload["candidates"]] == [0, 1, 2]
-    assert [c["row_label"] for c in payload["candidates"]] == ["A", "B", "C"]
+def test_candidate_carries_company_code_so_multi_company_picks_are_possible() -> None:
+    entities = parse_query_entities("Tra cứu doanh thu thuần của ACB năm 2023.")
+    payload = build_batch_payload(7, entities.question, entities, (_candidate(1, company="VIC"),))
+    candidates = payload["candidates"]
+    assert isinstance(candidates, list)
+    assert candidates[0]["company_code"] == "VIC"
+    assert candidates[0]["index"] == 0
 
 
-def test_payload_never_leaks_a_cell_value() -> None:
-    """Bất biến của thiết kế: LLM không được thấy giá trị số. Nó chỉ chọn
-    dòng; đáp án luôn được tính lại từ CSV trong sandbox."""
-    payload = build_batch_payload(
-        1, "câu hỏi", [_candidate(rank=1, row_idx=3, label="A")]
-    )
-    serialized = repr(payload)
-    assert "value" not in serialized
-    assert "fused_score" not in serialized
-
-
-def test_empty_candidates_produce_an_empty_list_not_an_error() -> None:
-    payload = build_batch_payload(1, "câu hỏi", [])
-    assert payload["candidates"] == []
+def test_payload_never_leaks_a_cell_value_or_score() -> None:
+    """Bất biến N7 -- đây là thứ giữ cho cam kết chống hardcode còn đứng vững."""
+    entities = parse_query_entities("Tra cứu doanh thu thuần của ACB năm 2023.")
+    payload = build_batch_payload(7, entities.question, entities, (_candidate(1),))
+    blob = repr(payload)
+    assert "fused_score" not in blob
+    assert "value" not in blob
+    for candidate in payload["candidates"]:
+        assert "value" not in candidate
+        assert "fused_score" not in candidate

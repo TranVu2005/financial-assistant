@@ -26,6 +26,7 @@ from financial_report_qa.core.errors import (
     PlanningInputError,
     SubmissionError,
 )
+from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.llm_client import LLMClient
 from financial_report_qa.planning.row_choice_batch import build_batch_payload
 from financial_report_qa.planning.row_choice_decision import load_decisions
@@ -424,7 +425,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         k=args.rows_per_question,
                     ).results
                     payload = build_batch_payload(
-                        raw_question.id, raw_question.question, fused
+                        raw_question.id,
+                        raw_question.question,
+                        parse_query_entities(raw_question.question),
+                        fused,
                     )
                     lines.append(json.dumps(payload, ensure_ascii=False))
                     written += 1
