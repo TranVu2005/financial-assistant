@@ -470,3 +470,40 @@ def test_export_help_renders_without_format_error() -> None:
     with pytest.raises(SystemExit) as excinfo:
         main(["export", "--help"])
     assert excinfo.value.code == 0
+
+
+def test_export_accepts_a_row_choice_decisions_path() -> None:
+    from financial_report_qa.submission import cli as submission_cli
+
+    parser = submission_cli._parser()
+    args = parser.parse_args(
+        [
+            "export",
+            "--release-lock", "a.json",
+            "--bm25-index", "b",
+            "--questions-path", "c.jsonl",
+            "--execution-config", "d.yaml",
+            "--output-zip", "e.zip",
+            "--report-dir", "f",
+            "--row-choice-decisions", "g.jsonl",
+        ]
+    )
+    assert args.row_choice_decisions == Path("g.jsonl")
+
+
+def test_export_defaults_row_choice_decisions_to_none() -> None:
+    from financial_report_qa.submission import cli as submission_cli
+
+    parser = submission_cli._parser()
+    args = parser.parse_args(
+        [
+            "export",
+            "--release-lock", "a.json",
+            "--bm25-index", "b",
+            "--questions-path", "c.jsonl",
+            "--execution-config", "d.yaml",
+            "--output-zip", "e.zip",
+            "--report-dir", "f",
+        ]
+    )
+    assert args.row_choice_decisions is None

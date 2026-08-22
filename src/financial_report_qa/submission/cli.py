@@ -28,6 +28,7 @@ from financial_report_qa.core.errors import (
 )
 from financial_report_qa.planning.llm_client import LLMClient
 from financial_report_qa.planning.row_choice_batch import build_batch_payload
+from financial_report_qa.planning.row_choice_decision import load_decisions
 from financial_report_qa.retrieval.index import load_bm25_index
 from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
 from financial_report_qa.retrieval.release import resolve_retrieval_release
@@ -129,6 +130,15 @@ def _parser() -> argparse.ArgumentParser:
             "`scope_inferred` issue is still recorded on every affected "
             "AnswerPackage. Off by default: for internal quality measurement a "
             "scope-guessed answer really is untrustworthy."
+        ),
+    )
+    export.add_argument(
+        "--row-choice-decisions",
+        type=Path,
+        default=None,
+        help=(
+            "File JSONL {question_id, chosen_index} do Qwen3-8B sinh offline "
+            "(xem subcommand `row-batches`). Bỏ qua để dùng fallback hạng 1."
         ),
     )
 
@@ -307,6 +317,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             # Load row BM25 index and initialize row fusion if available
             row_fusion = _build_row_fusion(args, release)
+            row_decisions = (
+                load_decisions(args.row_choice_decisions)
+                if args.row_choice_decisions is not None
+                else None
+            )
 
             if args.llm_config is not None:
                 llm_settings = load_llm_settings(args.llm_config)
@@ -320,6 +335,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         k=args.k,
                         llm_client=llm_client,
                         row_fusion=row_fusion,
+                        row_decisions=row_decisions,
                         allow_inferred_scope=args.allow_inferred_scope,
                     )
             else:
@@ -331,6 +347,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     dataset_fingerprint=release.dataset_fingerprint,
                     k=args.k,
                     row_fusion=row_fusion,
+                    row_decisions=row_decisions,
                     allow_inferred_scope=args.allow_inferred_scope,
                 )
             # Write the per-question coverage report BEFORE the compliance gate
