@@ -57,29 +57,13 @@ from financial_report_qa.retrieval.dense_index import (
 from financial_report_qa.retrieval.dense_service import DenseRetrievalService
 from financial_report_qa.retrieval.documents import build_table_documents
 from financial_report_qa.retrieval.evaluation import (
-    RetrievalEvaluationReportV2,
     evaluate_retrieval,
     evaluate_retrieval_v2,
     write_report,
     write_report_v2,
 )
-from financial_report_qa.retrieval.expansion_evaluation import (
-    evaluate_expansion_grid,
-    write_day12_expansion,
-)
-from financial_report_qa.retrieval.failure_evaluation import (
-    build_failure_report,
-    load_failure_annotations,
-    write_failure_report,
-)
 from financial_report_qa.retrieval.fusion_evaluation import evaluate_fusion_grid, write_day10_fusion
 from financial_report_qa.retrieval.gold import load_gold_questions
-from financial_report_qa.retrieval.graph import build_graph, load_graph, save_graph
-from financial_report_qa.retrieval.graph_evaluation import (
-    evaluate_graph_coverage,
-    write_day11_graph,
-)
-from financial_report_qa.retrieval.graph_service import TableGraphService
 from financial_report_qa.retrieval.index import build_bm25_index, load_bm25_index, save_bm25_index
 from financial_report_qa.retrieval.reference import (
     ReferenceVersion,
@@ -103,11 +87,6 @@ from financial_report_qa.retrieval.row_dense_index import (
 from financial_report_qa.retrieval.row_documents import build_row_documents
 from financial_report_qa.retrieval.row_index import build_row_bm25_index, save_row_bm25_index
 from financial_report_qa.retrieval.service import RetrievalService
-from financial_report_qa.retrieval.system_evaluation import (
-    SystemSourceKind,
-    derive_system_report_v2,
-    write_system_report_v2,
-)
 
 
 class _DenseBuildObservation(BaseModel):
@@ -149,21 +128,6 @@ def _parser() -> argparse.ArgumentParser:
         if name == "evaluate-v2":
             command.add_argument("--diagnostic-k", type=int, default=100)
             command.add_argument("--repo-root", type=Path)
-    failure_export = commands.add_parser("export-failures")
-    failure_export.add_argument("--evaluation-report", type=Path, required=True)
-    failure_export.add_argument("--annotations", type=Path, required=True)
-    failure_export.add_argument("--output-dir", type=Path, required=True)
-    derive_v2 = commands.add_parser("derive-v2")
-    derive_v2.add_argument("--release-lock", type=Path, required=True)
-    derive_v2.add_argument("--gold-path", type=Path, required=True)
-    derive_v2.add_argument("--gold-version", choices=("gold30", "gold70"))
-    derive_v2.add_argument("--source-report", type=Path, required=True)
-    derive_v2.add_argument(
-        "--source-kind", choices=("legacy", "dense", "fusion", "expansion"), required=True
-    )
-    derive_v2.add_argument("--system-name", required=True)
-    derive_v2.add_argument("--output-dir", type=Path, required=True)
-    derive_v2.add_argument("--repo-root", type=Path)
     dense_index = commands.add_parser("build-dense-index")
     dense_index.add_argument("--release-lock", type=Path, required=True)
     dense_index.add_argument("--corpus-dir", type=Path, required=True)
@@ -206,21 +170,6 @@ def _parser() -> argparse.ArgumentParser:
     fusion.add_argument("--cache-dir", type=Path, required=True)
     fusion.add_argument("--bm25-report", type=Path, required=True)
     fusion.add_argument("--output-dir", type=Path, required=True)
-    graph_build = commands.add_parser("build-graph")
-    graph_build.add_argument("--release-lock", type=Path, required=True)
-    graph_build.add_argument("--output-root", type=Path, required=True)
-    graph_evaluate = commands.add_parser("evaluate-graph")
-    graph_evaluate.add_argument("--release-lock", type=Path, required=True)
-    graph_evaluate.add_argument("--graph-dir", type=Path, required=True)
-    graph_evaluate.add_argument("--output-dir", type=Path, required=True)
-    expansion_evaluate = commands.add_parser("evaluate-expansion")
-    expansion_evaluate.add_argument("--release-lock", type=Path, required=True)
-    expansion_evaluate.add_argument("--index-dir", type=Path, required=True)
-    expansion_evaluate.add_argument("--graph-dir", type=Path, required=True)
-    expansion_evaluate.add_argument("--gold-path", type=Path, required=True)
-    expansion_evaluate.add_argument("--gold-version", choices=("gold30", "gold70"))
-    expansion_evaluate.add_argument("--bm25-report", type=Path, required=True)
-    expansion_evaluate.add_argument("--output-dir", type=Path, required=True)
     cleanup = commands.add_parser("cleanup-day9-data")
     cleanup.add_argument("--repo-root", type=Path, required=True)
     cleanup.add_argument("--quarantine-root", type=Path, required=True)
@@ -308,20 +257,6 @@ def _load_gold_for_cli(
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        if args.command == "export-failures":
-            try:
-                evaluation = RetrievalEvaluationReportV2.model_validate_json(
-                    args.evaluation_report.read_bytes()
-                )
-                failure_report = build_failure_report(
-                    evaluation, load_failure_annotations(args.annotations)
-                )
-            except ValueError as exc:
-                raise RetrievalInputError("Failure export inputs are invalid") from exc
-            json_path, markdown_path = write_failure_report(failure_report, args.output_dir)
-            print(json_path)
-            print(markdown_path)
-            return 0
         if args.command == "cleanup-day9-data":
             plan = plan_day9_cleanup(args.repo_root)
             for entry in plan.entries:
@@ -344,21 +279,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2 if any(entry.status == "blocked" for entry in plan.entries) else 0
         root = args.repo_root if getattr(args, "repo_root", None) is not None else Path.cwd()
         release = resolve_retrieval_release(args.release_lock, repo_root=root)
-        if args.command == "derive-v2":
-            gold = _load_gold_for_cli(args.gold_path, release, args.gold_version)
-            try:
-                system_report = derive_system_report_v2(
-                    system_name=args.system_name,
-                    source_path=args.source_report,
-                    source_kind=cast(SystemSourceKind, args.source_kind),
-                    questions=gold,
-                )
-            except ValueError as exc:
-                raise RetrievalArtifactError("V2 source report is invalid") from exc
-            json_path, markdown_path = write_system_report_v2(system_report, args.output_dir)
-            print(json_path)
-            print(markdown_path)
-            return 0
         if args.command == "build-index":
             documents = build_table_documents(
                 release.release_dir / "documents.parquet",
@@ -420,66 +340,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             print(target)
             print(row_target)
-            return 0
-        if args.command == "build-graph":
-            documents = build_table_documents(
-                release.release_dir / "documents.parquet",
-                release.release_dir / "tables.parquet",
-                release.release_dir / "cells.parquet",
-            )
-            graph = build_graph(
-                documents,
-                dataset_fingerprint=release.dataset_fingerprint,
-                release_lock_sha256=release.lock_sha256,
-            )
-            target = args.output_root / release.dataset_fingerprint
-            save_graph(graph, target)
-            print(target)
-            return 0
-        if args.command == "evaluate-graph":
-            documents = build_table_documents(
-                release.release_dir / "documents.parquet",
-                release.release_dir / "tables.parquet",
-                release.release_dir / "cells.parquet",
-            )
-            try:
-                graph = load_graph(
-                    args.graph_dir, documents, release_lock_sha256=release.lock_sha256
-                )
-            except ValueError as exc:
-                raise GraphArtifactError(f"Graph artifact is invalid: {exc}") from exc
-            if graph.manifest.dataset_fingerprint != release.dataset_fingerprint:
-                raise GraphArtifactError("Graph fingerprint does not match release lock")
-            coverage_report = evaluate_graph_coverage(graph, documents)
-            json_path, markdown_path = write_day11_graph(coverage_report, args.output_dir)
-            print(json_path)
-            print(markdown_path)
-            return 0
-        if args.command == "evaluate-expansion":
-            gold = _load_gold_for_cli(args.gold_path, release, args.gold_version)
-            documents = build_table_documents(
-                release.release_dir / "documents.parquet",
-                release.release_dir / "tables.parquet",
-                release.release_dir / "cells.parquet",
-            )
-            try:
-                index = load_bm25_index(args.index_dir, release_lock_sha256=release.lock_sha256)
-                graph = load_graph(
-                    args.graph_dir, documents, release_lock_sha256=release.lock_sha256
-                )
-                bm25_report = load_bm25_reference_report(args.bm25_report).report
-            except (ValueError, ValidationError) as exc:
-                raise ExpansionArtifactError("Expansion evaluation inputs are invalid") from exc
-            if index.manifest.dataset_fingerprint != release.dataset_fingerprint:
-                raise ExpansionArtifactError("BM25 index fingerprint does not match release lock")
-            if graph.manifest.dataset_fingerprint != release.dataset_fingerprint:
-                raise ExpansionArtifactError("Graph fingerprint does not match release lock")
-            expansion_report = evaluate_expansion_grid(
-                RetrievalService(index), TableGraphService(graph), gold, bm25_report
-            )
-            json_path, markdown_path = write_day12_expansion(expansion_report, args.output_dir)
-            print(json_path)
-            print(markdown_path)
             return 0
         if args.command == "build-dense-index":
             encoder_name = cast(EncoderName, args.encoder)

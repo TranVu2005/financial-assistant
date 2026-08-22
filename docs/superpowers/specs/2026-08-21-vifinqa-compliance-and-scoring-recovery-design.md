@@ -2,7 +2,10 @@
 
 - **Ngày:** 2026-08-21
 - **Deadline Vòng 1:** 31/08/2026 (10 ngày)
-- **Trạng thái:** Design — chờ duyệt
+- **Trạng thái:** Một phần đã thi hành (P0, P1a). Kiến trúc mục tiêu §4 và các bất
+  biến BI-1…BI-4 / C1–C7 của tài liệu này vẫn còn hiệu lực và là nguồn của
+  [`2026-08-23-target-architecture.md`](2026-08-23-target-architecture.md), tài liệu
+  chi phối việc thực thi từ 2026-08-23. Đọc bản 08-23 trước khi làm theo §6–§8 ở đây.
 
 ---
 

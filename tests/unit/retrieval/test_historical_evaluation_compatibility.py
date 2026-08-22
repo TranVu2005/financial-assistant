@@ -1,4 +1,10 @@
-"""Regression coverage for persisted Day 9--13 evaluation schemas."""
+"""Regression coverage for persisted Day 9--13 evaluation schemas.
+
+The graph (day11) and expansion (day12) entries were dropped with their
+modules in the 2026-08-23 target-architecture cleanup -- neither branch
+appears on the target architecture, so there is no schema left to keep
+compatible. Their fixtures stay committed as historical record.
+"""
 
 from __future__ import annotations
 
@@ -17,9 +23,7 @@ from financial_report_qa.retrieval.dense_evaluation import (
     DenseEvaluationRun,
 )
 from financial_report_qa.retrieval.evaluation import RetrievalEvaluationReport
-from financial_report_qa.retrieval.expansion_evaluation import ExpansionGridReport
 from financial_report_qa.retrieval.fusion_evaluation import FusionGridReport
-from financial_report_qa.retrieval.graph_evaluation import GraphCoverageReport
 
 _FIXTURE_ROOT = Path(__file__).resolve().parents[2] / "fixtures/retrieval/legacy_reports"
 _LEGACY_MODELS: dict[str, type[BaseModel]] = {
@@ -30,8 +34,6 @@ _LEGACY_MODELS: dict[str, type[BaseModel]] = {
     "day10-entity-report.json": EntityEvaluationReport,
     "day10-held-out-report.json": HeldOutEntityReport,
     "day10-fusion-report.json": FusionGridReport,
-    "day11-graph-report.json": GraphCoverageReport,
-    "day12-expansion-report.json": ExpansionGridReport,
 }
 
 
