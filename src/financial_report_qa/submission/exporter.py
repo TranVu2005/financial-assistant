@@ -67,6 +67,7 @@ from financial_report_qa.submission.contracts import (
     SubmissionExportReport,
     SubmissionItem,
 )
+from financial_report_qa.submission.validator import ANSWER_TOLERANCE
 from financial_report_qa.verification.builder import build_answer_package
 from financial_report_qa.verification.evaluation import build_citation_lookup
 
@@ -171,7 +172,17 @@ def _real_table_evidence_rows(
     sandbox_result = replay_in_sandbox(
         compiled.pandas_query, replay_frame, timeout_seconds=timeout_seconds
     )
-    if sandbox_result.error_code is not None or sandbox_result.value != compiled.answer:
+    if sandbox_result.error_code is not None:
+        return None
+    # Same tolerance `validate_submission_zip` will apply to this very query
+    # and CSV. Exact equality here was strictly harsher than the rule the
+    # submission is actually judged by: this frame carries float64 straight
+    # from `cells.parquet`, while `compiled.answer` is a Decimal, so a
+    # converted answer that is right to the last cent still compared unequal.
+    assert compiled.answer is not None
+    if sandbox_result.value is None:
+        return None
+    if abs(sandbox_result.value - compiled.answer) > ANSWER_TOLERANCE:
         return None
     return rows
 

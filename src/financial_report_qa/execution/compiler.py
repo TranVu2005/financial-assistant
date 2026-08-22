@@ -179,19 +179,33 @@ def compile_plan(
             answer = operations.convert_cell_value(answer, orig_unit, plan.expected_unit)
             unit = plan.expected_unit
 
-            from financial_report_qa.normalization.units import _MONETARY_UNITS, unit_multiplier
+            from financial_report_qa.normalization.units import unit_multiplier
 
-            if orig_unit in _MONETARY_UNITS:
-                factor = unit_multiplier(orig_unit) / unit_multiplier(plan.expected_unit)
-                updated_rows = []
-                for row in replay_rows:
-                    new_row = dict(row)
-                    new_row["value"] = row["value"] * factor
-                    updated_rows.append(new_row)
-                replay_rows = updated_rows
+            # The conversion has to live in `query`, not in `replay_rows`.
+            # `submission/exporter.py::_real_table_evidence_rows` and
+            # `submission/validator.py` both replay this exact query against
+            # the *real, unscaled* corpus slice -- scaling the replay frame
+            # instead left the query returning raw VND while `answer` held
+            # the converted figure, so every question asking "triệu/tỷ đồng"
+            # was discarded as `evidence_frame_replay_mismatch` (measured:
+            # 173 questions, 124 of them "tỷ đồng", on the 2026-08-22 export).
+            #
+            # Rendered as division, not multiplication: `pandas_query`'s
+            # whitelist grammar allows Add/Sub/Div/BitAnd but *not* Mult, so
+            # the previous `* {factor}` form produced a query the sandbox
+            # rejected outright. An integer divisor also keeps the replay
+            # exact on the Decimal frame (`Decimal / int` stays Decimal).
+            divisor = unit_multiplier(plan.expected_unit) / unit_multiplier(orig_unit)
+            if divisor == divisor.to_integral_value() and divisor > 0:
+                query = f"({query}) / {divisor.to_integral_value()}"
             else:
+                # Scaling *up* (cell in triệu, question in đồng) has no
+                # integer divisor and no Mult operator to fall back on. Keep
+                # the old frame-scaling so `compile_plan`'s own replay still
+                # agrees; the evidence gate will reject the question, exactly
+                # as it did before this fix. No regression, just not a win.
                 factor = unit_multiplier(orig_unit) / unit_multiplier(plan.expected_unit)
-                query = f"({query}) * {factor}"
+                replay_rows = [{**row, "value": row["value"] * factor} for row in replay_rows]
     except _CompileFailure as failure:
         return _error(plan.operation, failure.code, failure.message, query)
     except ValueError as exc:

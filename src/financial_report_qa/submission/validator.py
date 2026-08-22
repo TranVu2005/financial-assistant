@@ -27,7 +27,15 @@ from financial_report_qa.submission.contracts import (
     ValidationReport,
 )
 
-_DEFAULT_TOLERANCE = Decimal("0.01")
+ANSWER_TOLERANCE = Decimal("0.01")
+"""How far a replayed `pandas_query` may sit from the packaged answer.
+
+Shared with `submission/exporter.py`'s evidence gate on purpose: that gate
+exists to predict this validator's verdict, so holding it to a *stricter*
+rule than the validator itself only throws away answers the submission
+would have accepted."""
+
+_DEFAULT_TOLERANCE = ANSWER_TOLERANCE
 _DEFAULT_REPLAY_TIMEOUT_SECONDS = 5.0
 
 

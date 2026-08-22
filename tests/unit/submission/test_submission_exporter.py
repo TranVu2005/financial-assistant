@@ -23,6 +23,7 @@ from financial_report_qa.data.dataset_builder import (
     TABLE_SCHEMA,
 )
 from financial_report_qa.planning.llm_client import LLMClient
+from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
 from financial_report_qa.retrieval.contracts import (
     MetricLabelObservation,
     TableDocument,
@@ -56,7 +57,9 @@ _LLM_SETTINGS = LLMSettings(
 )
 
 
-def _write_release(tmp_path: Path) -> Path:
+def _write_release(
+    tmp_path: Path, *, values: tuple[Decimal, Decimal] = (Decimal("100"), Decimal("60"))
+) -> Path:
     release_dir = tmp_path / "release"
     release_dir.mkdir(exist_ok=True)
     documents = [
@@ -108,8 +111,8 @@ def _write_release(tmp_path: Path) -> Path:
             "row_group_context_raw": None,
             "column_label_raw": "Năm 2023",
             "column_label_canonical": None,
-            "value_raw": "100",
-            "value_numeric": Decimal("100"),
+            "value_raw": str(values[0]),
+            "value_numeric": values[0],
             "period": "2023",
             "unit": "VND",
             "source_line_start": 5,
@@ -126,8 +129,8 @@ def _write_release(tmp_path: Path) -> Path:
             "row_group_context_raw": None,
             "column_label_raw": "Năm 2023",
             "column_label_canonical": None,
-            "value_raw": "60",
-            "value_numeric": Decimal("60"),
+            "value_raw": str(values[1]),
+            "value_numeric": values[1],
             "period": "2023",
             "unit": "VND",
             "source_line_start": 6,
@@ -1413,3 +1416,65 @@ def test_answered_path_never_emits_synthesized_single_row(tmp_path: Path) -> Non
     assert outcome.status == "error"
     assert outcome.stage == "execution"
     assert outcome.code == "evidence_frame_replay_mismatch"
+
+
+def _lookup_plan_in(unit: str) -> FinancialQueryPlan:
+    return FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(TABLE_ID,),
+        metric=MetricSelector(canonical="net_revenue"),
+        expected_unit=unit,
+    )
+
+
+def test_unit_converted_query_replays_against_the_real_unscaled_table(tmp_path: Path) -> None:
+    """Regression: a "triệu đồng" answer must survive the evidence gate.
+
+    `compile_plan` used to apply a monetary unit conversion by scaling the
+    *replay frame* and leaving `pandas_query` alone. Its own replay then
+    agreed, but `_real_table_evidence_rows` -- and `validate_submission_zip`
+    after it -- replay that same query against the real, unscaled corpus
+    slice, so the query returned raw VND while `answer` held the converted
+    figure. Every question asking for triệu/tỷ đồng was thrown away as
+    `evidence_frame_replay_mismatch` (173 questions on the 2026-08-22 full
+    export, 124 of them "tỷ đồng"). The conversion has to live in the query.
+    """
+    from financial_report_qa.execution.compiler import compile_plan
+    from financial_report_qa.submission import exporter
+
+    raw = Decimal("208253201298")
+    release_dir = _write_release(tmp_path, values=(raw, Decimal("60000000000")))
+
+    compiled = compile_plan(
+        _lookup_plan_in("VND_million"), release_dir, execution_settings=_ALLOW_LOOKUP
+    )
+    assert compiled.status == "answered", compiled.error_message
+    assert compiled.answer == raw / Decimal(1_000_000)
+    # Division, not multiplication: the query grammar allows Add/Sub/Div but
+    # not Mult, so a `* factor` form is rejected by the sandbox outright.
+    assert "/ 1000000" in compiled.pandas_query
+
+    rows = exporter._real_table_evidence_rows(compiled, release_dir, timeout_seconds=5)
+    assert rows is not None, "converted answer must survive the real-table replay gate"
+    # The packaged CSV stays the real corpus slice -- raw VND, never rescaled.
+    assert any(row["value"] == float(raw) for row in rows)
+
+
+def test_evidence_gate_still_rejects_a_genuinely_wrong_replay(tmp_path: Path) -> None:
+    """The tolerance added for float64 round-trip must not blunt the gate.
+
+    A query whose replay disagrees by a real margin (here a wrong period, so
+    the frame replays a different cell) must still be refused, otherwise the
+    BI-1 invariant that the CSV genuinely reproduces the answer is gone.
+    """
+    from financial_report_qa.execution.compiler import compile_plan
+    from financial_report_qa.submission import exporter
+
+    release_dir = _write_release(tmp_path, values=(Decimal("100"), Decimal("60")))
+    compiled = compile_plan(_lookup_plan_in("VND"), release_dir, execution_settings=_ALLOW_LOOKUP)
+    assert compiled.status == "answered", compiled.error_message
+
+    tampered = compiled.model_copy(update={"answer": compiled.answer + Decimal("5")})
+    assert exporter._real_table_evidence_rows(tampered, release_dir, timeout_seconds=5) is None
