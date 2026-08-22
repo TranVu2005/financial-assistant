@@ -221,6 +221,68 @@ def test_check_bundle_validates_the_real_rendered_csv_not_the_in_memory_dicts() 
     assert violations == (), f"dtype round-trip phải giữ row_label_raw là chuỗi: {violations}"
 
 
+def test_check_bundle_preserves_large_value_precision_through_csv_roundtrip() -> None:
+    """2026-08-22, found on a real full export: pandas' default CSV float
+    parser does not round-trip large-magnitude values exactly (261095427438.99997
+    read back as 261095427439.0, a 3e-5 error) -- enough to make a genuinely
+    correct C7 replay look like a mismatch. `check_bundle` must parse `value`
+    with Python's own `float()` (round-trip exact), not pandas' inferred parser."""
+    value = 261095427438.99997
+    rows = [
+        _csv_row(row_label_raw="Lợi nhuận trước thuế", value=value, row_idx=0),
+        _csv_row(row_label_raw="Khấu hao", value=200.0, row_idx=1),
+    ]
+    query = 'df1[df1.row_label_raw == "Lợi nhuận trước thuế"]["value"].iloc[0]'
+    item = _item(answer=value, query=query)
+
+    violations = check_bundle([item], {"data/q000001_df1.csv": rows}, timeout_seconds=5)
+
+    assert violations == (), f"round-trip phải giữ nguyên độ chính xác của value: {violations}"
+
+
+def test_check_bundle_preserves_empty_string_label_through_csv_roundtrip() -> None:
+    """2026-08-22, found on a real full export: a genuinely empty
+    `row_label_raw` (a real cell with a blank label, common in indented
+    continuation rows) round-tripped through `pd.read_csv` as NaN instead of
+    `""` even under a forced string dtype, because an empty CSV field is
+    pandas' default missing-value marker. That made `row_label_raw == ""`
+    match zero rows on the CSV that actually ships, raising `IndexError` on
+    `.iloc[0]` -- a false C7 violation on a query that is actually correct."""
+    rows = [
+        _csv_row(row_label_raw="", value=100.0, row_idx=0),
+        _csv_row(row_label_raw="Khấu hao", value=200.0, row_idx=1),
+    ]
+    query = 'df1[df1.row_label_raw == ""]["value"].iloc[0]'
+    item = _item(answer=100.0, query=query)
+
+    violations = check_bundle([item], {"data/q000001_df1.csv": rows}, timeout_seconds=5)
+
+    assert violations == (), f"round-trip phải giữ row_label_raw rỗng là chuỗi rỗng: {violations}"
+
+
+def test_c6_handles_label_containing_a_literal_quote() -> None:
+    """2026-08-22, found on a real full export: a `row_label_raw` containing
+    a literal `"` (e.g. a quoted abbreviation like `... ("BSC")`) is embedded
+    in the query via `json.dumps`, producing an escaped `\\"` in the query
+    text. C6's old regex `"([^"]+)"` stopped at that escaped quote, silently
+    truncating the extracted label and reporting a false C6 violation even
+    though the full label is present in the CSV."""
+    label = 'Công ty Cổ phần ("ABC")'
+    rows = [
+        _csv_row(row_label_raw=label, value=100.0, row_idx=0),
+        _csv_row(row_label_raw="Khấu hao", value=200.0, row_idx=1),
+    ]
+    # Build the query the same way the real code does: json.dumps, not repr.
+    import json as _json
+
+    query = f'df1[df1.row_label_raw == {_json.dumps(label, ensure_ascii=False)}]["value"].iloc[0]'
+    item = _item(answer=100.0, query=query)
+
+    violations = check_bundle([item], {"data/q000001_df1.csv": rows}, timeout_seconds=5)
+
+    assert "C6" not in {v.code for v in violations}, f"nhãn có dấu ngoặc kép bị cắt cụt sai: {violations}"
+
+
 def test_check_bundle_reports_missing_csv_as_c0() -> None:
     item = _item(answer=1200.0, query=_GOOD_QUERY)
     violations = check_bundle([item], {}, timeout_seconds=5)

@@ -13,6 +13,7 @@ gì: `submission/cli.py` gọi nó và fail build khi có vi phạm.
 from __future__ import annotations
 
 import io
+import json
 import math
 import re
 from collections.abc import Mapping, Sequence
@@ -23,20 +24,6 @@ import pandas as pd
 from financial_report_qa.execution.sandbox import replay_in_sandbox
 from financial_report_qa.submission.contracts import SubmissionItem
 from financial_report_qa.submission.exporter import _render_csv_bytes
-
-# Forced dtype for every string-compared column (pandas_query.py
-# `_ALLOWED_ATTRS`), mirroring `validator.py`'s own CSV round-trip: a
-# `row_label_raw` that looks like a pure number (e.g. a footnote reference
-# such as "2") would otherwise round-trip through the CSV as pandas'
-# *inferred* int64, silently breaking `df1.row_label_raw == "2"` (int
-# compared to str never matches). `table_id` is left to type inference --
-# its values are always `tbl_<64 hex>`, never numeric-looking.
-_STRING_DTYPE_COLUMNS = {
-    "company_code": str,
-    "row_label_canonical": str,
-    "row_label_raw": str,
-    "column_label": str,
-}
 
 _ANSWER_LIKE_COLUMNS = frozenset({"answer", "result", "ans", "expected"})
 # C4 (2026-08-21 final review round 2, Important 1): a bare numeric literal
@@ -54,7 +41,8 @@ _VALUE_TOLERANCE = 1e-6
 # e.g. `df1.column_label == "Năm 2023"` -- can contain digits that are not a
 # numeric literal at all. Strip every quoted span before scanning for
 # numbers.
-_QUOTED_STRING_PATTERN = re.compile(r'"(?:[^"\\]|\\.)*"')
+_QUOTED_TOKEN = r'"(?:[^"\\]|\\.)*"'
+_QUOTED_STRING_PATTERN = re.compile(_QUOTED_TOKEN)
 
 # `compile_grounded`/position binding (plan.md §9/§14) routinely emits
 # `row_idx`/`col_idx`/`period` equality clauses (e.g. `df1.row_idx == 19`,
@@ -140,12 +128,25 @@ def check_item(
         add("C5", "pandas_query không tham chiếu cột nào của CSV")
 
     # C6: nhãn dòng nêu trong query phải tồn tại trong CSV.
+    #
+    # Nhãn được nhúng vào query qua `json.dumps(label, ensure_ascii=False)`
+    # (backstop_answer.py, exporter.py), nên một nhãn chứa dấu ngoặc kép
+    # thật (vd. `... ("BSC")`) tạo ra chuỗi query có `\"` đã escape. Regex
+    # cũ `"([^"]+)"` dừng lại ở dấu `"` escape đó -- cắt cụt nhãn giữa
+    # chừng -- rồi báo C6 sai (2026-08-22, phát hiện khi chạy full export
+    # thật: 24/1012 câu bị flag sai vì lý do này). Bắt trọn token có escape
+    # bằng `_QUOTED_TOKEN` rồi giải mã qua `json.loads` để lấy đúng chuỗi
+    # gốc, thay vì so khớp trên văn bản query còn nguyên escape.
     for label_column in ("row_label_raw", "row_label_canonical"):
         if label_column not in frame.columns:
             continue
-        quoted = re.findall(rf"{label_column}\s*==\s*\"([^\"]+)\"", query)
+        quoted = re.findall(rf"{label_column}\s*==\s*({_QUOTED_TOKEN})", query)
         present = {str(v) for v in frame[label_column].dropna().tolist()}
-        for label in quoted:
+        for raw_token in quoted:
+            try:
+                label = json.loads(raw_token)
+            except ValueError:  # pragma: no cover -- _QUOTED_TOKEN chỉ khớp JSON hợp lệ
+                label = raw_token[1:-1]
             if label not in present:
                 add("C6", f"{label_column}=={label!r} không có trong CSV")
 
@@ -175,12 +176,30 @@ def check_bundle(
 
     Quan trọng (Important 3, 2026-08-21 final review): mỗi CSV được kiểm
     tra bằng cách render qua `exporter._render_csv_bytes` -- CHÍNH bytes sẽ
-    được ghi vào ZIP -- rồi đọc lại bằng `pd.read_csv`, thay vì dựng
-    `pd.DataFrame` thẳng từ `csv_rows` trong bộ nhớ. Round-trip qua CSV thật
-    có thể lặng lẽ đổi kiểu dữ liệu (vd. `row_label_raw` toàn chữ số như
-    "2" suy luận thành int64), khiến một truy vấn khớp trên dict trong bộ
-    nhớ nhưng KHÔNG khớp trên chính CSV sẽ ship -- nghĩa là chốt chặn này
-    trước đây kiểm tra tiền thân của bundle, không phải bundle thật.
+    được ghi vào ZIP -- rồi đọc lại, thay vì dựng `pd.DataFrame` thẳng từ
+    `csv_rows` trong bộ nhớ. Round-trip qua CSV thật có thể lặng lẽ đổi kiểu
+    dữ liệu (vd. `row_label_raw` toàn chữ số như "2" suy luận thành int64),
+    khiến một truy vấn khớp trên dict trong bộ nhớ nhưng KHÔNG khớp trên
+    chính CSV sẽ ship -- nghĩa là chốt chặn này trước đây kiểm tra tiền thân
+    của bundle, không phải bundle thật.
+
+    Đọc lại bằng cách đọc TOÀN BỘ cột dưới dạng chuỗi thô
+    (`keep_default_na=False`), rồi tự chuyển đổi `value`/`period`/
+    `row_idx`/`col_idx` bằng `float()`/`int()` của Python thay vì để
+    `pd.read_csv` tự suy luận kiểu. Hai lý do (phát hiện 2026-08-22 khi
+    chạy full export thật, 34/1012 câu bị flag sai vì lý do này):
+
+    1. `pd.read_csv`'s bộ phân tích số mặc định KHÔNG round-trip chính
+       xác với số lớn nhiều chữ số có nghĩa (vd. "261095427438.99997" đọc
+       lại thành 261095427439.0 -- sai khác 3e-5, đủ để C7 báo sai). `float()`
+       của Python thì round-trip chính xác.
+    2. `dtype=str` mà không tắt suy luận NA mặc định vẫn biến một ô rỗng
+       thật (vd. `row_label_raw == ""` -- nhãn cột trống hợp lệ, không phải
+       thiếu dữ liệu) thành NaN, khiến predicate `df1.row_label_raw == ""`
+       không khớp gì trên chính CSV sẽ ship -> `.iloc[0]` ném IndexError.
+       `_render_csv_bytes` đã gộp `None` thành `""` lúc ghi (không còn phân
+       biệt được với chuỗi rỗng thật), nên với các cột nhãn, "" phải được
+       giữ nguyên là "" khi đọc lại, không suy ra NaN.
     """
     violations: list[ComplianceViolation] = []
     for item in items:
@@ -194,8 +213,14 @@ def check_bundle(
             )
             continue
         csv_bytes = _render_csv_bytes(rows)
-        frame = pd.read_csv(io.BytesIO(csv_bytes), dtype=_STRING_DTYPE_COLUMNS)
-        if "period" in frame.columns:
-            frame["period"] = frame["period"].astype("Int64")
+        frame = pd.read_csv(io.BytesIO(csv_bytes), dtype=str, keep_default_na=False)
+        if "value" in frame.columns:
+            frame["value"] = frame["value"].map(lambda s: float(s) if s != "" else float("nan"))
+        for int_column in ("period", "row_idx", "col_idx"):
+            if int_column not in frame.columns:
+                continue
+            frame[int_column] = pd.array(
+                [int(v) if v != "" else pd.NA for v in frame[int_column]], dtype="Int64"
+            )
         violations.extend(check_item(item, frame, timeout_seconds=timeout_seconds))
     return tuple(sorted(violations, key=lambda v: (v.question_id, v.code)))
