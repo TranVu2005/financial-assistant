@@ -1,7 +1,9 @@
 """Decoupled Cell Grounding and Grounding Recovery module.
 
-`ground_with_recovery` runs its own metric grounding (Attempt 0: raw-metric
-rule grounding, then LLM row choice) and, if that still does not compile --
+`ground_with_recovery` runs its own metric grounding (Attempt 0: the offline
+LLM row decision -- `row_choice_decision.selector_for` -- falling back to a
+live LLM row choice call when no decision applies) and, if that still does
+not compile --
 or compiles but the row it used ranked outside `max_grounding_rank` in
 fusion (plan.md §15's confidence threshold, checked on rank, not raw score;
 see `evidence_rendering.plan_grounding_rank` for why) -- walks a recovery
@@ -16,7 +18,7 @@ returning nothing just because a more confident match was never found.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -39,11 +41,9 @@ from financial_report_qa.planning.llm_cell_grounding import (
     choose_row_label_with_context,
 )
 from financial_report_qa.planning.llm_client import ChatCompletionClient
-from financial_report_qa.planning.plan_contracts import FinancialQueryPlan
-from financial_report_qa.planning.raw_metric_grounding import (
-    candidate_column_labels,
-    ground_raw_metric,
-)
+from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
+from financial_report_qa.planning.raw_metric_grounding import candidate_column_labels
+from financial_report_qa.planning.row_choice_decision import selector_for
 from financial_report_qa.planning.rule_planner import RulePlanResult, build_plan
 from financial_report_qa.planning.table_context_rendering import render_table_context
 from financial_report_qa.retrieval.contracts import _FrozenModel
@@ -130,6 +130,24 @@ point (like the row-fusion branch weights), not a calibrated value -- no
 gold row/column labels exist yet to tune it against."""
 
 
+def _bind_metric_to_position(
+    plan_result: RulePlanResult, selector: MetricSelector
+) -> RulePlanResult:
+    """Gắn `table_id`/`row_index` đã chọn vào `metric` của plan.
+
+    `build_plan` dựng selector từ nhãn nên nó chưa position-bound. Ghim vị trí
+    ở đây để `locator._metric_mask` đi nhánh `_position_mask`, bỏ hẳn việc so
+    khớp nhãn ở thời điểm truy vấn.
+    """
+    plan = plan_result.plan
+    if plan is None or plan.metric is None:
+        return plan_result
+    bound = plan.metric.model_copy(
+        update={"table_id": selector.table_id, "row_index": selector.row_index}
+    )
+    return plan_result.model_copy(update={"plan": plan.model_copy(update={"metric": bound})})
+
+
 def ground_with_recovery(
     question: str,
     entities: QueryEntities,
@@ -140,6 +158,8 @@ def ground_with_recovery(
     execution_settings: ExecutionSettings,
     llm_client: ChatCompletionClient | None = None,
     max_grounding_rank: int = DEFAULT_MAX_GROUNDING_RANK,
+    row_decisions: Mapping[int, int] | None = None,
+    question_id: int | None = None,
 ) -> GroundingResult:
     """Ground query metrics to verified row and column labels with recovery."""
     # Issuer-name rows (subsidiary listings, consolidation headers) sit in
@@ -150,29 +170,46 @@ def ground_with_recovery(
     # dự phòng phải trả" (plan.md §19 dev benchmark, question 175).
     row_labels = tuple(label for label in row_labels if not label_is_company_name(label))
 
-    # Attempt 0: Normal Grounding
+    # Attempt 0: quyết định chọn dòng của LLM (thiết kế 2026-08-22 §5).
+    #
+    # Trước đây chỗ này là so khớp nhãn bằng từ điển luật (rule dictionary
+    # grounding). Đo trên lần export 2026-08-22: 491/1012 câu chết ở
+    # `metric_not_found` vì câu hỏi tiếng Việt diễn đạt tự do hiếm khi trùng
+    # khít `row_label_raw` trong báo cáo. Việc "dòng nào trong 20 dòng ứng
+    # viên trả lời câu hỏi này" là phân loại có ràng buộc -- dạng bài model
+    # 8B làm tốt, khác hẳn sinh code tự do mà nó làm kém.
     plan_result = RulePlanResult(abstain_codes=("operation_unknown",))
     plan_source = "rule"
     recovery_attempts = 0
 
-    # Try rule-based deterministic raw metric grounding first
-    raw_metric = ground_raw_metric(entities.question, retrieved, release_dir)
-    if raw_metric is not None:
-        labelled = QueryEntities.model_validate(
-            {
-                **entities.model_dump(mode="python"),
-                "metrics": (raw_metric,),
-                "ambiguity": tuple(code for code in entities.ambiguity if code != "metric_unknown"),
-            }
+    if question_id is not None and fusion_rows:
+        selector, decision_source = selector_for(
+            question_id, fusion_rows, row_decisions or {}
         )
-        plan_result = build_plan(
-            labelled,
-            candidate_table_ids=retrieved,
-            known_table_ids=frozenset(retrieved),
-        )
-        plan_source = "rule_raw_grounded"
+        if selector is not None and selector.raw_text is not None:
+            labelled = QueryEntities.model_validate(
+                {
+                    **entities.model_dump(mode="python"),
+                    "metrics": (selector.raw_text,),
+                    "ambiguity": tuple(
+                        code for code in entities.ambiguity if code != "metric_unknown"
+                    ),
+                }
+            )
+            chosen = build_plan(
+                labelled,
+                candidate_table_ids=retrieved,
+                known_table_ids=frozenset(retrieved),
+            )
+            if chosen.plan is not None:
+                plan_result = _bind_metric_to_position(chosen, selector)
+                plan_source = (
+                    "llm_row_choice"
+                    if decision_source == "llm"
+                    else "row_choice_fallback_rank1"
+                )
 
-    # If rule-based grounding fails, try LLM-based grounding (Attempt 0 LLM)
+    # If the LLM row decision fails, try LLM-based grounding (Attempt 0 LLM)
     if plan_result.plan is None and llm_client is not None:
         chosen_label = choose_row_label(
             question,

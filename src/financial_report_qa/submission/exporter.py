@@ -186,6 +186,7 @@ def _run_one_question(
     llm_client: ChatCompletionClient | None,
     row_fusion: RowFusionService | None = None,
     allow_inferred_scope: bool = False,
+    row_decisions: Mapping[int, int] | None = None,
 ) -> tuple[QuestionOutcome, SubmissionItem | None, tuple[CsvRow, ...] | None]:
     question = raw_question.question
 
@@ -245,6 +246,8 @@ def _run_one_question(
         "rule_raw_grounded",
         "llm",
         "llm_grounded",
+        "llm_row_choice",
+        "row_choice_fallback_rank1",
         "llm_cell_grounded",
         "llm_cell_grounded_recovered",
         "llm_cell_grounded_context_expanded",
@@ -378,7 +381,7 @@ def _run_one_question(
     needs_grounding_recovery = (
         plan_result.plan is None or compiled is None or compiled.status != "answered"
     )
-    if llm_client is not None and needs_grounding_recovery:
+    if needs_grounding_recovery and (llm_client is not None or row_decisions is not None):
         grounding_res = ground_with_recovery(
             question=question,
             entities=entities,
@@ -388,6 +391,8 @@ def _run_one_question(
             release_dir=release_dir,
             execution_settings=execution_settings,
             llm_client=llm_client,
+            row_decisions=row_decisions,
+            question_id=raw_question.id,
         )
         if grounding_res.status == "accepted":
             assert grounding_res.plan is not None
@@ -600,6 +605,7 @@ def export_submission(
     row_fusion: RowFusionService | None = None,
     apply_backstop: bool = True,
     allow_inferred_scope: bool = False,
+    row_decisions: Mapping[int, int] | None = None,
 ) -> tuple[SubmissionExportReport, tuple[SubmissionItem, ...], dict[str, tuple[CsvRow, ...]]]:
     """Run every question through the live pipeline once. Returns the
     coverage report (all questions), the ``SubmissionItem``s to package into
@@ -616,6 +622,13 @@ def export_submission(
     LLM grounding tiers use unranked row labels and full table context.
     Passing a ``RowFusionService`` enables ranked, evidence-aware label lists
     and focused context for the LLM.
+
+    ``row_decisions=None`` (the default) keeps grounding recovery's Attempt 0
+    LLM row decision unavailable unless a live ``llm_client`` is also given.
+    Passing a ``{question_id: chosen_index}`` mapping (`row_choice_decision.
+    load_decisions`) makes that decision come from an *offline* file instead
+    -- grounding recovery then runs even when ``llm_client`` is ``None``,
+    which is why the gate below checks either, not just the client.
 
     ``apply_backstop=True`` (the default, Day 23 full-coverage strategy): any
     question every reasoning tier still failed gets a contract-valid but
@@ -643,6 +656,7 @@ def export_submission(
             llm_client=llm_client,
             row_fusion=row_fusion,
             allow_inferred_scope=allow_inferred_scope,
+            row_decisions=row_decisions,
         )
         if item is None and apply_backstop:
             outcome, item, rows = _apply_backstop(

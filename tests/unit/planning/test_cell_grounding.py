@@ -111,7 +111,31 @@ def _write_release(tmp_path: Path) -> Path:
 
 
 
+def test_ground_with_recovery_uses_the_llm_row_decision_first() -> None:
+    """Attempt 0 giờ là quyết định LLM, không phải rule dictionary."""
+    import inspect
+
+    from financial_report_qa.planning import cell_grounding
+
+    signature = inspect.signature(cell_grounding.ground_with_recovery)
+    assert "row_decisions" in signature.parameters
+    assert "question_id" in signature.parameters
+
+
+def test_rule_dictionary_grounding_is_gone_from_the_primary_path() -> None:
+    """`ground_raw_metric` là nhánh so khớp nhãn bằng luật -- nguyên nhân
+    gốc của 491 câu `metric_not_found`. Nó không được còn trong đường chính."""
+    import inspect
+
+    from financial_report_qa.planning import cell_grounding
+
+    source = inspect.getsource(cell_grounding.ground_with_recovery)
+    assert "ground_raw_metric" not in source
+
+
 def test_ground_with_recovery_success_attempt_0(tmp_path: Path) -> None:
+    """Attempt 0's LLM row decision (`row_decisions`/`question_id`) grounds
+    directly to the position it names, bypassing label matching."""
     release_dir = _write_release(tmp_path)
     entities = QueryEntities(
         question="Tra cứu Doanh thu thuan của ACB năm 2023.",
@@ -122,24 +146,95 @@ def test_ground_with_recovery_success_attempt_0(tmp_path: Path) -> None:
         operation="lookup",
         spans=(),
     )
+    fusion_rows = (
+        RowFusedCandidate(
+            row_id="1",
+            table_id=TABLE_ID,
+            row_idx=0,
+            rank=1,
+            snippet="",
+            metadata=RowMetadata(
+                table_id=TABLE_ID,
+                row_idx=0,
+                row_label_raw="Doanh thu thuan",
+                row_label_canonical="net_revenue",
+            ),
+            fused_score=0.9,
+            bm25_score=0.9,
+            dense_score=0.0,
+        ),
+    )
 
-    # Attempt 0: Rule-based ground_raw_metric should find "Doanh thu thuan"
     res = ground_with_recovery(
         question="Tra cứu Doanh thu thuan của ACB năm 2023.",
         entities=entities,
         retrieved=(TABLE_ID,),
         row_labels=("Doanh thu thuan",),
-        fusion_rows=(),
+        fusion_rows=fusion_rows,
         release_dir=release_dir,
         execution_settings=_ALLOW_LOOKUP,
+        row_decisions={7: 0},
+        question_id=7,
     )
 
     assert res.status == "accepted"
-    assert res.plan_source == "rule_raw_grounded"
+    assert res.plan_source == "llm_row_choice"
     assert res.plan is not None
     assert res.plan.metric.raw_text == "Doanh thu thuan"
-    # No fusion rows given -- nothing to score confidence against.
-    assert res.grounding_score is None
+    assert res.plan.metric.is_position_bound
+    assert res.grounding_score == 0.9
+
+
+def test_ground_with_recovery_falls_back_to_rank1_when_no_decision_recorded(
+    tmp_path: Path,
+) -> None:
+    """No decision recorded for this question id -- `selector_for` falls back
+    to the rank-1 fusion candidate, deterministically."""
+    release_dir = _write_release(tmp_path)
+    entities = QueryEntities(
+        question="Tra cứu Doanh thu thuan của ACB năm 2023.",
+        company_codes=("ACB",),
+        periods=("2023",),
+        metrics=(),
+        metric_phrases=("Doanh thu thuan",),
+        operation="lookup",
+        spans=(),
+    )
+    fusion_rows = (
+        RowFusedCandidate(
+            row_id="1",
+            table_id=TABLE_ID,
+            row_idx=0,
+            rank=1,
+            snippet="",
+            metadata=RowMetadata(
+                table_id=TABLE_ID,
+                row_idx=0,
+                row_label_raw="Doanh thu thuan",
+                row_label_canonical="net_revenue",
+            ),
+            fused_score=0.9,
+            bm25_score=0.9,
+            dense_score=0.0,
+        ),
+    )
+
+    res = ground_with_recovery(
+        question="Tra cứu Doanh thu thuan của ACB năm 2023.",
+        entities=entities,
+        retrieved=(TABLE_ID,),
+        row_labels=("Doanh thu thuan",),
+        fusion_rows=fusion_rows,
+        release_dir=release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        row_decisions={},
+        question_id=7,
+    )
+
+    assert res.status == "accepted"
+    assert res.plan_source == "row_choice_fallback_rank1"
+    assert res.plan is not None
+    assert res.plan.metric.raw_text == "Doanh thu thuan"
 
 
 def test_ground_with_recovery_with_llm_cell_grounding_attempt_0(tmp_path: Path) -> None:
@@ -697,6 +792,10 @@ def test_ground_with_recovery_uses_the_retrieved_row_position_to_break_a_label_t
         ),
         release_dir=release_dir,
         execution_settings=_ALLOW_LOOKUP,
+        # No decision recorded for this question -- Attempt 0 falls back to
+        # the rank-1 fusion candidate (row_idx=2), the same position this
+        # test's tie-break was written to exercise.
+        question_id=1,
     )
 
     assert res.status == "accepted"
@@ -721,6 +820,9 @@ def test_ground_with_recovery_exposes_grounded_facts_for_the_accepted_answer(
         fusion_rows=(_duplicate_label_fusion_row(row_idx=2, rank=1),),
         release_dir=release_dir,
         execution_settings=_ALLOW_LOOKUP,
+        # No decision recorded -- Attempt 0 falls back to the sole (rank-1)
+        # fusion candidate.
+        question_id=1,
     )
 
     assert res.status == "accepted"
@@ -740,17 +842,27 @@ def test_ground_with_recovery_still_answers_when_no_position_can_be_bound(
     tmp_path: Path,
 ) -> None:
     """Binding is an improvement, not a new failure mode: with no fusion rows
-    to bind against, grounding behaves exactly as it did before."""
+    to bind against, Attempt 0's LLM row decision never fires (it needs a
+    fusion candidate to bind a position to), so this falls through to the
+    live Attempt-0-LLM row choice call -- grounding still answers, just
+    without a position bound."""
     release_dir = _write_release(tmp_path)
-    res = ground_with_recovery(
-        question="Tra cứu Doanh thu thuan của ACB năm 2023.",
-        entities=_duplicate_label_entities(),
-        retrieved=(TABLE_ID,),
-        row_labels=("Doanh thu thuan",),
-        fusion_rows=(),
-        release_dir=release_dir,
-        execution_settings=_ALLOW_LOOKUP,
-    )
+    with patch(
+        "financial_report_qa.planning.cell_grounding.choose_row_label",
+        return_value="Doanh thu thuan",
+    ):
+        llm_client = MagicMock(spec=LLMClient)
+        res = ground_with_recovery(
+            question="Tra cứu Doanh thu thuan của ACB năm 2023.",
+            entities=_duplicate_label_entities(),
+            retrieved=(TABLE_ID,),
+            row_labels=("Doanh thu thuan",),
+            fusion_rows=(),
+            release_dir=release_dir,
+            execution_settings=_ALLOW_LOOKUP,
+            llm_client=llm_client,
+            question_id=1,
+        )
     assert res.status == "accepted"
     assert res.compiled is not None and res.compiled.answer == Decimal("100")
     assert res.plan is not None and res.plan.metric is not None
