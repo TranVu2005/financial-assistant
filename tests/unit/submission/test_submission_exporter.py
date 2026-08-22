@@ -1276,6 +1276,42 @@ def test_export_submission_evidence_planner_is_skipped_without_row_fusion(
     assert report.outcomes[0].plan_source == "llm"
 
 
+def test_export_submission_offline_row_decisions_work_without_a_live_llm_client(
+    tmp_path: Path,
+) -> None:
+    """Critical-1 regression: an offline `--row-choice-decisions` file must
+    make grounding recovery's Attempt 0 row choice reachable even with
+    `llm_client=None` -- that is the entire point of the offline decisions
+    path (plan.md §7.1). Before the fix, `ground_with_recovery`'s Attempt 0
+    only checked `fusion_rows` truthiness, not whether `row_decisions` was
+    actually supplied, so this scenario worked "by accident" for any
+    non-empty fusion_rows regardless of whether a decisions file was passed
+    -- and, worse, the *reverse* case (no decisions file, but a live
+    llm_client) silently skipped the live-LLM `choose_row_label` path
+    entirely. This test pins the offline path: no llm_client, a real
+    row_decisions mapping, non-empty fusion_rows -> `plan_source` must be
+    `"llm_row_choice"`."""
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=7, question="Tra cứu chỉ tiêu không rõ ràng của ACB năm 2023.")
+
+    report, items, _ = export_submission(
+        [question],
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=10,
+        llm_client=None,
+        row_fusion=_evidence_planner_fusion(),
+        row_decisions={7: 0},
+    )
+
+    assert report.answered_count == 1
+    assert items[0].answer == 100.0
+    assert report.outcomes[0].plan_source == "llm_row_choice"
+    assert "df1.loc[" in items[0].pandas_query
+
+
 def test_bare_year_periods_keeps_bare_four_digit_years() -> None:
     assert _bare_year_periods(("2022", "2023")) == (2022, 2023)
 

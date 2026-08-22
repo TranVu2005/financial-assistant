@@ -153,6 +153,14 @@ class QuestionOutcome(_FrozenModel):
             "rule_raw_grounded",
             "llm",
             "llm_grounded",
+            # plan.md §7.1: Attempt 0's row decision, either a genuine LLM
+            # pick ("llm_row_choice") or its deterministic rank-1 fallback
+            # ("row_choice_fallback_rank1") when no decision applied. Kept
+            # distinct from "llm_cell_grounded" (the live-LLM row choice
+            # call) since this one can run with `llm_client=None` via an
+            # offline decisions file.
+            "llm_row_choice",
+            "row_choice_fallback_rank1",
             "llm_cell_grounded",
             "llm_cell_grounded_recovered",
             "llm_cell_grounded_context_expanded",
