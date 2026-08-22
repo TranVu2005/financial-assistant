@@ -22,3 +22,10 @@
 # producing the actual submission.
 execution:
   default_statement_scope: consolidated
+  # Design 2026-08-22 §6. Same correct/TOTAL argument as
+  # `default_statement_scope` above: 130 questions (cell_ambiguous 50,
+  # period_unresolved 49, unit_missing 31) currently abstain even though the
+  # system already found the relevant data. Abstaining and answering wrong
+  # both score 0, so guessing by the deterministic rule (statutory row ->
+  # nearest period -> dominant unit) can only raise the score.
+  resolve_ambiguity_by_priority: true

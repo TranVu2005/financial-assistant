@@ -168,7 +168,12 @@ def compile_plan(
     period = int(plan.periods[0]) if plan.periods else None
 
     try:
-        evidence, replay_rows, answer, unit = _dispatch(plan, frame, period)
+        evidence, replay_rows, answer, unit = _dispatch(
+            plan,
+            frame,
+            period,
+            resolve_ambiguity_by_priority=execution_settings.resolve_ambiguity_by_priority,
+        )
         if plan.expected_unit is not None and unit is not None and plan.expected_unit != unit:
             orig_unit = unit
             answer = operations.convert_cell_value(answer, orig_unit, plan.expected_unit)
@@ -228,13 +233,34 @@ def compile_plan(
 
 
 def _dispatch(
-    plan: FinancialQueryPlan, frame: pd.DataFrame, period: int | None
+    plan: FinancialQueryPlan,
+    frame: pd.DataFrame,
+    period: int | None,
+    *,
+    resolve_ambiguity_by_priority: bool = False,
 ) -> tuple[tuple[CellMatch, ...], list[dict[str, object]], Decimal, CanonicalUnit]:
     company = plan.companies[0]
 
+    def _cell(selector: MetricSelector, at_period: int, *, company_code: str) -> CellMatch:
+        """One place that carries the tie-break flag down to `locate()`.
+
+        `_dispatch` calls `locate()` at 10 branches; adding the keyword to
+        each call site directly would push several lines over ruff's
+        100-character limit.
+        """
+        return _require(
+            locate(
+                frame,
+                selector,
+                at_period,
+                company_code=company_code,
+                resolve_ambiguity_by_priority=resolve_ambiguity_by_priority,
+            )
+        )
+
     if plan.operation == "lookup":
         assert plan.metric is not None and period is not None
-        cell = _require(locate(frame, plan.metric, period, company_code=company))
+        cell = _cell(plan.metric, period, company_code=company)
         answer, unit = operations.compile_lookup(cell)
         rows = [
             _replay_row(company_code=company, selector=plan.metric, period=period, value=answer)
@@ -244,8 +270,8 @@ def _dispatch(
     if plan.operation in ("difference", "growth_rate"):
         assert plan.metric is not None
         start_period, end_period = int(plan.periods[0]), int(plan.periods[-1])
-        start = _require(locate(frame, plan.metric, start_period, company_code=company))
-        end = _require(locate(frame, plan.metric, end_period, company_code=company))
+        start = _cell(plan.metric, start_period, company_code=company)
+        end = _cell(plan.metric, end_period, company_code=company)
         if plan.operation == "difference":
             answer, unit = operations.compile_difference(end, start)
         else:
@@ -266,8 +292,8 @@ def _dispatch(
 
     if plan.operation == "compare":
         assert plan.metric_a is not None and plan.metric_b is not None and period is not None
-        metric_a = _require(locate(frame, plan.metric_a, period, company_code=company))
-        metric_b = _require(locate(frame, plan.metric_b, period, company_code=company))
+        metric_a = _cell(plan.metric_a, period, company_code=company)
+        metric_b = _cell(plan.metric_b, period, company_code=company)
         answer, unit = operations.compile_compare(metric_a, metric_b)
         rows = [
             _replay_row(
@@ -285,8 +311,8 @@ def _dispatch(
     if plan.operation == "compare_companies":
         assert plan.metric is not None and period is not None
         company_a, company_b = plan.companies[0], plan.companies[1]
-        cell_a = _require(locate(frame, plan.metric, period, company_code=company_a))
-        cell_b = _require(locate(frame, plan.metric, period, company_code=company_b))
+        cell_a = _cell(plan.metric, period, company_code=company_a)
+        cell_b = _cell(plan.metric, period, company_code=company_b)
         answer, unit = operations.compile_compare_companies(cell_a, cell_b)
         rows = [
             _replay_row(
@@ -307,8 +333,8 @@ def _dispatch(
             and plan.denominator_metric is not None
             and period is not None
         )
-        numerator = _require(locate(frame, plan.numerator_metric, period, company_code=company))
-        denominator = _require(locate(frame, plan.denominator_metric, period, company_code=company))
+        numerator = _cell(plan.numerator_metric, period, company_code=company)
+        denominator = _cell(plan.denominator_metric, period, company_code=company)
         answer, unit = operations.compile_ratio(numerator, denominator)
         rows = [
             _replay_row(
@@ -335,9 +361,7 @@ def _dispatch(
         # just companies[0], the rest never located at all).
         if len(plan.companies) > 1:
             assert period is not None
-            cells = tuple(
-                _require(locate(frame, plan.metric, period, company_code=c)) for c in plan.companies
-            )
+            cells = tuple(_cell(plan.metric, period, company_code=c) for c in plan.companies)
             target_unit = cells[0].unit
             rows = [
                 _replay_row(
@@ -350,8 +374,7 @@ def _dispatch(
             ]
         else:
             cells = tuple(
-                _require(locate(frame, plan.metric, int(p), company_code=company))
-                for p in plan.periods
+                _cell(plan.metric, int(p), company_code=company) for p in plan.periods
             )
             target_unit = cells[0].unit
             rows = [
@@ -372,9 +395,7 @@ def _dispatch(
 
     if plan.operation == "rank":
         assert plan.metric is not None and plan.top_k is not None and period is not None
-        cells = tuple(
-            _require(locate(frame, plan.metric, period, company_code=c)) for c in plan.companies
-        )
+        cells = tuple(_cell(plan.metric, period, company_code=c) for c in plan.companies)
         answer, unit = operations.compile_rank(cells, top_k=plan.top_k)
         target_unit = cells[0].unit
         rows = [

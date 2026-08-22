@@ -21,6 +21,11 @@ from typing import cast
 import pandas as pd
 
 from financial_report_qa.execution.contracts import CellMatch, ExecutionIssueCode
+from financial_report_qa.execution.tiebreak import (
+    dominant_value_rows,
+    infer_unit_from_table,
+    nearest_period_rows,
+)
 from financial_report_qa.normalization._shared import normalized_key
 from financial_report_qa.normalization.metrics import normalize_metric
 from financial_report_qa.normalization.units import CanonicalUnit
@@ -160,6 +165,7 @@ def locate(
     *,
     company_code: str | None = None,
     prefer_statutory_rows: bool = False,
+    resolve_ambiguity_by_priority: bool = False,
 ) -> LocateResult:
     """Resolve one metric selector at one period within an already-scoped frame.
 
@@ -182,6 +188,8 @@ def locate(
         )
 
     period_rows = metric_rows[metric_rows["period"] == period]
+    if period_rows.empty and resolve_ambiguity_by_priority:
+        period_rows = nearest_period_rows(metric_rows, period)
     if period_rows.empty:
         return LocateResult(
             match=None,
@@ -191,7 +199,7 @@ def locate(
             ),
         )
 
-    if prefer_statutory_rows:
+    if prefer_statutory_rows or resolve_ambiguity_by_priority:
         period_rows = _prefer_statutory_rows(period_rows)
     distinct = period_rows.drop_duplicates(subset=["value", "unit"])
     known_units = distinct["unit"].dropna().drop_duplicates()
@@ -203,19 +211,29 @@ def locate(
         # disagreeing is a genuine conflict (measured: 859/868 false
         # positives were this NULL-split case, 9/868 were real).
         if not (len(distinct_values) == 1 and len(known_units) <= 1):
-            candidates = ", ".join(
-                f"{row.value} {row.unit} (cell_id={row.cell_id})" for row in distinct.itertuples()
-            )
-            return LocateResult(
-                match=None,
-                error_code="cell_ambiguous",
-                error_message=(
-                    f"metric '{_selector_label(selector)}' at period {period} "
-                    f"has conflicting values: {candidates}"
-                ),
-            )
+            if resolve_ambiguity_by_priority:
+                period_rows = dominant_value_rows(period_rows)
+                distinct = period_rows.drop_duplicates(subset=["value", "unit"])
+                known_units = distinct["unit"].dropna().drop_duplicates()
+            if len(distinct) > 1:
+                candidates = ", ".join(
+                    f"{row.value} {row.unit} (cell_id={row.cell_id})"
+                    for row in distinct.itertuples()
+                )
+                return LocateResult(
+                    match=None,
+                    error_code="cell_ambiguous",
+                    error_message=(
+                        f"metric '{_selector_label(selector)}' at period {period} "
+                        f"has conflicting values: {candidates}"
+                    ),
+                )
 
     resolved_unit = known_units.iloc[0] if len(known_units) == 1 else distinct["unit"].iloc[0]
+    if pd.isna(resolved_unit) and resolve_ambiguity_by_priority:
+        inferred = infer_unit_from_table(frame, str(period_rows["table_id"].iloc[0]))
+        if inferred is not None:
+            resolved_unit = inferred
     if pd.isna(resolved_unit):
         # ADR 0009 decision C1: a missing unit is a different failure than an
         # incompatible one. `str(resolved_unit)` here would be either 'None'

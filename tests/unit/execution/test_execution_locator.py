@@ -473,3 +473,78 @@ def test_locate_by_row_index_is_scoped_to_its_own_table() -> None:
     result = locate(_frame([row]), selector, 2020)
     assert result.match is None
     assert result.error_code == "metric_not_found"
+
+
+def test_period_unresolved_falls_back_to_nearest_period_when_enabled() -> None:
+    """design §6: nearest period instead of abstaining."""
+    table_id = "tbl_" + "a" * 64  # TableId is pattern-constrained ^tbl_[0-9a-f]{64}$
+    frame = pd.DataFrame(
+        [
+            {
+                "table_id": table_id, "row_idx": 1, "col_idx": 1, "company_code": "VNM",
+                "row_label_raw": "Doanh thu", "row_label_canonical": None,
+                "column_label": "2023", "period": 2023, "value": 100.0,
+                "unit": "VND", "cell_id": "cell_" + "1" * 64, "statutory_code": None,
+                "period_inferred": False,
+            }
+        ]
+    )
+    frame["period"] = frame["period"].astype("Int64")
+    selector = MetricSelector(raw_text="Doanh thu", table_id=table_id, row_index=1)
+
+    off = locate(frame, selector, 2021)
+    assert off.error_code == "period_unresolved"
+
+    on = locate(frame, selector, 2021, resolve_ambiguity_by_priority=True)
+    assert on.error_code is None
+    assert on.match is not None
+
+
+def test_unit_missing_infers_unit_from_the_same_table_when_enabled() -> None:
+    table_id = "tbl_" + "a" * 64  # TableId is pattern-constrained ^tbl_[0-9a-f]{64}$
+
+    def _cell(row_idx: int, col_idx: int, unit: str | None, value: float) -> dict[str, object]:
+        return {
+            "table_id": table_id, "row_idx": row_idx, "col_idx": col_idx,
+            "company_code": "VNM", "row_label_raw": "Doanh thu",
+            "row_label_canonical": None, "column_label": "2023", "period": 2023,
+            "value": value, "unit": unit,
+            "cell_id": "cell_" + f"{row_idx}{col_idx}".rjust(64, "0"),
+            "statutory_code": None, "period_inferred": False,
+        }
+
+    frame = pd.DataFrame([_cell(1, 1, None, 100.0), _cell(2, 1, "VND", 200.0)])
+    frame["period"] = frame["period"].astype("Int64")
+    selector = MetricSelector(raw_text="Doanh thu", table_id=table_id, row_index=1)
+
+    off = locate(frame, selector, 2023)
+    assert off.error_code == "unit_missing"
+
+    on = locate(frame, selector, 2023, resolve_ambiguity_by_priority=True)
+    assert on.error_code is None
+    assert on.match is not None
+
+
+def test_execution_settings_accepts_the_new_flag() -> None:
+    """ExecutionSettings has extra='forbid' -- a new YAML key requires a
+    matching field, or every config that enables it raises a validation error."""
+    from financial_report_qa.core.config import ExecutionSettings
+
+    settings = ExecutionSettings.model_validate(
+        {
+            "timeout_seconds": 5.0,
+            "max_rows": 100,
+            "allow_operations": ("lookup",),
+            "resolve_ambiguity_by_priority": True,
+        }
+    )
+    assert settings.resolve_ambiguity_by_priority is True
+
+
+def test_execution_settings_defaults_the_new_flag_to_false() -> None:
+    from financial_report_qa.core.config import ExecutionSettings
+
+    settings = ExecutionSettings.model_validate(
+        {"timeout_seconds": 5.0, "max_rows": 100, "allow_operations": ("lookup",)}
+    )
+    assert settings.resolve_ambiguity_by_priority is False
