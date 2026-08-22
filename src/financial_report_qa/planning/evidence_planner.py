@@ -85,6 +85,21 @@ def _reject(code: EvidencePlanRejectCode) -> EvidencePlanBuild:
     return EvidencePlanBuild(reject_code=code)
 
 
+def _bounded_raw_text(label: str) -> str:
+    """Clamp a raw corpus label to `RawMetricText`'s 512-char cap.
+
+    The selector built here is always position-bound (`table_id` +
+    `row_index` both set), so `raw_text` is display-only -- never a match
+    key (see row_choice_decision.py). A rare OCR-merged label can exceed
+    512 chars, which would otherwise crash `MetricSelector`'s validation
+    mid-export; truncating is safe since nothing downstream re-derives the
+    row from this text.
+    """
+    cleaned = "".join(ch for ch in label if ord(ch) > 0x1F)
+    stripped = cleaned.strip() or "?"
+    return stripped[:512]
+
+
 def _selector(facts: Sequence[GroundedFact]) -> MetricSelector:
     """One position-bound selector covering `facts`, which all share a row.
 
@@ -97,8 +112,8 @@ def _selector(facts: Sequence[GroundedFact]) -> MetricSelector:
     columns = {fact.column for fact in facts}
     column = columns.pop() if len(columns) == 1 else None
     return MetricSelector(
-        raw_text=first.row_label,
-        column_text=column,
+        raw_text=_bounded_raw_text(first.row_label),
+        column_text=_bounded_raw_text(column) if column is not None else None,
         table_id=first.table_id,
         row_index=first.row_index,
     )

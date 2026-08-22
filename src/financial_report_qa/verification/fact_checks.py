@@ -46,15 +46,31 @@ from financial_report_qa.planning.plan_contracts import MetricSelector
 from financial_report_qa.verification.contracts import VerificationIssue
 
 
+def _bounded_raw_text(label: str) -> str:
+    """Clamp a raw corpus label to `MetricSelector.raw_text`'s 512-char cap.
+
+    This selector is position-bound (`table_id` + `row_index` both set), so
+    `raw_text` is never used as a match key here -- only OCR-merged labels
+    over the cap would otherwise crash validation mid-verification.
+    """
+    cleaned = "".join(ch for ch in label if ord(ch) > 0x1F)
+    stripped = cleaned.strip() or "?"
+    return stripped[:512]
+
+
 def verify_fact(fact: GroundedFact, release_dir: Path) -> VerificationIssue | None:
     """Independently re-locate `fact` in the release; `None` if it agrees."""
     frame = build_cell_frame(release_dir, (fact.table_id,))
     selector = MetricSelector(
-        raw_text=fact.row_label, table_id=fact.table_id, row_index=fact.row_index
+        raw_text=_bounded_raw_text(fact.row_label),
+        table_id=fact.table_id,
+        row_index=fact.row_index,
     )
     result = locate(
         frame,
-        selector.model_copy(update={"column_text": fact.column}) if fact.column else selector,
+        selector.model_copy(update={"column_text": _bounded_raw_text(fact.column)})
+        if fact.column
+        else selector,
         fact.period,
         company_code=fact.company_code,
     )

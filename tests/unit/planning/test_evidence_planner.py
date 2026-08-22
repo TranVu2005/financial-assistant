@@ -61,6 +61,18 @@ def test_lookup_builds_a_position_bound_plan_from_one_fact() -> None:
     assert plan.metric.column_text == "Năm 2023"
 
 
+def test_overlong_row_label_is_truncated_not_left_to_crash_validation() -> None:
+    """RawMetricText caps at 512 chars; an OCR-merged label must not crash."""
+    facts = (_fact("F1", row_label="x" * 600),)
+    built = build_plan_from_facts(EvidencePlan(operation="lookup", operands=("F1",)), facts)
+    assert built.reject_code is None
+    plan = built.plan
+    assert plan is not None
+    assert plan.metric is not None
+    assert plan.metric.raw_text is not None
+    assert len(plan.metric.raw_text) == 512
+
+
 def test_growth_rate_builds_a_two_period_plan_over_one_row() -> None:
     """§12's own worked example: two facts of the same row at two periods."""
     facts = (_fact("F1"), _fact("F2", period=2022, value="60180", column="Năm 2022"))
