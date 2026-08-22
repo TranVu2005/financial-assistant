@@ -244,7 +244,7 @@ def _dispatch(
     def _cell(selector: MetricSelector, at_period: int, *, company_code: str) -> CellMatch:
         """One place that carries the tie-break flag down to `locate()`.
 
-        `_dispatch` calls `locate()` at 10 branches; adding the keyword to
+        `_dispatch` calls `locate()` at 12 branches; adding the keyword to
         each call site directly would push several lines over ruff's
         100-character limit.
         """
