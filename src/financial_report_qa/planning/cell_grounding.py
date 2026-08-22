@@ -182,9 +182,9 @@ def ground_with_recovery(
     plan_source = "rule"
     recovery_attempts = 0
 
-    if question_id is not None and fusion_rows:
+    if question_id is not None and fusion_rows and row_decisions is not None:
         selector, decision_source = selector_for(
-            question_id, fusion_rows, row_decisions or {}
+            question_id, fusion_rows, row_decisions
         )
         if selector is not None and selector.raw_text is not None:
             labelled = QueryEntities.model_validate(

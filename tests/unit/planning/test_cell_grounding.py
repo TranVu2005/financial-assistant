@@ -792,9 +792,12 @@ def test_ground_with_recovery_uses_the_retrieved_row_position_to_break_a_label_t
         ),
         release_dir=release_dir,
         execution_settings=_ALLOW_LOOKUP,
-        # No decision recorded for this question -- Attempt 0 falls back to
-        # the rank-1 fusion candidate (row_idx=2), the same position this
-        # test's tie-break was written to exercise.
+        # A decision file was supplied (an empty dict counts -- see
+        # `selector_for`'s None-vs-empty-dict distinction) but has no entry
+        # for this question, so Attempt 0 falls back to the rank-1 fusion
+        # candidate (row_idx=2), the same position this test's tie-break was
+        # written to exercise.
+        row_decisions={},
         question_id=1,
     )
 
@@ -820,8 +823,9 @@ def test_ground_with_recovery_exposes_grounded_facts_for_the_accepted_answer(
         fusion_rows=(_duplicate_label_fusion_row(row_idx=2, rank=1),),
         release_dir=release_dir,
         execution_settings=_ALLOW_LOOKUP,
-        # No decision recorded -- Attempt 0 falls back to the sole (rank-1)
-        # fusion candidate.
+        # A decision file was supplied but has no entry for this question --
+        # Attempt 0 falls back to the sole (rank-1) fusion candidate.
+        row_decisions={},
         question_id=1,
     )
 
