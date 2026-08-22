@@ -61,6 +61,15 @@ _BARE_YEAR_AFTER_CONNECTOR_RE = re.compile(
 _RELATIVE_PERIOD_RE = re.compile(
     r"năm\s+(?:nay|hiện\s*hành|trước(?:\s+đó)?)|quý\s+(?:này|trước|vừa\s+rồi)", re.IGNORECASE
 )
+_BARE_YEAR_ONLY_RE = re.compile(r"^\d{4}$")
+_DATE_PERIOD_PATTERNS = (
+    # 31/12/2015 hoặc 31-12-2015
+    re.compile(r"\b\d{1,2}\s*[/-]\s*\d{1,2}\s*[/-]\s*(\d{4})\b"),
+    # 31 tháng 12 năm 2015
+    re.compile(r"\bngày\s+\d{1,2}\s+tháng\s+\d{1,2}\s+năm\s+(\d{4})\b", re.IGNORECASE),
+    # cuối năm 2016 / đầu năm 2016
+    re.compile(r"\b(?:cuối|đầu)\s+năm\s+(\d{4})\b", re.IGNORECASE),
+)
 # Day 21 plan §1.6/ADR 0010 decision A1: measured 37.7% of official ViFinQA
 # questions state a scope, overwhelmingly "công ty mẹ"/"riêng" (36.4%) over
 # "hợp nhất" (1.3%).
@@ -150,6 +159,23 @@ def _quarter_value(quarter_token: str, year_token: str | None) -> str | None:
     return f"{int(year_token)}-Q{_ROMAN_QUARTERS[quarter_token.lower()]}"
 
 
+def _years_from_dates(question: str) -> tuple[str, ...]:
+    """Năm tài chính suy ra từ mọi cách viết ngày trong câu, giữ thứ tự xuất hiện.
+
+    `FinancialQueryPlan.periods` chỉ nhận `^\\d{4}$`; câu hỏi thì viết
+    "vào ngày 31/12/2015". Với báo cáo tài chính, ngày kết thúc kỳ *là* năm
+    tài chính, nên đây là chuẩn hoá chứ không phải suy đoán. Đo được 97/1012
+    câu chết ở `period_grammar_unsupported` chỉ vì cách viết này.
+    """
+    years: list[str] = []
+    for pattern in _DATE_PERIOD_PATTERNS:
+        for match in pattern.finditer(question):
+            year = match.group(1)
+            if year not in years:
+                years.append(year)
+    return tuple(years)
+
+
 def _parse_period(
     question: str,
 ) -> tuple[tuple[str, ...], tuple[AmbiguityCode, ...], tuple[ParsedSpan, ...]]:
@@ -207,6 +233,17 @@ def _parse_period(
             values.add(match.group(1))
             consumed.append((start, end))
             spans.append(ParsedSpan(field="period", surface=match.group(1), start=start, end=end))
+
+    date_years = _years_from_dates(question)
+    if date_years and not any(_BARE_YEAR_ONLY_RE.match(value) for value in values):
+        # Spec §6.4: "vào ngày 31/12/2015" leaves `values` holding only the
+        # ISO date string, which downstream `period_grammar_unsupported`
+        # rejects. The end-of-period date *is* the fiscal year for financial
+        # reports, so normalize date phrasings to bare years. Replace only
+        # when date-derived years exist and no valid bare year was extracted
+        # -- quarter extractions ("2023-Q4") are left untouched (§6.4 does
+        # not normalize quarters), and neither are bare years ever overwritten.
+        values = set(date_years)
 
     if _RELATIVE_PERIOD_RE.search(question):
         ambiguity.add("period_relative_unresolved")

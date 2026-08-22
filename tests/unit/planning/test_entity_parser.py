@@ -57,7 +57,11 @@ def test_missing_company_is_flagged_not_guessed() -> None:
     assert entities.ambiguity == ("company_missing",)
 
 
-def test_year_and_quarter_and_date_periods() -> None:
+def test_year_and_quarter_phrasings_keep_their_existing_grammar() -> None:
+    """Spec §6.4 normalizes date phrasings to bare fiscal years only — plain
+    years and quarters keep the exact forms extracted today: "2023-Q4" stays
+    non-bare (FinancialQueryPlan accepts bare years only downstream), which
+    documents the still-unsupported quarter grammar."""
     assert parse_query_entities("Doanh thu thuần của DBC năm 2023 là bao nhiêu?").periods == (
         "2023",
     )
@@ -67,8 +71,14 @@ def test_year_and_quarter_and_date_periods() -> None:
     assert parse_query_entities("Doanh thu thuần của DBC quý I năm 2023 là bao nhiêu?").periods == (
         "2023-Q1",
     )
+
+
+def test_date_phrasing_is_normalized_to_the_bare_fiscal_year() -> None:
+    """Spec §6.4: a full date ("tại ngày 31/12/2023.") names the fiscal-year
+    period, so the parser emits the bare year instead of the ISO form that
+    `period_grammar_unsupported` rejects downstream."""
     assert parse_query_entities("Tra cứu doanh thu thuần của DBC tại ngày 31/12/2023.").periods == (
-        "2023-12-31",
+        "2023",
     )
 
 
@@ -329,3 +339,27 @@ def test_requested_unit_billion() -> None:
     entities = parse_query_entities("Doanh thu thuần của VNM năm 2023 là bao nhiêu tỷ đồng?")
     assert entities.requested_unit == "billion_vnd"
 
+
+def test_slash_date_is_normalized_to_the_bare_fiscal_year() -> None:
+    entities = parse_query_entities(
+        "Vốn chủ sở hữu của FIT là bao nhiêu tỷ đồng vào ngày 31/12/2015?"
+    )
+    assert entities.periods == ("2015",)
+
+
+def test_spelled_out_date_is_normalized_to_the_bare_fiscal_year() -> None:
+    entities = parse_query_entities(
+        "Vay và nợ của OGC đến ngày 31 tháng 12 năm 2020 là bao nhiêu tỷ đồng?"
+    )
+    assert entities.periods == ("2020",)
+
+
+def test_end_of_year_wording_is_normalized_to_the_bare_fiscal_year() -> None:
+    entities = parse_query_entities("Tỷ lệ sở hữu của PLX vào cuối năm 2016 là bao nhiêu?")
+    assert entities.periods == ("2016",)
+
+
+def test_date_normalization_does_not_invent_a_period() -> None:
+    """Không có kỳ nào trong câu thì vẫn phải không có kỳ nào."""
+    entities = parse_query_entities("Doanh thu thuần của ACB là bao nhiêu?")
+    assert entities.periods == ()

@@ -186,8 +186,11 @@ def test_one_metric_three_companies_count_question_does_not_become_sum() -> None
     assert result.abstain_codes == ("operation_unknown",)
 
 
-def test_date_period_abstains_with_period_grammar_unsupported() -> None:
-    result = _plan_for("Tra cứu doanh thu thuần của DBC tại ngày 31/12/2023.")
+def test_quarter_period_abstains_with_period_grammar_unsupported() -> None:
+    """Date phrasings now normalize to bare fiscal years (spec §6.4), so the
+    period-grammar gate is pinned with a quarter phrasing instead — "2023-Q4"
+    is still a non-year period `FinancialQueryPlan` cannot accept."""
+    result = _plan_for("Doanh thu thuần của DBC quý IV năm 2023 là bao nhiêu?")
     assert result.plan is None
     assert result.abstain_codes == ("period_grammar_unsupported",)
 
@@ -248,7 +251,9 @@ def test_candidate_table_id_unknown_to_release_abstains() -> None:
 
 
 def test_compare_two_metrics_difference() -> None:
-    result = _plan_for("Chênh lệch giữa tài sản ngắn hạn và nợ phải trả của FPT năm 2021 là bao nhiêu?")
+    result = _plan_for(
+        "Chênh lệch giữa tài sản ngắn hạn và nợ phải trả của FPT năm 2021 là bao nhiêu?"
+    )
     assert result.plan is not None
     assert result.plan.operation == "compare"
     assert result.plan.companies == ("FPT",)
