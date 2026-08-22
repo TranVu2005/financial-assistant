@@ -203,6 +203,28 @@ def test_banking_metric_uses_raw_text_selector_not_canonical() -> None:
     assert result.plan.metric.raw_text == "cho vay khách hàng"
 
 
+def test_overlong_raw_metric_label_abstains_instead_of_raising() -> None:
+    """Grounding recovery (cell_grounding.ground_with_recovery) injects raw
+    corpus row labels into `entities.metrics` directly -- unbounded, unlike
+    a question-parsed span. `MetricSelector.raw_text` caps at 512 chars; an
+    OCR-merged label over that cap must abstain, not raise `ValidationError`
+    uncaught out of `build_plan` (regression: this crashed a full export)."""
+    entities = parse_query_entities("Tra cứu doanh thu thuần của NVL năm 2023.")
+    # Mirrors ground_with_recovery's candidate-switching rebuild: the metric
+    # span is dropped (no span field="metric" survives an unrecognized-metric
+    # parse) and the raw corpus row label is substituted directly for
+    # `metrics`, bypassing `_metric_selector`'s canonical/span shortcuts.
+    entities = entities.model_copy(
+        update={
+            "metrics": ("x" * 600,),
+            "spans": tuple(span for span in entities.spans if span.field != "metric"),
+        }
+    )
+    result = build_plan(entities, candidate_table_ids=(_TABLE_A,), known_table_ids=_KNOWN_TABLES)
+    assert result.plan is None
+    assert result.abstain_codes == ("operation_unknown",)
+
+
 def test_three_or_more_periods_abstains_with_operation_unknown() -> None:
     entities = parse_query_entities("Tra cứu doanh thu thuần của NVL năm 2023.")
     entities = entities.model_copy(update={"periods": ("2021", "2022", "2023")})

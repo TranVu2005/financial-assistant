@@ -230,14 +230,13 @@ def build_plan(
         return _abstain("multi_metric_unsupported")
 
     metric_val = metrics[0] if metrics else metric_phrases[0]
-    metric_selector = _metric_selector(entities, metric_val)
     try:
         plan = FinancialQueryPlan(
             operation=operation,
             companies=entities.company_codes,
             periods=periods,
             candidate_table_ids=candidate_table_ids,
-            metric=metric_selector,
+            metric=_metric_selector(entities, metric_val),
             expected_unit=map_requested_unit(entities.requested_unit),
             statement_scope=entities.statement_scope,
         )
