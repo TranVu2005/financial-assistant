@@ -17,6 +17,8 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from financial_report_qa.planning.plan_contracts import MetricSelector
 from financial_report_qa.retrieval.row_fusion_contracts import RowFusedCandidate
 
@@ -45,11 +47,20 @@ def _selector_from(candidate: RowFusedCandidate) -> MetricSelector | None:
     label = candidate.metadata.row_label_raw
     if label is None or not label.strip():
         return None
-    return MetricSelector(
-        raw_text=label,
-        table_id=candidate.table_id,
-        row_index=candidate.row_idx,
-    )
+    # `MetricSelector.raw_text` is `RawMetricText`: max_length=512 and a
+    # control-character-free pattern. `label` comes straight from raw corpus
+    # text with no such bound -- a single OCR-merged or malformed label can
+    # violate either constraint. Falling through to "no_candidates" for just
+    # this one question beats letting `pydantic.ValidationError` propagate
+    # uncaught and kill an entire in-progress multi-hour export run.
+    try:
+        return MetricSelector(
+            raw_text=label,
+            table_id=candidate.table_id,
+            row_index=candidate.row_idx,
+        )
+    except ValidationError:
+        return None
 
 
 def selector_for(

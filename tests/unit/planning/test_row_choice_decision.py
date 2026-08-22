@@ -109,6 +109,26 @@ def test_candidate_without_a_label_yields_no_selector() -> None:
     assert source == "no_candidates"
 
 
+def test_overlength_label_yields_no_selector_instead_of_raising() -> None:
+    """`MetricSelector.raw_text` is bounded (max_length=512, no control
+    chars); raw corpus text carries no such bound. A malformed label must
+    fall through to `no_candidates` for just this one question, not raise
+    `pydantic.ValidationError` and kill the whole export run."""
+    overlong = "x" * 600
+    candidate = RowFusedCandidate(
+        row_id=f"{_TABLE_ID}|row_9",
+        table_id=_TABLE_ID,
+        row_idx=9,
+        rank=1,
+        fused_score=1.0,
+        metadata=RowMetadata(table_id=_TABLE_ID, row_idx=9, row_label_raw=overlong),
+        snippet=overlong,
+    )
+    selector, source = selector_for(1, [candidate], {1: 0})
+    assert selector is None
+    assert source == "no_candidates"
+
+
 def test_load_decisions_raises_on_a_missing_file(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         load_decisions(tmp_path / "khong-ton-tai.jsonl")
