@@ -229,3 +229,30 @@ def test_metric_selector_is_position_bound_only_when_both_are_set() -> None:
     assert MetricSelector(canonical="revenue").is_position_bound is False
     bound = MetricSelector(canonical="revenue", table_id="tbl_" + "1" * 64, row_index=0)
     assert bound.is_position_bound is True
+
+
+def test_clamp_raw_metric_text_truncates_at_the_512_char_cap() -> None:
+    from financial_report_qa.planning.plan_contracts import clamp_raw_metric_text
+
+    assert len(clamp_raw_metric_text("x" * 600)) == 512
+
+
+def test_clamp_raw_metric_text_strips_control_characters() -> None:
+    from financial_report_qa.planning.plan_contracts import clamp_raw_metric_text
+
+    assert clamp_raw_metric_text("Doanh thu\x00\x1fthuần") == "Doanh thuthuần"
+
+
+def test_clamp_raw_metric_text_never_returns_empty() -> None:
+    """`RawMetricText` has min_length=1: a whitespace-only label must still
+    produce something constructible, not a ValidationError at the call site."""
+    from financial_report_qa.planning.plan_contracts import clamp_raw_metric_text
+
+    assert clamp_raw_metric_text("   \x01  ") == "?"
+
+
+def test_clamped_text_always_constructs_a_metric_selector() -> None:
+    from financial_report_qa.planning.plan_contracts import MetricSelector, clamp_raw_metric_text
+
+    for label in ("x" * 900, "  ", "a\x1fb", "Doanh thu thuần"):
+        assert MetricSelector(raw_text=clamp_raw_metric_text(label)) is not None

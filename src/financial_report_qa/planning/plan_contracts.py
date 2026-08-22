@@ -29,6 +29,23 @@ RawMetricText = Annotated[
         strip_whitespace=True, min_length=1, max_length=512, pattern=r"^[^\x00-\x1f]+$"
     ),
 ]
+
+
+def clamp_raw_metric_text(label: str) -> str:
+    """Ép một nhãn corpus bất kỳ về đúng ràng buộc của `RawMetricText`.
+
+    Nhãn dòng đến thẳng từ `row_label_raw` của corpus và không có ràng buộc
+    độ dài nào; `RawMetricText` thì chặn ở 512 ký tự và cấm ký tự điều khiển.
+    Một nhãn OCR dính chữ vượt ngưỡng đã từng ném `ValidationError` không ai
+    bắt và giết cả lần export 56 phút. Cắt là an toàn ở mọi chỗ gọi hàm này:
+    selector đi kèm luôn là position-bound (`table_id` + `row_index`), nên
+    `raw_text` chỉ để giải trình, không phải khoá so khớp.
+    """
+    cleaned = "".join(char for char in label if ord(char) > 0x1F)
+    stripped = cleaned.strip()
+    return stripped[:512] if stripped else "?"
+
+
 CompanyCode = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9]{1,16}$")]
 
 PlanOperation = Literal[
