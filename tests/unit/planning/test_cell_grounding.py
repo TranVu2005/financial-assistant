@@ -237,6 +237,70 @@ def test_ground_with_recovery_falls_back_to_rank1_when_no_decision_recorded(
     assert res.plan.metric.raw_text == "Doanh thu thuan"
 
 
+def test_no_decisions_file_falls_through_to_live_llm_not_rank1_fallback(
+    tmp_path: Path,
+) -> None:
+    """Regression for the Critical-1 finding (2026-08-22 final review):
+    `row_decisions=None` (no `--row-choice-decisions` file supplied at all)
+    must fall through to the live-LLM `choose_row_label` path when a
+    `llm_client` is available, exactly as it worked before this feature was
+    added -- it must NOT silently take the offline rank-1 fallback path.
+    `row_decisions={}` (a file was supplied but has no entry) is the only
+    case that should hit `fallback_rank1`; that is covered by
+    `test_ground_with_recovery_falls_back_to_rank_one_without_a_decision`
+    above. This test proves the two are genuinely distinguished."""
+    release_dir = _write_release(tmp_path)
+    entities = QueryEntities(
+        question="Tra cứu Doanh thu thuan của ACB năm 2023.",
+        company_codes=("ACB",),
+        periods=("2023",),
+        metrics=(),
+        metric_phrases=("Doanh thu thuan",),
+        operation="lookup",
+        spans=(),
+    )
+    fusion_rows = (
+        RowFusedCandidate(
+            row_id="1",
+            table_id=TABLE_ID,
+            row_idx=0,
+            rank=1,
+            snippet="",
+            metadata=RowMetadata(
+                table_id=TABLE_ID,
+                row_idx=0,
+                row_label_raw="Doanh thu thuan",
+                row_label_canonical="net_revenue",
+            ),
+            fused_score=0.9,
+            bm25_score=0.9,
+            dense_score=0.0,
+        ),
+    )
+
+    with patch(
+        "financial_report_qa.planning.cell_grounding.choose_row_label",
+        return_value="Doanh thu thuan",
+    ) as mock_choose_row_label:
+        llm_client = MagicMock(spec=LLMClient)
+        res = ground_with_recovery(
+            question="Tra cứu Doanh thu thuan của ACB năm 2023.",
+            entities=entities,
+            retrieved=(TABLE_ID,),
+            row_labels=("Doanh thu thuan",),
+            fusion_rows=fusion_rows,
+            release_dir=release_dir,
+            execution_settings=_ALLOW_LOOKUP,
+            llm_client=llm_client,
+            row_decisions=None,
+            question_id=7,
+        )
+
+        mock_choose_row_label.assert_called_once()
+        assert res.status == "accepted"
+        assert res.plan_source == "llm_cell_grounded"
+
+
 def test_ground_with_recovery_with_llm_cell_grounding_attempt_0(tmp_path: Path) -> None:
     release_dir = _write_release(tmp_path)
     entities = QueryEntities(
