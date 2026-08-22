@@ -181,6 +181,13 @@ def ground_with_recovery(
     plan_result = RulePlanResult(abstain_codes=("operation_unknown",))
     plan_source = "rule"
     recovery_attempts = 0
+    # plan.md §15/§7.1: a genuine (non-fallback) LLM row decision was chosen
+    # specifically to overrule the retrieval-confidence rank heuristic -- the
+    # whole point of Track B is that lexical retrieval often ranks the
+    # correct row poorly. Tracked separately from `plan_source` because
+    # column refinement below can rewrite `plan_source` to
+    # "llm_column_refined" without changing where the row came from.
+    is_genuine_llm_row_choice = False
 
     if question_id is not None and fusion_rows and row_decisions is not None:
         selector, decision_source = selector_for(
@@ -203,9 +210,10 @@ def ground_with_recovery(
             )
             if chosen.plan is not None:
                 plan_result = _bind_metric_to_position(chosen, selector)
+                is_genuine_llm_row_choice = decision_source == "llm"
                 plan_source = (
                     "llm_row_choice"
-                    if decision_source == "llm"
+                    if is_genuine_llm_row_choice
                     else "row_choice_fallback_rank1"
                 )
 
@@ -278,7 +286,12 @@ def ground_with_recovery(
     fallback: GroundingResult | None = None
     if compiled.status == "answered":
         rank = plan_grounding_rank(plan, fusion_rows)
-        if rank is None or rank <= max_grounding_rank:
+        # A genuine LLM row choice (not the rank-1 fallback) was accepted
+        # specifically to overrule the rank heuristic below -- gating it on
+        # `rank <= max_grounding_rank` would defeat the entire point of
+        # asking the LLM to pick deliberately, since a deliberately-chosen
+        # row is very often ranked well outside the top few by fusion.
+        if rank is None or rank <= max_grounding_rank or is_genuine_llm_row_choice:
             return _accepted(
                 plan=plan, compiled=compiled, plan_source=plan_source, fusion_rows=fusion_rows
             )

@@ -871,3 +871,71 @@ def test_ground_with_recovery_still_answers_when_no_position_can_be_bound(
     assert res.compiled is not None and res.compiled.answer == Decimal("100")
     assert res.plan is not None and res.plan.metric is not None
     assert res.plan.metric.is_position_bound is False
+
+
+def test_ground_with_recovery_accepts_a_genuine_llm_pick_beyond_max_grounding_rank(
+    tmp_path: Path,
+) -> None:
+    """plan.md §15/§7.1: `max_grounding_rank` exists to distrust an
+    *unconfident* compile, not to overrule a *deliberate* LLM row choice --
+    the entire point of Track B is that lexical fusion often ranks the
+    correct row poorly, so an LLM decision that intentionally picks a
+    low-ranked row must be accepted outright, not demoted into the recovery
+    ladder."""
+    release_dir = _write_release(tmp_path)
+    # 11 decoys (ranks 1-11) carry a label that never matches the real row
+    # ("Doanh thu thuan"), so `bind_plan_to_rows` cannot re-derive a
+    # higher-ranked position for the selector regardless of them being
+    # present in the candidate pool. The real pick sits at rank 12 -- well
+    # beyond DEFAULT_MAX_GROUNDING_RANK=3 -- at index 11.
+    decoys = tuple(
+        RowFusedCandidate(
+            row_id=f"{TABLE_ID}|decoy_{rank}",
+            table_id=TABLE_ID,
+            row_idx=0,
+            rank=rank,
+            fused_score=1.0 / rank,
+            snippet="Chi phi khac",
+            metadata=RowMetadata(
+                table_id=TABLE_ID,
+                row_idx=0,
+                company_code="ACB",
+                row_label_raw="Chi phi khac",
+                row_label_canonical=None,
+            ),
+        )
+        for rank in range(1, 12)
+    )
+    real_pick = RowFusedCandidate(
+        row_id=f"{TABLE_ID}|row_0",
+        table_id=TABLE_ID,
+        row_idx=0,
+        rank=12,
+        fused_score=1.0 / 12,
+        snippet="Doanh thu thuan",
+        metadata=RowMetadata(
+            table_id=TABLE_ID,
+            row_idx=0,
+            company_code="ACB",
+            row_label_raw="Doanh thu thuan",
+            row_label_canonical="net_revenue",
+        ),
+    )
+    fusion_rows = decoys + (real_pick,)
+    res = ground_with_recovery(
+        question="Doanh thu thuan của ACB năm 2023 là bao nhiêu?",
+        entities=_duplicate_label_entities(),
+        retrieved=(TABLE_ID,),
+        row_labels=("Doanh thu thuan",),
+        fusion_rows=fusion_rows,
+        release_dir=release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        row_decisions={1: 11},
+        question_id=1,
+    )
+
+    assert res.status == "accepted"
+    assert res.low_confidence is False
+    assert res.plan_source == "llm_row_choice"
+    assert res.compiled is not None
+    assert res.compiled.answer == Decimal("100")
