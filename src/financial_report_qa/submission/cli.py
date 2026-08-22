@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from financial_report_qa.retrieval.dense_encoder import DenseEncoder
     from financial_report_qa.retrieval.release import ResolvedRetrievalRelease
     from financial_report_qa.retrieval.row_dense_service import RowDenseRetrievalService
+    from financial_report_qa.retrieval.row_fusion import RowFusionService
 
 from financial_report_qa.core.config import load_execution_settings, load_llm_settings
 from financial_report_qa.core.errors import (
@@ -26,7 +27,9 @@ from financial_report_qa.core.errors import (
     SubmissionError,
 )
 from financial_report_qa.planning.llm_client import LLMClient
+from financial_report_qa.planning.row_choice_batch import build_batch_payload
 from financial_report_qa.retrieval.index import load_bm25_index
+from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
 from financial_report_qa.retrieval.release import resolve_retrieval_release
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.compliance import check_bundle
@@ -128,6 +131,23 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
 
+    batches = commands.add_parser(
+        "row-batches",
+        help=(
+            "Chạy retrieval + row fusion cho mọi câu hỏi và ghi ứng viên ra JSONL "
+            "để LLM chọn dòng offline (thiết kế 2026-08-22 §5.2)."
+        ),
+    )
+    batches.add_argument("--release-lock", type=Path, required=True)
+    batches.add_argument("--bm25-index", type=Path, required=True)
+    batches.add_argument("--questions-path", type=Path, required=True)
+    batches.add_argument("--output-dir", type=Path, required=True)
+    batches.add_argument("--k", type=int, default=10, help="Số bảng ứng viên mỗi câu.")
+    batches.add_argument(
+        "--rows-per-question", type=int, default=20, help="Số dòng ứng viên mỗi câu."
+    )
+    batches.add_argument("--batch-size", type=int, default=64, help="Số câu mỗi file batch.")
+
     validate = commands.add_parser("validate")
     validate.add_argument("--zip-path", type=Path, required=True)
     validate.add_argument(
@@ -157,8 +177,17 @@ def _load_row_dense_service(
     exactly to the pre-dense-wiring bm25+fuzzy+alias behavior).
 
     `encoder` is an injection seam for tests -- production always leaves it
-    `None` and gets the real pinned `SentenceTransformerDenseEncoder`."""
-    if args.row_dense_corpus is None or args.row_dense_index is None or args.dense_encoder is None:
+    `None` and gets the real pinned `SentenceTransformerDenseEncoder`.
+
+    Reads `args.row_dense_corpus`/`--row-dense-index`/`--dense-encoder` via
+    `getattr` with a `None` default: the `row-batches` command has no CLI
+    flags for these (dense row retrieval is not exposed there), so it always
+    degrades to the bm25+fuzzy+alias-only branch below rather than crashing
+    on a missing attribute."""
+    row_dense_corpus = getattr(args, "row_dense_corpus", None)
+    row_dense_index = getattr(args, "row_dense_index", None)
+    dense_encoder = getattr(args, "dense_encoder", None)
+    if row_dense_corpus is None or row_dense_index is None or dense_encoder is None:
         return None
 
     from financial_report_qa.retrieval.dense_cache import QueryEmbeddingCache
@@ -173,7 +202,7 @@ def _load_row_dense_service(
 
     try:
         row_corpus = load_row_dense_corpus(
-            args.row_dense_corpus, release_lock_sha256=release.lock_sha256
+            row_dense_corpus, release_lock_sha256=release.lock_sha256
         )
         if row_corpus.manifest.dataset_fingerprint != release.dataset_fingerprint:
             print(
@@ -183,21 +212,73 @@ def _load_row_dense_service(
             )
             return None
         if encoder is None:
-            spec = approved_encoder_spec(args.dense_encoder)
+            spec = approved_encoder_spec(dense_encoder)
             encoder = SentenceTransformerDenseEncoder(
-                spec, local_files_only=args.dense_local_files_only
+                spec, local_files_only=getattr(args, "dense_local_files_only", False)
             )
-        row_dense_index = load_row_dense_index(
-            args.row_dense_index,
+        loaded_row_dense_index = load_row_dense_index(
+            row_dense_index,
             row_corpus,
             expected_encoder_spec_sha256=encoder_spec_sha256(encoder.spec),
             release_lock_sha256=release.lock_sha256,
         )
-        cache_dir = args.dense_cache_dir or (args.row_dense_index.parent / "query-cache")
+        cache_dir = getattr(args, "dense_cache_dir", None) or (
+            row_dense_index.parent / "query-cache"
+        )
         cache = QueryEmbeddingCache(cache_dir, encoder.spec)
-        return RowDenseRetrievalService(row_dense_index, encoder, cache)
+        return RowDenseRetrievalService(loaded_row_dense_index, encoder, cache)
     except Exception as e:
         print(f"Warning: Failed to load row dense index: {e}", file=sys.stderr)
+        return None
+
+
+def _build_row_fusion(
+    args: argparse.Namespace, release: ResolvedRetrievalRelease
+) -> RowFusionService | None:
+    """Load the row BM25 index and assemble the shared `RowFusionService`
+    (bm25 + optional dense + fuzzy + alias), or return `None` if the row
+    index directory is missing or fails to load.
+
+    Shared by the `export` and `row-batches` commands so both see exactly
+    the same fused row candidates for a given question -- a divergence here
+    would make a downstream LLM's `chosen_index` point at the wrong row.
+    `row-batches` has no CLI flags for dense retrieval, so `getattr(args,
+    "dense_weight", 0.0)` degrades it to the pre-dense-wiring
+    bm25+fuzzy+alias behavior, identical to what `export` gets when its own
+    `--dense-weight` is left at its 0.0 default."""
+    from financial_report_qa.retrieval.row_fusion import RowFusionService
+    from financial_report_qa.retrieval.row_fusion_contracts import RowFusionWeights
+    from financial_report_qa.retrieval.row_index import load_row_bm25_index
+    from financial_report_qa.retrieval.row_lexical import (
+        RowAliasRetrievalService,
+        RowFuzzyRetrievalService,
+    )
+    from financial_report_qa.retrieval.row_service import RowRetrievalService
+
+    row_index_dir = args.bm25_index.parent / f"{args.bm25_index.name}_row"
+    if not row_index_dir.is_dir():
+        return None
+
+    try:
+        row_index = load_row_bm25_index(row_index_dir, release_lock_sha256=release.lock_sha256)
+        row_service = RowRetrievalService(row_index)
+        # Dense (plan.md §7) is opt-in via --row-dense-corpus/
+        # --row-dense-index/--dense-encoder; loading it still
+        # defaults to weight 0.0 (--dense-weight) -- plan.md §20's
+        # benchmark measured 0.5 making Row Recall@3/@5 worse,
+        # not better, than bm25+fuzzy+alias alone.
+        row_dense_service = _load_row_dense_service(args, release)
+        return RowFusionService(
+            bm25=row_service,
+            dense=row_dense_service,
+            weights=RowFusionWeights(
+                bm25=1.0, dense=getattr(args, "dense_weight", 0.0), fuzzy=0.3, alias=0.2
+            ),
+            fuzzy=RowFuzzyRetrievalService(row_index),
+            alias=RowAliasRetrievalService(row_index),
+        )
+    except Exception as e:
+        print(f"Warning: Failed to load row BM25 index: {e}", file=sys.stderr)
         return None
 
 
@@ -217,40 +298,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             questions = load_raw_questions(args.questions_path)
 
             # Load row BM25 index and initialize row fusion if available
-            row_index_dir = args.bm25_index.parent / f"{args.bm25_index.name}_row"
-            row_fusion = None
-            if row_index_dir.is_dir():
-                from financial_report_qa.retrieval.row_fusion import RowFusionService
-                from financial_report_qa.retrieval.row_fusion_contracts import RowFusionWeights
-                from financial_report_qa.retrieval.row_index import load_row_bm25_index
-                from financial_report_qa.retrieval.row_lexical import (
-                    RowAliasRetrievalService,
-                    RowFuzzyRetrievalService,
-                )
-                from financial_report_qa.retrieval.row_service import RowRetrievalService
-
-                try:
-                    row_index = load_row_bm25_index(
-                        row_index_dir, release_lock_sha256=release.lock_sha256
-                    )
-                    row_service = RowRetrievalService(row_index)
-                    # Dense (plan.md §7) is opt-in via --row-dense-corpus/
-                    # --row-dense-index/--dense-encoder; loading it still
-                    # defaults to weight 0.0 (--dense-weight) -- plan.md §20's
-                    # benchmark measured 0.5 making Row Recall@3/@5 worse,
-                    # not better, than bm25+fuzzy+alias alone.
-                    row_dense_service = _load_row_dense_service(args, release)
-                    row_fusion = RowFusionService(
-                        bm25=row_service,
-                        dense=row_dense_service,
-                        weights=RowFusionWeights(
-                            bm25=1.0, dense=args.dense_weight, fuzzy=0.3, alias=0.2
-                        ),
-                        fuzzy=RowFuzzyRetrievalService(row_index),
-                        alias=RowAliasRetrievalService(row_index),
-                    )
-                except Exception as e:
-                    print(f"Warning: Failed to load row BM25 index: {e}", file=sys.stderr)
+            row_fusion = _build_row_fusion(args, release)
 
             if args.llm_config is not None:
                 llm_settings = load_llm_settings(args.llm_config)
@@ -318,6 +366,46 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json_path)
             print(markdown_path)
             print(f"answered {report.answered_count}/{report.question_count}")
+            return 0
+        if args.command == "row-batches":
+            root = Path.cwd()
+            release = resolve_retrieval_release(args.release_lock, repo_root=root)
+            index = load_bm25_index(args.bm25_index)
+            if index.manifest.dataset_fingerprint != release.dataset_fingerprint:
+                raise SubmissionError(
+                    "--bm25-index dataset_fingerprint does not match --release-lock"
+                )
+            service = RetrievalService(index)
+            questions = load_raw_questions(args.questions_path)
+            row_fusion = _build_row_fusion(args, release)
+            if row_fusion is None:
+                raise SubmissionError(
+                    f"không tìm thấy row index tại {args.bm25_index.parent}/"
+                    f"{args.bm25_index.name}_row -- không thể sinh ứng viên dòng"
+                )
+
+            args.output_dir.mkdir(parents=True, exist_ok=True)
+            written = 0
+            for batch_number, start in enumerate(range(0, len(questions), args.batch_size)):
+                chunk = questions[start : start + args.batch_size]
+                lines: list[str] = []
+                for raw_question in chunk:
+                    retrieved = retrieve_candidate_table_ids(
+                        raw_question.question, service, k=args.k
+                    )
+                    fused = row_fusion.retrieve_rows(
+                        raw_question.question,
+                        candidate_table_ids=retrieved,
+                        k=args.rows_per_question,
+                    ).results
+                    payload = build_batch_payload(
+                        raw_question.id, raw_question.question, fused
+                    )
+                    lines.append(json.dumps(payload, ensure_ascii=False))
+                    written += 1
+                target = args.output_dir / f"batch_{batch_number:03d}.jsonl"
+                target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            print(f"đã ghi {written} câu vào {args.output_dir}")
             return 0
         if args.command == "validate":
             report_payload = json.loads(args.report_path.read_text(encoding="utf-8"))
