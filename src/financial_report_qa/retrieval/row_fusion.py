@@ -36,6 +36,16 @@ from financial_report_qa.retrieval.row_lexical import (
 )
 from financial_report_qa.retrieval.row_service import RowRetrievalService
 
+# Single source of truth for "how many row candidates per question" so the
+# `submission export` and `submission row-batches` CLI commands can never
+# independently drift apart. If an LLM decision file was produced by
+# `row-batches` (which asks for this many candidates), it may contain
+# `chosen_index` values up to this count - 1. `export`'s row-fusion call must
+# request the same count, or indices from the decision file would look
+# "out of range" against export's shorter candidate list and silently fall
+# back to a worse (rank-1) choice instead of the LLM's actual pick.
+DEFAULT_ROW_CANDIDATE_COUNT = 20
+
 
 @dataclass(frozen=True)
 class _BranchHit:

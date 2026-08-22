@@ -31,6 +31,7 @@ from financial_report_qa.planning.row_choice_batch import build_batch_payload
 from financial_report_qa.retrieval.index import load_bm25_index
 from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
 from financial_report_qa.retrieval.release import resolve_retrieval_release
+from financial_report_qa.retrieval.row_fusion import DEFAULT_ROW_CANDIDATE_COUNT
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.compliance import check_bundle
 from financial_report_qa.submission.contracts import SubmissionExportReport
@@ -144,7 +145,14 @@ def _parser() -> argparse.ArgumentParser:
     batches.add_argument("--output-dir", type=Path, required=True)
     batches.add_argument("--k", type=int, default=10, help="Số bảng ứng viên mỗi câu.")
     batches.add_argument(
-        "--rows-per-question", type=int, default=20, help="Số dòng ứng viên mỗi câu."
+        "--rows-per-question",
+        type=int,
+        # Must match `export`'s row-fusion `k` (DEFAULT_ROW_CANDIDATE_COUNT):
+        # LLM decision files built from these batches carry `chosen_index`
+        # values up to this count - 1, and `export` must retrieve at least
+        # as many row candidates or those indices will look out of range.
+        default=DEFAULT_ROW_CANDIDATE_COUNT,
+        help="Số dòng ứng viên mỗi câu.",
     )
     batches.add_argument("--batch-size", type=int, default=64, help="Số câu mỗi file batch.")
 

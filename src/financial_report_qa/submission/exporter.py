@@ -51,7 +51,10 @@ from financial_report_qa.planning.raw_metric_grounding import (
 from financial_report_qa.planning.table_context_rendering import render_table_context
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
 from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
-from financial_report_qa.retrieval.row_fusion import RowFusionService
+from financial_report_qa.retrieval.row_fusion import (
+    DEFAULT_ROW_CANDIDATE_COUNT,
+    RowFusionService,
+)
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.backstop_answer import build_backstop_item
 from financial_report_qa.submission.citation_summary import (
@@ -205,8 +208,15 @@ def _run_one_question(
     # Evidence-aware planner: run row fusion to get ranked rows for downstream
     # tiers. When row_fusion is None (backward compatible), fusion_rows stays
     # empty and all tiers fall back to their existing unranked behavior.
+    # `k` must match `submission row-batches --rows-per-question`'s default
+    # (DEFAULT_ROW_CANDIDATE_COUNT): an LLM decision file produced by
+    # `row-batches` may reference `chosen_index` values up to that count - 1,
+    # and if this candidate list were shorter, those indices would look
+    # "out of range" here and silently fall back to a worse rank-1 choice.
     fusion_rows = (
-        row_fusion.retrieve_rows(question, candidate_table_ids=retrieved).results
+        row_fusion.retrieve_rows(
+            question, candidate_table_ids=retrieved, k=DEFAULT_ROW_CANDIDATE_COUNT
+        ).results
         if row_fusion is not None
         else ()
     )

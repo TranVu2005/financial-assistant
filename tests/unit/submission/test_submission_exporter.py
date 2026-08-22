@@ -29,6 +29,7 @@ from financial_report_qa.retrieval.contracts import (
     TableMetadata,
 )
 from financial_report_qa.retrieval.index import build_bm25_index
+from financial_report_qa.retrieval.row_fusion import DEFAULT_ROW_CANDIDATE_COUNT
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.contracts import RawQuestion
 from financial_report_qa.submission.exporter import (
@@ -910,7 +911,9 @@ def test_export_submission_with_row_fusion(tmp_path: Path) -> None:
 
     # Verify retrieve_rows was called exactly once on our mock
     mock_fusion.retrieve_rows.assert_called_once_with(
-        unsupported_question.question, candidate_table_ids=(TABLE_ID,)
+        unsupported_question.question,
+        candidate_table_ids=(TABLE_ID,),
+        k=DEFAULT_ROW_CANDIDATE_COUNT,
     )
 
 
