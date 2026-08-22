@@ -437,15 +437,20 @@ def _bound_row(
     value: str,
     period: int,
     column_label: str | None = None,
+    row_label_canonical: str | None = "cash_and_cash_equivalents",
+    row_label_raw: str = "Tien mat",
 ) -> dict[str, object]:
-    # Decoy labels: they deliberately do NOT match the selector's metric, so
-    # any query that still resolves by label finds nothing and the test fails.
+    # Spec 2026-08-21 §5.2: the rendered predicate is semantic first -- the
+    # frame row must carry the label the selector names, and `row_idx` only
+    # breaks ties between same-label duplicates. A row with the right
+    # position but the wrong label must therefore never satisfy the query;
+    # pass mismatched labels to assert exactly that.
     row = _row(
         value=value,
         period=period,
         column_label=column_label,
-        row_label_canonical="revenue",
-        row_label_raw="Doanh thu",
+        row_label_canonical=row_label_canonical,
+        row_label_raw=row_label_raw,
     )
     row["table_id"] = table_id
     row["row_idx"] = row_idx
@@ -453,8 +458,10 @@ def _bound_row(
 
 
 def test_render_position_bound_lookup_uses_df_loc_on_the_row_index() -> None:
-    """plan.md §14: a grounded plan extracts by position -- `df.loc[row, col]`
-    -- and never re-runs label matching inside Pandas."""
+    """Spec 2026-08-21 §5.2: a grounded plan still renders through
+    `df.loc[...]`, but the semantic row label now leads the predicate --
+    it states which metric the answer reads -- while `table_id`/`row_idx`
+    ride along only to break ties between same-label duplicate rows."""
     plan = FinancialQueryPlan(
         operation="lookup",
         companies=("ACB",),
@@ -466,12 +473,17 @@ def test_render_position_bound_lookup_uses_df_loc_on_the_row_index() -> None:
     )
     query = render_pandas_query(plan)
     assert "df1.loc[" in query
+    assert '(df1.row_label_canonical == "cash_and_cash_equivalents")' in query
     assert "df1.row_idx == 14" in query
-    assert "row_label_canonical" not in query
-    assert "row_label_raw" not in query
+    # Semantics carry the meaning; position follows as the tie-break.
+    assert query.index("row_label_canonical") < query.index("row_idx")
 
 
 def test_replay_position_bound_lookup_returns_the_grounded_cell() -> None:
+    """Spec 2026-08-21 §5.2: label semantics select the metric row, `row_idx`
+    breaks the tie between its duplicate-label rows -- and a cell at the
+    very same position with a different label must never satisfy the query
+    (that is the observable difference from the old pure-position shape)."""
     plan = FinancialQueryPlan(
         operation="lookup",
         companies=("ACB",),
@@ -483,6 +495,8 @@ def test_replay_position_bound_lookup_returns_the_grounded_cell() -> None:
     )
     frame = _frame(
         [
+            # Right position, wrong metric: only the semantic clause rejects it.
+            _bound_row(row_idx=14, value="999", period=2023, row_label_canonical="total_assets"),
             _bound_row(row_idx=3, value="100", period=2023),
             _bound_row(row_idx=14, value="900", period=2023),
         ]
@@ -491,6 +505,9 @@ def test_replay_position_bound_lookup_returns_the_grounded_cell() -> None:
 
 
 def test_replay_position_bound_difference_selects_both_periods_by_position() -> None:
+    """Spec 2026-08-21 §5.2: the label clause resolves the metric row; the
+    positional clauses only pick which of its duplicate-label rows and
+    which period each operand reads."""
     plan = FinancialQueryPlan(
         operation="difference",
         companies=("ACB",),
@@ -510,6 +527,8 @@ def test_replay_position_bound_difference_selects_both_periods_by_position() -> 
 
 
 def test_replay_position_bound_average_aggregates_over_periods() -> None:
+    """Spec 2026-08-21 §5.2: aggregation over a bound row still filters by
+    the semantic label first; `row_idx`/period narrow within it."""
     plan = FinancialQueryPlan(
         operation="average",
         companies=("ACB",),
@@ -530,7 +549,8 @@ def test_replay_position_bound_average_aggregates_over_periods() -> None:
 
 def test_replay_position_bound_query_keeps_the_column_predicate() -> None:
     """A row is not a cell: the PC1 tax note puts four amounts on one row, two
-    of which resolve to the same period. The grounded column still narrows."""
+    of which resolve to the same period. The grounded column still narrows,
+    on top of the semantic label clause (spec 2026-08-21 §5.2)."""
     plan = FinancialQueryPlan(
         operation="lookup",
         companies=("ACB",),
@@ -552,3 +572,29 @@ def test_replay_position_bound_query_keeps_the_column_predicate() -> None:
         ]
     )
     assert replay_pandas_query(query, frame) == Decimal("70")
+
+
+def test_position_bound_predicate_keeps_the_semantic_row_label() -> None:
+    """Spec 2026-08-21 §5.2: `row_idx` chỉ phá thế hoà, không thay ngữ nghĩa.
+
+    Một query thuần toạ độ không giải trình được nó lấy đúng chỉ tiêu nào.
+    """
+    from financial_report_qa.execution.pandas_query import render_pandas_query
+    from financial_report_qa.planning.plan_contracts import (
+        FinancialQueryPlan,
+        MetricSelector,
+    )
+
+    table_id = "tbl_" + "a" * 64
+    plan = FinancialQueryPlan(
+        operation="lookup",
+        companies=("ACB",),
+        periods=("2023",),
+        candidate_table_ids=(table_id,),
+        metric=MetricSelector(raw_text="Doanh thu thuần", table_id=table_id, row_index=4),
+    )
+    query = render_pandas_query(plan)
+
+    assert 'row_label_raw == "Doanh thu thuần"' in query
+    assert "row_idx == 4" in query
+    assert f'table_id == "{table_id}"' in query

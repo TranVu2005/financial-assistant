@@ -933,8 +933,8 @@ def test_export_submission_semantic_grounding_recovery(tmp_path: Path) -> None:
 
     release_dir = _write_release(tmp_path)
 
-    # We want rule planner to abstain (by passing a question that metric parser cannot canonically map)
-    # so that LLM cell grounding gets invoked.
+    # We want rule planner to abstain (by passing a question that metric
+    # parser cannot canonically map) so that LLM cell grounding gets invoked.
     unsupported_question = RawQuestion(
         id=11, question="Tra cứu chỉ số không rõ ràng của ACB năm 2023."
     )
@@ -1107,7 +1107,11 @@ def test_export_submission_grounds_the_rule_plan_to_the_retrieved_row_position(
     assert report.answered_count == 1
     assert items[0].answer == 900.0
     assert "df1.loc[" in items[0].pandas_query
-    assert "row_label" not in items[0].pandas_query
+    # Spec 2026-08-21 §5.2: position binding no longer strips the semantic
+    # label from the predicate -- the label names the metric, `row_idx` only
+    # breaks the tie between these two identically-labelled rows (0: 100,
+    # 1: 900).
+    assert 'df1.row_label_canonical == "net_revenue"' in items[0].pandas_query
 
 
 def _evidence_planner_fusion(row_idx: int = 0) -> object:

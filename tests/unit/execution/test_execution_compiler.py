@@ -1006,11 +1006,12 @@ def test_planners_propagate_expected_unit() -> None:
 def test_compile_plan_position_bound_selector_resolves_a_row_label_collision(
     tmp_path: Path,
 ) -> None:
-    """plan.md §9/§14 end to end: two rows share one label and disagree, which
-    an unbound plan can only report as `cell_ambiguous`. Grounding pins the
-    row, and the compiler extracts it positionally -- and the replay of the
-    rendered `df.loc[...]` string must agree, which is the real proof that
-    no semantic matching is left anywhere in the execution path."""
+    """Spec 2026-08-21 §5.2/§7.1 end to end: two rows share one label and
+    disagree, which an unbound plan can only report as `cell_ambiguous`.
+    Grounding pins the row, the rendered query names the metric label and
+    uses `row_idx` only to break this duplicate-label tie, and the replay of
+    the rendered `df.loc[...]` string -- against a frame carrying the real
+    corpus labels -- must agree with the compiled answer."""
     cells = [
         _cell(
             "cell_" + "a" * 64,
@@ -1056,7 +1057,11 @@ def test_compile_plan_position_bound_selector_resolves_a_row_label_collision(
     assert result.status == "answered"
     assert result.answer == Decimal("900")
     assert "df1.loc[" in result.pandas_query
-    assert "row_label" not in result.pandas_query
+    assert 'df1.row_label_canonical == "cash_and_cash_equivalents"' in result.pandas_query
     assert result.evidence[0].row_index == 14
     assert result.replay_rows[0].row_index == 14
     assert result.replay_rows[0].table_id == TABLE_ID
+    # Replay rows carry corpus labels, never selector text: this selector has
+    # no raw_text at all, yet the frame row it selected does.
+    assert result.replay_rows[0].row_label_canonical == "cash_and_cash_equivalents"
+    assert result.replay_rows[0].row_label_raw == "Tien mat"

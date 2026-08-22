@@ -48,7 +48,7 @@ _ALLOWED_ATTRS = frozenset(
         "column_label",
         "period",
         "value",
-        # plan.md §14 positional extraction.
+        # Spec 2026-08-21 §5.2: position breaks ties between same-label rows.
         "table_id",
         "row_idx",
     }
@@ -86,16 +86,20 @@ def _metric_column_and_value(selector: MetricSelector) -> tuple[str, str]:
 
 
 def _position_clauses(selector: MetricSelector) -> list[str]:
-    """plan.md §14: the predicate for a grounded selector -- position only.
+    """Spec 2026-08-21 §5.2: ngữ nghĩa mang ý nghĩa, vị trí chỉ phá thế hoà.
 
-    No `row_label_*` clause appears at all, which is the observable difference
-    the design asks for: semantic matching happened during grounding, and the
-    rendered query is pure deterministic extraction. `column_label` survives
-    because a row is not a cell -- Vietnamese note tables routinely put four
-    amounts on one row, two of which resolve to the same period.
+    Phần `row_label_*` là thứ khiến truy vấn giải trình được -- nó nói rõ câu
+    trả lời lấy từ chỉ tiêu nào. `table_id`/`row_idx` đi kèm để phá thế hoà
+    giữa các dòng trùng nhãn (đo được 4.37% dòng trùng nhãn khác giá trị, do
+    OCR lặp dòng), chứ không thay thế phần ngữ nghĩa.
+
+    Bản trước đây bỏ hẳn nhãn và viện dẫn "plan.md §14"; §14 của `plan.md`
+    hiện tại là "Rủi ro lịch trình và phương án cắt giảm" -- tham chiếu treo.
     """
     assert selector.table_id is not None and selector.row_index is not None
+    column, value = _metric_column_and_value(selector)
     clauses = [
+        f"(df1.{column} == {_lit(value)})",
         f"(df1.table_id == {_lit(selector.table_id)})",
         f"(df1.row_idx == {int(selector.row_index)})",
     ]

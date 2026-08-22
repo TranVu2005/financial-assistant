@@ -68,21 +68,64 @@ def _require(result: LocateResult) -> CellMatch:
     return result.match
 
 
+def _corpus_labels(frame: pd.DataFrame, cell: CellMatch) -> dict[str, str | None]:
+    """Labels for one replay row, read off the corpus row `locate()` selected.
+
+    `CellMatch` carries `table_id`/`row_index`/`column_label` but no row
+    labels (contracts.py), so the row labels are recovered from the frame --
+    `cell_ids[0]`, the same representative row the match's `table_id`/
+    `row_index` were read from. Echoing `selector.raw_text` here instead made
+    the internal replay self-match: the query filtered on the very string the
+    compiler had just written into its own frame, while the real corpus frame
+    replayed at `exporter._real_table_evidence_rows` carries real labels, so
+    the same query died there as `query_rejected` (measured 18/87 cases).
+    Spec 2026-08-21 §5.2/§7.1: the replay frame must be evidence, not an echo.
+    """
+    labels: dict[str, str | None] = {
+        "row_label_raw": None,
+        "row_label_canonical": None,
+        "column_label": cell.column_label,
+    }
+    rows = frame[frame["cell_id"] == cell.cell_ids[0]]
+    if rows.empty:
+        return labels
+
+    def _optional_str(value: object) -> str | None:
+        return value if isinstance(value, str) and value.strip() else None
+
+    first = rows.iloc[0]
+    labels["row_label_raw"] = _optional_str(first["row_label_raw"])
+    labels["row_label_canonical"] = _optional_str(first["row_label_canonical"])
+    return labels
+
+
 def _replay_row(
-    *, company_code: str, selector: MetricSelector, period: int, value: Decimal
+    *,
+    company_code: str,
+    selector: MetricSelector,
+    period: int,
+    value: Decimal,
+    row_label_raw: str | None = None,
+    row_label_canonical: str | None = None,
+    column_label: str | None = None,
 ) -> dict[str, object]:
+    """Một dòng của frame replay nội bộ.
+
+    Nhãn phải là nhãn **thật của corpus** (`CellMatch`), không phải
+    `selector.raw_text`. Dựng từ selector khiến replay nội bộ tự khớp: query
+    lọc đúng chuỗi mà chính nó vừa ghi vào frame. Frame corpus thật ở
+    `exporter._real_table_evidence_rows` mang nhãn thật, nên cái tự khớp đó
+    biến thành `query_rejected` (đo được 18/87 ca).
+    """
     return {
         "company_code": company_code,
-        "row_label_canonical": selector.canonical,
-        "row_label_raw": selector.raw_text,
-        "column_label": selector.column_text,
+        "row_label_canonical": (
+            row_label_canonical if row_label_canonical is not None else selector.canonical
+        ),
+        "row_label_raw": row_label_raw if row_label_raw is not None else selector.raw_text,
+        "column_label": column_label if column_label is not None else selector.column_text,
         "period": period,
         "value": value,
-        # plan.md §14: the replay frame must carry whatever the rendered
-        # query reads. A position-bound selector renders `df.loc[(df1.table_id
-        # == ...) & (df1.row_idx == ...)]`, so those columns have to exist in
-        # `df1` -- otherwise the sandbox replay fails on a column it was
-        # itself asked to filter by.
         "table_id": selector.table_id,
         "row_idx": selector.row_index,
     }
@@ -277,7 +320,13 @@ def _dispatch(
         cell = _cell(plan.metric, period, company_code=company)
         answer, unit = operations.compile_lookup(cell)
         rows = [
-            _replay_row(company_code=company, selector=plan.metric, period=period, value=answer)
+            _replay_row(
+                company_code=company,
+                selector=plan.metric,
+                period=period,
+                value=answer,
+                **_corpus_labels(frame, cell),
+            )
         ]
         return (cell,), rows, answer, unit
 
@@ -297,9 +346,14 @@ def _dispatch(
                 selector=plan.metric,
                 period=start_period,
                 value=start_converted,
+                **_corpus_labels(frame, start),
             ),
             _replay_row(
-                company_code=company, selector=plan.metric, period=end_period, value=end.value
+                company_code=company,
+                selector=plan.metric,
+                period=end_period,
+                value=end.value,
+                **_corpus_labels(frame, end),
             ),
         ]
         return (start, end), rows, answer, unit
@@ -311,13 +365,18 @@ def _dispatch(
         answer, unit = operations.compile_compare(metric_a, metric_b)
         rows = [
             _replay_row(
-                company_code=company, selector=plan.metric_a, period=period, value=metric_a.value
+                company_code=company,
+                selector=plan.metric_a,
+                period=period,
+                value=metric_a.value,
+                **_corpus_labels(frame, metric_a),
             ),
             _replay_row(
                 company_code=company,
                 selector=plan.metric_b,
                 period=period,
                 value=_reconvert(metric_b, metric_a.unit),
+                **_corpus_labels(frame, metric_b),
             ),
         ]
         return (metric_a, metric_b), rows, answer, unit
@@ -330,13 +389,18 @@ def _dispatch(
         answer, unit = operations.compile_compare_companies(cell_a, cell_b)
         rows = [
             _replay_row(
-                company_code=company_a, selector=plan.metric, period=period, value=cell_a.value
+                company_code=company_a,
+                selector=plan.metric,
+                period=period,
+                value=cell_a.value,
+                **_corpus_labels(frame, cell_a),
             ),
             _replay_row(
                 company_code=company_b,
                 selector=plan.metric,
                 period=period,
                 value=_reconvert(cell_b, cell_a.unit),
+                **_corpus_labels(frame, cell_b),
             ),
         ]
         return (cell_a, cell_b), rows, answer, unit
@@ -356,12 +420,14 @@ def _dispatch(
                 selector=plan.numerator_metric,
                 period=period,
                 value=numerator.value,
+                **_corpus_labels(frame, numerator),
             ),
             _replay_row(
                 company_code=company,
                 selector=plan.denominator_metric,
                 period=period,
                 value=_reconvert(denominator, numerator.unit),
+                **_corpus_labels(frame, denominator),
             ),
         ]
         return (numerator, denominator), rows, answer, unit
@@ -383,6 +449,7 @@ def _dispatch(
                     selector=plan.metric,
                     period=period,
                     value=_reconvert(cell, target_unit),
+                    **_corpus_labels(frame, cell),
                 )
                 for c, cell in zip(plan.companies, cells, strict=True)
             ]
@@ -397,6 +464,7 @@ def _dispatch(
                     selector=plan.metric,
                     period=int(p),
                     value=_reconvert(cell, target_unit),
+                    **_corpus_labels(frame, cell),
                 )
                 for p, cell in zip(plan.periods, cells, strict=True)
             ]
@@ -418,6 +486,7 @@ def _dispatch(
                 selector=plan.metric,
                 period=period,
                 value=_reconvert(cell, target_unit),
+                **_corpus_labels(frame, cell),
             )
             for c, cell in zip(plan.companies, cells, strict=True)
         ]
