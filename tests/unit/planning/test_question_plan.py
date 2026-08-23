@@ -247,3 +247,57 @@ def test_load_decisions_accepts_an_empty_file_without_raising(tmp_path: Path) ->
     path = tmp_path / "empty.jsonl"
     path.write_text("", encoding="utf-8")
     assert load_decisions(path) == {}
+
+
+def test_lookup_on_a_multi_period_question_degrades_instead_of_vanishing() -> None:
+    """Một quyết định `lookup` sai arity phải hạ cấp, không được biến mất.
+
+    `_construct` từ chối `lookup` khi câu có 2 kỳ (plan_validator: lookup =
+    1 công ty + 1 kỳ). Bản đầu chặn đường hạ cấp bằng
+    `if operation == "lookup": return None`, nên câu hỏi mất hẳn thay vì trả
+    lời kỳ đầu tiên. Đo trên lần export thật: 264/322 ca `plan_not_assembled`
+    có đủ công ty lẫn kỳ và đều mang đúng hình dạng này -- 129 ca là
+    `(lookup, 1 công ty, 2 kỳ)`.
+    """
+    entities = _entities("Doanh thu thuần của ACB năm 2022 và năm 2023 là bao nhiêu tỷ đồng?")
+    assert len(entities.periods) == 2
+    plan = assemble_plan(
+        entities,
+        RowChoiceDecision(question_id=1, operation="lookup", chosen=(0,)),
+        (_candidate(1),),
+        (TABLE_A,),
+    )
+    assert plan is not None
+    assert plan.operation == "lookup"
+    assert plan.periods == ("2022",)
+
+
+def test_lookup_on_a_multi_company_question_degrades_instead_of_vanishing() -> None:
+    """Cùng lý do, chiều công ty: 39 ca `(lookup, 2 công ty, 1 kỳ)` đo được."""
+    entities = _entities("Doanh thu thuần của VIC, VHM và VRE năm 2023 là bao nhiêu tỷ đồng?")
+    assert len(entities.company_codes) >= 2
+    plan = assemble_plan(
+        entities,
+        RowChoiceDecision(question_id=2, operation="lookup", chosen=(0,)),
+        (_candidate(1),),
+        (TABLE_A,),
+    )
+    assert plan is not None
+    assert plan.operation == "lookup"
+    assert len(plan.companies) == 1
+
+
+def test_a_minimal_lookup_that_cannot_construct_still_returns_none() -> None:
+    """Hạ cấp chỉ có nghĩa khi nó thực sự cắt bớt được gì đó.
+
+    Câu đã là 1 công ty + 1 kỳ thì bản hạ cấp giống hệt bản vừa thất bại --
+    phải trả `None` chứ không thử lại y nguyên.
+    """
+    entities = _entities("Tra cứu doanh thu thuần của ACB năm 2023.")
+    plan = assemble_plan(
+        entities,
+        RowChoiceDecision(question_id=3, operation="lookup", chosen=(0,)),
+        (_candidate(1, label="   "),),  # nhãn rỗng -> không dựng nổi selector
+        (TABLE_A,),
+    )
+    assert plan is None

@@ -264,10 +264,22 @@ def assemble_plan(
     plan = _construct(operation, entities, picks, candidate_table_ids, effective.top_k)
     if plan is not None:
         return plan
-    if operation == "lookup":
-        return None
 
     # Hạ cấp: một công ty, một kỳ, dòng đầu tiên LLM đã chọn.
+    #
+    # Áp dụng cả khi `operation` ĐÃ là `lookup`. `lookup` chỉ hợp lệ với đúng
+    # một công ty và một kỳ (`plan_validator`), nên một quyết định `lookup`
+    # trên câu nhiều công ty/kỳ bị `_construct` từ chối -- và bản đầu chặn
+    # đường hạ cấp ở đây bằng `if operation == "lookup": return None`, làm câu
+    # hỏi biến mất thay vì trả lời chiều đầu tiên. Đo trên lần export thật:
+    # 264/322 ca `plan_not_assembled` có đủ công ty lẫn kỳ, và mọi ca trong đó
+    # đều mang hình dạng này (129 ca `1 công ty × 2 kỳ`, 39 ca `2 công ty × 1
+    # kỳ`, phần còn lại nhiều công ty hơn).
+    #
+    # Hạ cấp chỉ có nghĩa khi nó thật sự cắt bớt được gì đó: một `lookup` đã
+    # tối giản mà vẫn hỏng thì bản hạ cấp giống hệt bản vừa thất bại.
+    if operation == "lookup" and len(entities.company_codes) <= 1 and len(entities.periods) <= 1:
+        return None
     trimmed = entities.model_copy(
         update={"company_codes": entities.company_codes[:1], "periods": entities.periods[:1]}
     )
