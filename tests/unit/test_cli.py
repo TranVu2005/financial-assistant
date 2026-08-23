@@ -40,6 +40,39 @@ def test_inventory_data_forwards_arguments() -> None:
     assert received == ["--root", "data/raw/vifinqa"]
 
 
+def test_export_tables_forwards_arguments_and_propagates_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dispatcher must hand raw arguments to the export CLI untouched."""
+    import financial_report_qa.export.cli as export_cli
+
+    received: list[str] = []
+
+    def fake_export_main(argv: Sequence[str] | None = None) -> int:
+        received.extend(argv or ())
+        return 7
+
+    monkeypatch.setattr(export_cli, "main", fake_export_main)
+
+    exit_code = main(
+        [
+            "export-tables",
+            "--release-dir",
+            "data/release/example",
+            "--snapshot-root",
+            "data/raw/vifinqa",
+        ]
+    )
+
+    assert exit_code == 7
+    assert received == [
+        "--release-dir",
+        "data/release/example",
+        "--snapshot-root",
+        "data/raw/vifinqa",
+    ]
+
+
 def test_retrieval_cli_does_not_hide_unexpected_programming_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

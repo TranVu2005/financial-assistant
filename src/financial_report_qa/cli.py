@@ -49,6 +49,11 @@ def _parser() -> argparse.ArgumentParser:
         add_help=False,
         help="Export and validate the Dashboard submission ZIP (Day 22).",
     )
+    commands.add_parser(
+        "export-tables",
+        add_help=False,
+        help="Export normalized CSV tables and rewrite source text with CSV links.",
+    )
     return parser
 
 
@@ -81,6 +86,10 @@ def main(
         from financial_report_qa.submission.cli import main as submission_main
 
         return submission_main(remaining)
+    if parsed.command == "export-tables":
+        from financial_report_qa.export.cli import main as export_main
+
+        return export_main(remaining)
     raise AssertionError("argparse accepted an unknown command")
 
 
