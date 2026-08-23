@@ -413,3 +413,101 @@ def test_backstop_answer_replays_from_its_own_csv(release_dir, sample_table_ids)
 
     violations = check_item(item, frame, timeout_seconds=5)
     assert violations == (), f"backstop vẫn vi phạm: {violations}"
+
+
+def test_backstop_answers_from_the_row_the_offline_decision_chose(tmp_path: Path) -> None:
+    """The decision already names a row -- discarding it is the biggest single
+    loss in the pipeline.
+
+    This tier handles 823/1012 questions, and it used to pick whichever row
+    `_uniquely_addressable_row` happened to find first in the first candidate
+    table, ignoring the metric, the period, and the row Qwen3 selected.
+    Measured over those 823: 404 have a cell at the chosen row *at the exact
+    period the question asks for*, and another 304 have one at a different
+    period. Answering from an arbitrary row instead is throwing that away.
+    """
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=10, question="Chi phí của ACB năm 2023 là bao nhiêu?")
+
+    # Without a hint the arbitrary picker takes row 0 ("Doanh thu" = 1000).
+    baseline, _ = build_backstop_item(question, [TABLE_ID], release_dir)
+    assert baseline.answer == 1000.0
+
+    item, _rows = build_backstop_item(
+        question,
+        [TABLE_ID],
+        release_dir,
+        preferred_row=(TABLE_ID, 1),
+        preferred_period=2023,
+    )
+    assert item.answer == 200.0
+
+
+def test_backstop_preferred_row_query_pins_the_position_and_replays(tmp_path: Path) -> None:
+    """The preferred row carries no uniqueness guarantee of its own.
+
+    `_uniquely_addressable_row` only ever returns cells whose
+    `(row_label_raw, column_label, period)` is unique within the table, so its
+    query needs no position. A decision-chosen row has no such promise (4.37%
+    of rows share a label), so the query must pin `row_idx` or `.iloc[0]` can
+    replay to a different cell than the one packaged.
+    """
+    import pandas as pd
+
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=11, question="Chi phí của ACB năm 2023 là bao nhiêu?")
+
+    item, rows = build_backstop_item(
+        question,
+        [TABLE_ID],
+        release_dir,
+        preferred_row=(TABLE_ID, 1),
+        preferred_period=2023,
+    )
+    assert "row_idx == 1" in item.pandas_query
+
+    frame = pd.DataFrame(list(rows))
+    frame["period"] = frame["period"].astype("Int64")
+    result = replay_in_sandbox(item.pandas_query, frame, timeout_seconds=5.0)
+    assert result.error_code is None
+    assert result.value is not None
+    assert float(result.value) == item.answer
+
+
+def test_backstop_uses_another_period_at_the_chosen_row_when_the_asked_one_is_absent(
+    tmp_path: Path,
+) -> None:
+    """A missing period must not send the answer back to an unrelated row.
+
+    Measured: 304 of the 823 backstopped questions have a cell at the chosen
+    row but not at the requested period. The chosen row is still by far the
+    best evidence available for those -- an abstention and a wrong answer both
+    score 0, so falling back to the same row's other period strictly dominates
+    falling back to a different row entirely.
+    """
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=12, question="Chi phí của ACB năm 2099 là bao nhiêu?")
+
+    item, _rows = build_backstop_item(
+        question,
+        [TABLE_ID],
+        release_dir,
+        preferred_row=(TABLE_ID, 1),
+        preferred_period=2099,
+    )
+    assert item.answer == 200.0
+
+
+def test_backstop_ignores_an_unusable_preferred_row(tmp_path: Path) -> None:
+    """A hint that cannot be resolved must degrade to the old behaviour, not fail."""
+    release_dir = _write_release(tmp_path)
+    question = RawQuestion(id=13, question="Câu hỏi không xác định được.")
+
+    item, _rows = build_backstop_item(
+        question,
+        [TABLE_ID],
+        release_dir,
+        preferred_row=(TABLE_ID, 999),  # no such row
+        preferred_period=2023,
+    )
+    assert item.answer == 1000.0

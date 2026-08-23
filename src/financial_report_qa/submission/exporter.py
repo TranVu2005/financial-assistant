@@ -228,12 +228,18 @@ def _run_one_question(
     # Scope narrowing runs before fusion on purpose (see
     # `_scope_candidate_tables`): fusion must not spend the decision's single
     # pick on a row the compiler is going to drop for its document's scope.
+    #
+    # It is deliberately a SEPARATE name from `retrieved`. Retrieval is scored
+    # on its own at 50% weight with a recall-favouring F2, and `relevant_docs`/
+    # `relevant_tables` below are built from `retrieved` -- narrowing that list
+    # would hand back retrieval score to buy answer score. Only the answering
+    # path sees the narrowed set.
     entities = parse_query_entities(question)
-    retrieved = _scope_candidate_tables(release_dir, retrieved, entities, execution_settings)
+    answerable = _scope_candidate_tables(release_dir, retrieved, entities, execution_settings)
 
     fusion_rows = (
         row_fusion.retrieve_rows(
-            question, candidate_table_ids=retrieved, k=DEFAULT_ROW_CANDIDATE_COUNT
+            question, candidate_table_ids=answerable, k=DEFAULT_ROW_CANDIDATE_COUNT
         ).results
         if row_fusion is not None
         else ()
@@ -247,7 +253,7 @@ def _run_one_question(
         entities=entities,
         decision=(row_decisions or {}).get(raw_question.id),
         fusion_rows=fusion_rows,
-        candidate_table_ids=retrieved,
+        candidate_table_ids=answerable,
         release_dir=release_dir,
         execution_settings=execution_settings,
     )
@@ -355,6 +361,44 @@ def _run_one_question(
     )
 
 
+def _decision_row_hint(
+    raw_question: RawQuestion,
+    retrieved: Sequence[str],
+    release_dir: Path,
+    *,
+    execution_settings: ExecutionSettings,
+    row_fusion: RowFusionService | None,
+    row_decisions: Mapping[int, RowChoiceDecision] | None,
+) -> tuple[tuple[str, int] | None, int | None]:
+    """`((table_id, row_idx), period)` that the offline decision points at.
+
+    The backstop tier answers 823/1012 questions, and until now it ignored the
+    decision entirely -- it took whichever row `_uniquely_addressable_row`
+    found first in the first candidate table. Measured over those 823: 404 have
+    a cell at the decision's row *at the exact period asked*, 304 more have one
+    at another period. Recovering that hint is worth more than every gate fix
+    in this pipeline combined.
+    """
+    if not retrieved or row_fusion is None:
+        return None, None
+    entities = parse_query_entities(raw_question.question)
+    answerable = _scope_candidate_tables(
+        release_dir, tuple(retrieved), entities, execution_settings
+    )
+    fusion_rows = row_fusion.retrieve_rows(
+        raw_question.question, candidate_table_ids=answerable, k=DEFAULT_ROW_CANDIDATE_COUNT
+    ).results
+    if not fusion_rows:
+        return None, None
+    decision = (row_decisions or {}).get(raw_question.id)
+    index = decision.chosen[0] if decision is not None and decision.chosen else 0
+    if not 0 <= index < len(fusion_rows):
+        index = 0
+    pick = fusion_rows[index]
+    period = int(entities.periods[0]) if entities.periods else None
+    return (pick.table_id, pick.row_idx), period
+
+
 def _apply_backstop(
     raw_question: RawQuestion,
     service: RetrievalService,
@@ -362,6 +406,9 @@ def _apply_backstop(
     *,
     k: int,
     outcome: QuestionOutcome,
+    execution_settings: ExecutionSettings,
+    row_fusion: RowFusionService | None = None,
+    row_decisions: Mapping[int, RowChoiceDecision] | None = None,
 ) -> tuple[QuestionOutcome, SubmissionItem, tuple[CsvRow, ...]]:
     """Day 23 full-coverage strategy tier 4: `outcome` already failed every
     reasoning tier -- fill the gap with `backstop_answer.build_backstop_item`
@@ -369,9 +416,28 @@ def _apply_backstop(
     §2.4 rule 1: a single missing id fails the *entire* ZIP). `stage`/`code`
     are carried over from `outcome` so the report still records *why*
     reasoning failed, distinct from a genuinely `"answered"` result.
+
+    `retrieved` stays the unnarrowed retrieval result: it feeds this item's
+    `relevant_docs`/`relevant_tables`, which are scored independently of
+    whether the answer is right. Only the row hint is computed from the
+    scope-narrowed set.
     """
     retrieved = retrieve_candidate_table_ids(raw_question.question, service, k=k)
-    item, rows = build_backstop_item(raw_question, retrieved, release_dir)
+    preferred_row, preferred_period = _decision_row_hint(
+        raw_question,
+        retrieved,
+        release_dir,
+        execution_settings=execution_settings,
+        row_fusion=row_fusion,
+        row_decisions=row_decisions,
+    )
+    item, rows = build_backstop_item(
+        raw_question,
+        retrieved,
+        release_dir,
+        preferred_row=preferred_row,
+        preferred_period=preferred_period,
+    )
     backstopped_outcome = QuestionOutcome.model_validate(
         {
             "id": outcome.id,
@@ -446,7 +512,14 @@ def export_submission(
         )
         if item is None and apply_backstop:
             outcome, item, rows = _apply_backstop(
-                raw_question, service, release_dir, k=k, outcome=outcome
+                raw_question,
+                service,
+                release_dir,
+                k=k,
+                outcome=outcome,
+                execution_settings=execution_settings,
+                row_fusion=row_fusion,
+                row_decisions=row_decisions,
             )
         outcomes.append(outcome)
         if outcome.stage is not None:

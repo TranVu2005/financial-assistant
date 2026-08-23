@@ -119,10 +119,52 @@ def _uniquely_addressable_row(table_frame: pd.DataFrame) -> pd.Series | None:
     return (unique if not unique.empty else usable).iloc[0]
 
 
+def _preferred_addressable_row(
+    table_frame: pd.DataFrame, row_idx: int, period: int | None
+) -> pd.Series | None:
+    """Ô tại đúng dòng mà quyết định offline đã chọn, hoặc `None`.
+
+    Tầng này xử lý 823/1012 câu, và trước đây nó bỏ qua hoàn toàn lựa chọn của
+    LLM: `_uniquely_addressable_row` lấy dòng đầu tiên định vị được trong bảng
+    ứng viên đầu tiên, không nhìn chỉ tiêu, không nhìn kỳ. Đo trên đúng 823 câu
+    đó: 404 câu có ô tại dòng LLM chọn **đúng kỳ được hỏi**, 304 câu nữa có ô
+    tại dòng đó nhưng khác kỳ. Trả lời bằng một dòng tùy tiện là vứt bỏ toàn bộ
+    thông tin ấy.
+
+    Ưu tiên đúng kỳ; không có thì lấy kỳ gần nhất **trên cùng dòng**. Sai kỳ và
+    bỏ trống đều bằng 0 điểm (Answer Accuracy tính trên tổng số câu), nên cùng
+    một dòng ở kỳ khác vẫn tốt hơn hẳn một dòng không liên quan.
+
+    Trả `None` khi bảng có < 2 ô numeric (Critical 1: CSV một dòng tái tạo đúng
+    hình dạng hardcode) hoặc dòng đó không có ô nào định vị được -- caller quay
+    về hành vi cũ.
+    """
+    if len(table_frame) < 2:
+        return None
+    usable = table_frame[
+        (table_frame["row_idx"] == row_idx)
+        & table_frame["period"].notna()
+        & table_frame["row_label_raw"].notna()
+        & table_frame["value"].notna()
+    ]
+    if usable.empty:
+        return None
+    if period is not None:
+        exact = usable[usable["period"] == period]
+        if not exact.empty:
+            return exact.iloc[0]
+        nearest = (usable["period"].astype(int) - period).abs().idxmin()
+        return usable.loc[nearest]
+    return usable.iloc[0]
+
+
 def build_backstop_item(
     raw_question: RawQuestion,
     candidate_table_ids: Sequence[str],
     release_dir: Path,
+    *,
+    preferred_row: tuple[str, int] | None = None,
+    preferred_period: int | None = None,
 ) -> tuple[SubmissionItem, tuple[CsvRow, ...]]:
     """Tầng cuối: luôn trả về `SubmissionItem` hợp lệ và HỢP QUY.
 
@@ -160,8 +202,23 @@ def build_backstop_item(
     chosen: pd.Series | None = None
     chosen_table_id: str | None = None
     frame: pd.DataFrame | None = None
+    used_preferred = False
     if ranked_table_ids:
         frame = build_cell_frame(release_dir, ranked_table_ids)
+        # Dòng quyết định offline đã chọn đi trước mọi thứ khác.
+        if preferred_row is not None and preferred_row[0] in ranked_table_ids:
+            preferred_table_id, preferred_row_idx = preferred_row
+            row = _preferred_addressable_row(
+                frame[frame["table_id"] == preferred_table_id],
+                preferred_row_idx,
+                preferred_period,
+            )
+            if row is not None:
+                chosen = row
+                chosen_table_id = preferred_table_id
+                used_preferred = True
+    if chosen is None and ranked_table_ids:
+        assert frame is not None
         for candidate_id in ranked_table_ids:
             row = _uniquely_addressable_row(frame[frame["table_id"] == candidate_id])
             if row is not None:
@@ -209,6 +266,13 @@ def build_backstop_item(
         f"(df1.row_label_raw == {json.dumps(str(chosen['row_label_raw']), ensure_ascii=False)})",
         f"(df1.period == {int(chosen['period'])})",
     ]
+    if used_preferred:
+        # `_uniquely_addressable_row` chỉ trả về ô có `(row_label_raw,
+        # column_label, period)` duy nhất trong bảng, nên query của nó không
+        # cần vị trí. Dòng do quyết định chọn không có bảo đảm đó (4.37% dòng
+        # trùng nhãn), nên phải ghim `row_idx` -- nếu không `.iloc[0]` có thể
+        # replay ra một ô khác ô đã đóng gói, và validator sẽ bác cả bài nộp.
+        clauses.append(f"(df1.row_idx == {int(chosen['row_idx'])})")
     if chosen["column_label"] is not None and not pd.isna(chosen["column_label"]):
         clauses.append(
             f"(df1.column_label == {json.dumps(str(chosen['column_label']), ensure_ascii=False)})"

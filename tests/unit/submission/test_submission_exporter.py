@@ -8,6 +8,7 @@ import json
 import zipfile
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import call
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -637,7 +638,7 @@ def test_export_submission_grounds_a_raw_label_metric(tmp_path: Path) -> None:
     service = RetrievalService(build_bm25_index((document,), dataset_fingerprint="f" * 64))
     question = RawQuestion(id=1, question="Lãi tiền gửi của ACB năm 2020 là bao nhiêu?")
 
-    from unittest.mock import MagicMock
+    from unittest.mock import MagicMock, call
 
     from financial_report_qa.retrieval.row_documents import RowMetadata
     from financial_report_qa.retrieval.row_fusion import RowFusionService
@@ -819,11 +820,20 @@ def test_export_submission_with_row_fusion(tmp_path: Path) -> None:
         row_fusion=mock_fusion,
     )
 
-    mock_fusion.retrieve_rows.assert_called_once_with(
+    # Twice, not once: the answering path fuses to plan the question, and the
+    # backstop tier fuses again to recover which row the offline decision
+    # chose (`_decision_row_hint`). Both calls carry identical arguments and
+    # fusion is deterministic, so the second is pure recomputation -- traded
+    # deliberately against threading the hint through `_run_one_question`'s
+    # five return paths, which would have been the riskier edit to make under
+    # a deadline. Worth revisiting if export wall-clock becomes the binding
+    # constraint.
+    expected_call = call(
         unsupported_question.question,
         candidate_table_ids=(TABLE_ID,),
         k=DEFAULT_ROW_CANDIDATE_COUNT,
     )
+    assert mock_fusion.retrieve_rows.call_args_list == [expected_call, expected_call]
 
 
 def test_export_submission_decoy_pick_fails_cleanly_without_a_ladder(
@@ -1409,3 +1419,25 @@ def test_scoping_is_a_no_op_when_the_question_names_no_scope(tmp_path: Path) -> 
         release_dir, (TABLE_ID, TABLE_ID_SEPARATE), entities, _ALLOW_LOOKUP
     )
     assert scoped == (TABLE_ID, TABLE_ID_SEPARATE)
+
+
+def test_scope_narrowing_does_not_shrink_the_retrieval_scored_table_list(tmp_path: Path) -> None:
+    """Narrowing for answering must never cost retrieval score.
+
+    Retrieval is scored separately at 50% weight with a recall-favouring F2,
+    from `relevant_docs`/`relevant_tables`. `_scope_candidate_tables` exists to
+    stop row fusion picking a row the compiler will drop -- if its narrowed
+    result also fed `relevant_tables`, every "công ty mẹ" question would hand
+    back retrieval points to buy answer points. This pins the two apart.
+    """
+    import inspect
+
+    from financial_report_qa.submission import exporter
+
+    source = inspect.getsource(exporter._run_one_question)
+    assert "answerable = _scope_candidate_tables(" in source
+    # The scored list must still be built from the unnarrowed retrieval result.
+    assert "_relevant_docs_and_tables(retrieved, release_dir)" in inspect.getsource(
+        exporter._run_one_question
+    )
+    assert "_relevant_docs_and_tables(answerable" not in source
