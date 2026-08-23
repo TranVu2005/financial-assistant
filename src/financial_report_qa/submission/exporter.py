@@ -24,8 +24,13 @@ from financial_report_qa.core.errors import SubmissionInputError
 from financial_report_qa.execution.cell_frame import build_cell_frame
 from financial_report_qa.execution.contracts import CompiledQuery
 from financial_report_qa.execution.sandbox import replay_in_sandbox
+from financial_report_qa.execution.scope_filter import (
+    filter_table_ids_by_scope,
+    resolve_statement_scope,
+)
 from financial_report_qa.pipeline.contracts import PipelineStage
 from financial_report_qa.planning.cell_grounding import ground_question
+from financial_report_qa.planning.entity_contracts import QueryEntities
 from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.question_plan import RowChoiceDecision
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
@@ -150,6 +155,40 @@ def _real_table_evidence_rows(
     return rows
 
 
+def _scope_candidate_tables(
+    release_dir: Path,
+    table_ids: tuple[str, ...],
+    entities: QueryEntities,
+    execution_settings: ExecutionSettings,
+) -> tuple[str, ...]:
+    """Narrow candidate tables to the question's statement scope, before row
+    fusion ranks rows out of them.
+
+    `compile_plan` applies exactly this filter, but it runs *after* row fusion
+    has ranked rows and after the offline decision has indexed into that
+    ranking. So a "cong ty me" question could have its row picked out of a
+    consolidated table, and the compiler would then drop that table and report
+    `metric_not_found` -- the row existed, held the right value for the right
+    company, and was discarded for its document's scope. Measured on the real
+    1012-question export: 373 of 554 `metric_not_found` outcomes were exactly
+    this, the single largest remaining failure mode.
+
+    Filtering here changes no rule, only when the existing rule applies. The
+    filter in `compile_plan` stays where it is and becomes a no-op backstop.
+
+    Narrowing to nothing returns the ids unchanged: `compile_plan` reports that
+    case as `candidate_table_ids_scope_empty`, and reproducing the decision
+    here would only add a second, earlier place where a question can be lost.
+    """
+    effective_scope, _ = resolve_statement_scope(
+        plan_scope=entities.statement_scope,
+        default_scope=execution_settings.default_statement_scope,
+    )
+    if effective_scope is None:
+        return table_ids
+    return filter_table_ids_by_scope(release_dir, table_ids, effective_scope) or table_ids
+
+
 def _run_one_question(
     raw_question: RawQuestion,
     service: RetrievalService,
@@ -185,6 +224,13 @@ def _run_one_question(
     # may reference `chosen` indices up to that count - 1, and if this
     # candidate list were shorter, those indices would be out of range and
     # silently fall back to rank 1.
+    #
+    # Scope narrowing runs before fusion on purpose (see
+    # `_scope_candidate_tables`): fusion must not spend the decision's single
+    # pick on a row the compiler is going to drop for its document's scope.
+    entities = parse_query_entities(question)
+    retrieved = _scope_candidate_tables(release_dir, retrieved, entities, execution_settings)
+
     fusion_rows = (
         row_fusion.retrieve_rows(
             question, candidate_table_ids=retrieved, k=DEFAULT_ROW_CANDIDATE_COUNT
@@ -193,7 +239,6 @@ def _run_one_question(
         else ()
     )
 
-    entities = parse_query_entities(question)
     # Nhánh answering duy nhất (spec 2026-08-23 §6, nguyên tắc N6): câu hỏi đi
     # qua đúng một đường `ground_question` -- quyết định offline của LLM (hoặc
     # mặc định hạng 1 khi không có) -> plan -> compile. Không tầng thứ hai chạy

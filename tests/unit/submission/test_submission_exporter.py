@@ -1251,3 +1251,161 @@ def test_exporter_no_longer_imports_any_deleted_tier() -> None:
         "rule_planner",
     ):
         assert gone not in source, f"{gone} thuộc thang tầng đã bỏ"
+
+
+TABLE_ID_SEPARATE = "tbl_" + "2" * 64
+DOC_ID_SEPARATE = "doc_" + "b" * 64
+
+
+def _write_two_scope_release(tmp_path: Path) -> Path:
+    """A release holding the same metric in two documents of different scope.
+
+    This is the shape that made 373/554 `metric_not_found` cases on the real
+    1012-question export: retrieval offers both tables, row fusion picks a row
+    out of the consolidated one, and only then does `compile_plan` drop that
+    table for not matching the question's `separate` scope.
+    """
+    release_dir = tmp_path / "release-two-scope"
+    release_dir.mkdir(exist_ok=True)
+    documents = [
+        {
+            "doc_id": doc_id,
+            "repo_id": "repo",
+            "revision": "1",
+            "relative_path": f"ACB/2023/ACB_financial_statements_2023_{scope}_extracted.txt",
+            "company_code": "ACB",
+            "report_year": 2023,
+            "statement_scope": scope,
+            "sha256": "0" * 64,
+            "file_size_bytes": 10,
+            "encoding": "utf-8",
+            "inventory_status": "ready",
+            "ruleset_version": "1",
+            "normalization_fingerprint": "0" * 64,
+        }
+        for doc_id, scope in ((DOC_ID, "consolidated"), (DOC_ID_SEPARATE, "separate"))
+    ]
+    tables = [
+        {
+            "table_id": table_id,
+            "doc_id": doc_id,
+            "source_ordinal": 0,
+            "title_raw": "Bao cao ket qua kinh doanh",
+            "statement_type": "income_statement",
+            "unit_raw": "VND",
+            "unit_normalized": "vnd",
+            "line_start": 1,
+            "line_end": 10,
+            "row_count": 2,
+            "column_count": 2,
+            "quality_score": 0.9,
+            "csv_path": None,
+        }
+        for table_id, doc_id in ((TABLE_ID, DOC_ID), (TABLE_ID_SEPARATE, DOC_ID_SEPARATE))
+    ]
+    cells = []
+    for table_index, table_id in enumerate((TABLE_ID, TABLE_ID_SEPARATE)):
+        for row_idx, (label, value) in enumerate(
+            (("Doanh thu thuan", "100"), ("Gia von hang ban", "60"))
+        ):
+            cells.append(
+                {
+                    "cell_id": f"cell_{table_index}{row_idx}" + "a" * 62,
+                    "table_id": table_id,
+                    "row_idx": row_idx,
+                    "col_idx": 1,
+                    "row_label_raw": label,
+                    "row_label_canonical": None,
+                    "row_group_context_raw": None,
+                    "column_label_raw": "Nam 2023",
+                    "column_label_canonical": None,
+                    "value_raw": value,
+                    "value_numeric": Decimal(value),
+                    "period": "2023",
+                    "unit": "VND",
+                    "source_line_start": 5 + row_idx,
+                    "source_line_end": 5 + row_idx,
+                    "extraction_confidence": 0.9,
+                }
+            )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(documents, schema=DOCUMENT_SCHEMA), release_dir / "documents.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(tables, schema=TABLE_SCHEMA), release_dir / "tables.parquet"
+    )
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(cells, schema=CELL_SCHEMA), release_dir / "cells.parquet"
+    )
+    placements = [
+        {
+            "table_id": cell["table_id"],
+            "row_idx": cell["row_idx"],
+            "col_idx": cell["col_idx"],
+            "cell_id": cell["cell_id"],
+        }
+        for cell in cells
+    ]
+    pq.write_table(  # type: ignore[no-untyped-call]
+        pa.Table.from_pylist(placements, schema=PLACEMENT_SCHEMA),
+        release_dir / "placements.parquet",
+    )
+    return release_dir
+
+
+def test_row_candidates_are_scoped_before_fusion_sees_them(tmp_path: Path) -> None:
+    """A "cong ty me" question must not be offered consolidated-only rows.
+
+    `compile_plan` already refuses a table whose scope does not match, but it
+    does so *after* row fusion has chosen a row and the offline decision has
+    indexed into that choice. Narrowing has to happen first, or the LLM spends
+    its pick on a row the compiler will discard -- measured as 373/554
+    `metric_not_found` on the real export.
+    """
+    from financial_report_qa.planning.entity_parser import parse_query_entities
+    from financial_report_qa.submission.exporter import _scope_candidate_tables
+
+    release_dir = _write_two_scope_release(tmp_path)
+    entities = parse_query_entities("Doanh thu thuần của công ty mẹ ACB năm 2023 là bao nhiêu?")
+    assert entities.statement_scope == "separate"
+
+    scoped = _scope_candidate_tables(
+        release_dir,
+        (TABLE_ID, TABLE_ID_SEPARATE),
+        entities,
+        _ALLOW_LOOKUP,
+    )
+    assert scoped == (TABLE_ID_SEPARATE,)
+
+
+def test_scoping_keeps_every_table_when_the_filter_would_empty_the_set(tmp_path: Path) -> None:
+    """Narrowing to nothing must not be worse than not narrowing at all.
+
+    `compile_plan` reports `candidate_table_ids_scope_empty` for this case.
+    Returning the unfiltered ids keeps that behaviour exactly where it is
+    rather than inventing a second, earlier place that can lose a question.
+    """
+    from financial_report_qa.planning.entity_parser import parse_query_entities
+    from financial_report_qa.submission.exporter import _scope_candidate_tables
+
+    release_dir = _write_two_scope_release(tmp_path)
+    entities = parse_query_entities("Doanh thu thuần của công ty mẹ ACB năm 2023 là bao nhiêu?")
+
+    # Only the consolidated table is on offer, but the question wants `separate`.
+    scoped = _scope_candidate_tables(release_dir, (TABLE_ID,), entities, _ALLOW_LOOKUP)
+    assert scoped == (TABLE_ID,)
+
+
+def test_scoping_is_a_no_op_when_the_question_names_no_scope(tmp_path: Path) -> None:
+    """No scope in the question and no default configured -> nothing to narrow."""
+    from financial_report_qa.planning.entity_parser import parse_query_entities
+    from financial_report_qa.submission.exporter import _scope_candidate_tables
+
+    release_dir = _write_two_scope_release(tmp_path)
+    entities = parse_query_entities("Doanh thu thuần của ACB năm 2023 là bao nhiêu?")
+    assert entities.statement_scope is None
+
+    scoped = _scope_candidate_tables(
+        release_dir, (TABLE_ID, TABLE_ID_SEPARATE), entities, _ALLOW_LOOKUP
+    )
+    assert scoped == (TABLE_ID, TABLE_ID_SEPARATE)
