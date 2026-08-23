@@ -181,6 +181,8 @@ def _fetch_document_rows(release_dir: Path, table_ids: list[str]) -> list[tuple[
                 *table_ids,
             ],
         ).fetchall()
+    except duckdb.Error as error:
+        raise ExportError(f"cannot read release parquet in {release_dir}: {error}") from error
     finally:
         connection.close()
 

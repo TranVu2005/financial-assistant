@@ -315,6 +315,8 @@ def export_normalized_csvs(release_dir: Path, output_dir: Path) -> CsvExportMani
                 str(release_dir / "cells.parquet"),
             ],
         ).fetchall()
+    except duckdb.Error as error:
+        raise ExportError(f"cannot read release parquet in {release_dir}: {error}") from error
     finally:
         connection.close()
 

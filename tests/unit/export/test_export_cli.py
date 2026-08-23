@@ -171,3 +171,29 @@ def test_main_reports_synced_text_failures_on_stderr(
     assert exit_code == 1
     assert captured.err.startswith("error: ")
     assert "source document unreadable" in captured.err
+
+
+def test_main_reports_missing_release_dir_as_error_line(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An unreadable release dir surfaces as ExportError on stderr, not a traceback."""
+    missing_release = tmp_path / "missing"
+
+    exit_code = export_cli.main(
+        [
+            "--release-dir",
+            str(missing_release),
+            "--snapshot-root",
+            str(tmp_path / "snapshot"),
+            "--csv-output-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err.startswith("error: ")
+    assert "cannot read release parquet" in captured.err
+    assert str(missing_release) in captured.err

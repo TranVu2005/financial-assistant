@@ -487,3 +487,24 @@ def test_export_fails_hard_when_snapshot_file_is_missing(tmp_path: Path) -> None
 
     with pytest.raises(SourceReadError):
         export_synced_text(release, snapshot_root, csv_manifest, tmp_path / "synced")
+
+
+def test_export_surfaces_missing_release_as_export_error(tmp_path: Path) -> None:
+    """A nonexistent release dir raises ExportError (not a raw duckdb error)."""
+    manifest_path = tmp_path / "manifest.jsonl"
+    manifest_path.write_text(
+        json.dumps({"table_id": TABLE_IDS_A[0], "csv_path": "ACB__table_1.csv"}) + "\n",
+        encoding="utf-8",
+    )
+    csv_manifest = CsvExportManifest(
+        output_dir=tmp_path / "csv_out",
+        manifest_path=manifest_path,
+        table_count=1,
+        entries=(),
+    )
+    missing_release = tmp_path / "missing"
+
+    with pytest.raises(ExportError, match="cannot read release parquet") as exc_info:
+        export_synced_text(missing_release, tmp_path / "snapshot", csv_manifest, tmp_path / "out")
+
+    assert str(missing_release) in str(exc_info.value)

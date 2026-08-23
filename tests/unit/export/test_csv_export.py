@@ -8,6 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -577,6 +578,17 @@ def test_export_requires_release_manifest(tmp_path: Path) -> None:
 
     with pytest.raises(ExportError, match="manifest"):
         export_normalized_csvs(release, tmp_path / "out")
+
+
+def test_export_surfaces_missing_release_as_export_error(tmp_path: Path) -> None:
+    """A nonexistent release dir raises ExportError (not a raw duckdb error)."""
+    missing_release = tmp_path / "missing"
+
+    with pytest.raises(ExportError, match="cannot read release parquet") as exc_info:
+        export_normalized_csvs(missing_release, tmp_path / "out")
+
+    assert str(missing_release) in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, duckdb.Error)
 
 
 @pytest.mark.parametrize(
