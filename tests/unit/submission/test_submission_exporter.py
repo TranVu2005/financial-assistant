@@ -920,7 +920,14 @@ def test_export_submission_with_row_fusion(tmp_path: Path) -> None:
     )
 
 
-def test_export_submission_semantic_grounding_recovery(tmp_path: Path) -> None:
+def test_export_submission_decoy_pick_fails_cleanly_without_a_ladder(
+    tmp_path: Path,
+) -> None:
+    """Spec 2026-08-23 §6 (nguyên tắc N6): candidate switching đã bị xoá.
+
+    Khi ứng viên hạng 1 là một dòng không có thật trong bảng ("Doanh thu ao",
+    row 99), `ground_question` thất bại với đúng một mã lỗi -- không tầng thứ
+    hai được phép chạy ra cứu; câu hỏi chỉ còn backstop hợp lệ về hợp đồng."""
     from unittest.mock import MagicMock
 
     from financial_report_qa.retrieval.row_documents import RowMetadata
@@ -933,15 +940,13 @@ def test_export_submission_semantic_grounding_recovery(tmp_path: Path) -> None:
 
     release_dir = _write_release(tmp_path)
 
-    # We want rule planner to abstain (by passing a question that metric
-    # parser cannot canonically map) so that LLM cell grounding gets invoked.
+    # Rule planner phải abstain (metric không map được) để câu đi xuống
+    # `ground_question`; fusion trả về một decoy hạng 1 ngoài bảng thật và
+    # dòng thật ở hạng 2 mà không tầng nào được phép chuyển sang nữa.
     unsupported_question = RawQuestion(
         id=11, question="Tra cứu chỉ số không rõ ràng của ACB năm 2023."
     )
 
-    # Top candidates from row fusion:
-    # 1. "Doanh thu ao" (which will fail compile with metric_not_found)
-    # 2. "Doanh thu thuan" (which exists in release cells and will succeed compile)
     candidates = (
         RowFusedCandidate(
             row_id=f"{TABLE_ID}|row_99",
@@ -973,10 +978,9 @@ def test_export_submission_semantic_grounding_recovery(tmp_path: Path) -> None:
         results=candidates,
     )
 
-    # Mock LLM to choose option 1: "Doanh thu ao" (index 1)
+    # LLM từ chối chọn ở mọi tầng planner (payload không hợp lệ).
     def handler(request: httpx.Request) -> httpx.Response:
-        payload = {"choices": [{"message": {"content": '{"choice": 1}'}}]}
-        return httpx.Response(200, json=payload)
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"choice": 1}'}}]})
 
     llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
 
@@ -991,15 +995,13 @@ def test_export_submission_semantic_grounding_recovery(tmp_path: Path) -> None:
         row_fusion=mock_fusion,
     )
 
-    # It must have successfully recovered using candidate switching to option 2 "Doanh thu thuan"
-    assert report.answered_count == 1
-    assert report.outcomes[0].status == "answered"
-    assert report.outcomes[0].plan_source == "llm_cell_grounded_recovered"
-    # plan.md §9: the accepted row's own fused_score, not the rejected
-    # "Doanh thu ao" candidate's.
-    assert report.outcomes[0].grounding_score == 0.8
+    assert report.answered_count == 0
+    assert report.backstopped_count == 1
+    outcome = report.outcomes[0]
+    assert outcome.status == "backstopped"
+    assert outcome.stage == "planning"
     assert len(items) == 1
-    assert items[0].answer == Decimal("100")
+    assert csv_rows != {}
 
 
 def _duplicate_label_release(tmp_path: Path) -> Path:
@@ -1286,18 +1288,11 @@ def test_export_submission_evidence_planner_is_skipped_without_row_fusion(
 def test_export_submission_offline_row_decisions_work_without_a_live_llm_client(
     tmp_path: Path,
 ) -> None:
-    """Critical-1 regression: an offline `--row-choice-decisions` file must
-    make grounding recovery's Attempt 0 row choice reachable even with
-    `llm_client=None` -- that is the entire point of the offline decisions
-    path (plan.md §7.1). Before the fix, `ground_with_recovery`'s Attempt 0
-    only checked `fusion_rows` truthiness, not whether `row_decisions` was
-    actually supplied, so this scenario worked "by accident" for any
-    non-empty fusion_rows regardless of whether a decisions file was passed
-    -- and, worse, the *reverse* case (no decisions file, but a live
-    llm_client) silently skipped the live-LLM `choose_row_label` path
-    entirely. This test pins the offline path: no llm_client, a real
-    row_decisions mapping, non-empty fusion_rows -> `plan_source` must be
-    `"llm_row_choice"`."""
+    """An offline `--row-choice-decisions` file must still answer with
+    `llm_client=None`: spec 2026-08-23 §6 makes the offline decision the one
+    input of the single answering path (`cell_grounding.ground_question`),
+    which assembles the plan position-bound from it -- no live model call
+    anywhere on that path."""
     release_dir = _write_release(tmp_path)
     question = RawQuestion(id=7, question="Tra cứu chỉ tiêu không rõ ràng của ACB năm 2023.")
 
@@ -1315,7 +1310,7 @@ def test_export_submission_offline_row_decisions_work_without_a_live_llm_client(
 
     assert report.answered_count == 1
     assert items[0].answer == 100.0
-    assert report.outcomes[0].plan_source == "llm_row_choice"
+    assert report.outcomes[0].plan_source == "llm_decision"
     assert "df1.loc[" in items[0].pandas_query
 
 

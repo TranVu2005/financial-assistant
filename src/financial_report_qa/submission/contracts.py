@@ -169,6 +169,11 @@ class QuestionOutcome(_FrozenModel):
             # operands}` over facts grounding had already resolved, rather
             # than emitting a whole typed plan of its own.
             "llm_evidence_planner",
+            # spec 2026-08-23 §6: the single answering path -- `cell_grounding.
+            # ground_question` assembled the plan from the offline LLM row
+            # decision (or its rank-1 default). Replaces the ladder-era
+            # sources above, which stay listed for already-written reports.
+            "llm_decision",
         ]
         | None
     ) = None

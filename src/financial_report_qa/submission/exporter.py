@@ -12,7 +12,6 @@ import csv
 import hashlib
 import io
 import json
-import sys
 import zipfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -29,23 +28,21 @@ from financial_report_qa.execution.contracts import CompiledQuery
 from financial_report_qa.execution.sandbox import replay_in_sandbox
 from financial_report_qa.pipeline.contracts import PipelineStage
 from financial_report_qa.planning import llm_planner
-from financial_report_qa.planning.cell_grounding import compile_grounded, ground_with_recovery
+from financial_report_qa.planning.cell_grounding import compile_grounded, ground_question
 from financial_report_qa.planning.column_refinement import plan_with_column
 from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.evidence_rendering import (
-    evidence_row_labels,
     evidence_table_context,
     plan_grounding_score,
-    row_label_confidence,
 )
 from financial_report_qa.planning.llm_cell_grounding import choose_column_label
 from financial_report_qa.planning.llm_client import ChatCompletionClient
 from financial_report_qa.planning.llm_evidence_planner import plan_with_evidence
 from financial_report_qa.planning.plan_contracts import _PERIOD_PATTERN, map_requested_unit
 from financial_report_qa.planning.plan_router import route_plan
+from financial_report_qa.planning.question_plan import RowChoiceDecision
 from financial_report_qa.planning.raw_metric_grounding import (
     candidate_column_labels,
-    candidate_row_labels,
     plan_with_raw_grounding_fallback,
 )
 from financial_report_qa.planning.table_context_rendering import render_table_context
@@ -234,11 +231,6 @@ def _run_one_question(
     )
 
     entities = parse_query_entities(question)
-    row_labels = (
-        evidence_row_labels(fusion_rows)
-        if fusion_rows
-        else candidate_row_labels(release_dir, retrieved)
-    )
     # Day 23 plan Step 1: try the rule planner, with one grounded retry when
     # it abstains purely on `metric_unknown` (raw_metric_grounding.py). Only
     # once *that* combined attempt still has no plan does the Day 22
@@ -257,13 +249,11 @@ def _run_one_question(
         "rule_raw_grounded",
         "llm",
         "llm_grounded",
-        "llm_row_choice",
-        "row_choice_fallback_rank1",
-        "llm_cell_grounded",
-        "llm_cell_grounded_recovered",
-        "llm_cell_grounded_context_expanded",
         "llm_column_refined",
         "llm_evidence_planner",
+        # spec 2026-08-23 §6: plan do `ground_question` dựng từ quyết định
+        # offline của LLM -- nguồn duy nhất còn lại của nhánh answering.
+        "llm_decision",
     ]
     compiled: CompiledQuery | None = None
     low_confidence = False
@@ -384,58 +374,29 @@ def _run_one_question(
         plan_source = "rule"
         compiled = None
 
-    # Decoupled Cell Grounding & Grounding Recovery (Attempt 1-2). Runs
-    # whenever the plan produced above -- by the rule planner or the LLM
-    # planner, or no plan at all -- did not compile to an answer, so a
-    # rule-planner failure (e.g. `cell_ambiguous`) gets the same recovery
-    # ladder as an LLM-planner failure instead of skipping it.
-    needs_grounding_recovery = (
-        plan_result.plan is None or compiled is None or compiled.status != "answered"
+    # Nhánh answering duy nhất (spec 2026-08-23 §6, nguyên tắc N6): khi mọi
+    # tầng phía trên vẫn chưa trả lời được, câu hỏi đi qua đúng một đường
+    # `ground_question` -- không tầng thứ hai chạy ra cứu.
+    needs_grounding = plan_result.plan is None or compiled is None or compiled.status != "answered"
+    decision = (
+        RowChoiceDecision(
+            question_id=raw_question.id, chosen=(row_decisions[raw_question.id],)
+        )
+        if row_decisions and raw_question.id in row_decisions
+        else None
     )
-    if needs_grounding_recovery and (llm_client is not None or row_decisions is not None):
-        grounding_res = ground_with_recovery(
-            question=question,
+    if needs_grounding:
+        grounding_res = ground_question(
             entities=entities,
-            retrieved=retrieved,
-            row_labels=row_labels,
+            decision=decision,
             fusion_rows=fusion_rows,
+            candidate_table_ids=retrieved,
             release_dir=release_dir,
             execution_settings=execution_settings,
-            llm_client=llm_client,
-            row_decisions=row_decisions,
-            question_id=raw_question.id,
         )
         if grounding_res.status == "accepted":
             assert grounding_res.plan is not None
             assert grounding_res.compiled is not None
-
-            # Log recovery success if it was recovered
-            if grounding_res.plan_source == "llm_cell_grounded_recovered":
-                first_tried = (
-                    plan_result.plan.metric.raw_text
-                    if plan_result.plan and plan_result.plan.metric
-                    else None
-                )
-                previous_confidence = row_label_confidence(first_tried, fusion_rows) or 0.0
-                new_confidence = (
-                    row_label_confidence(grounding_res.plan.metric.raw_text, fusion_rows) or 0.0
-                )
-                log_entry = {
-                    "question_id": raw_question.id,
-                    "attempt": grounding_res.recovery_attempts,
-                    "strategy": "candidate_switching",
-                    "previous_confidence": round(previous_confidence, 4),
-                    "new_confidence": round(new_confidence, 4),
-                    "selected_row": grounding_res.plan.metric.raw_text,
-                    "selected_column": (
-                        grounding_res.plan.metric.column_text if grounding_res.plan.metric else None
-                    ),
-                    "status": "accepted",
-                }
-                print(
-                    f"Grounding Recovery Success: {json.dumps(log_entry, ensure_ascii=False)}",
-                    file=sys.stderr,
-                )
 
             plan_result = plan_result.model_copy(update={"plan": grounding_res.plan})
             compiled = grounding_res.compiled

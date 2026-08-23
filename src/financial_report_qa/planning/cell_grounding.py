@@ -1,72 +1,45 @@
-"""Decoupled Cell Grounding and Grounding Recovery module.
+"""Nhánh answering duy nhất: quyết định -> plan -> compile (spec 2026-08-23 §6).
 
-`ground_with_recovery` runs its own metric grounding (Attempt 0: the offline
-LLM row decision -- `row_choice_decision.selector_for` -- falling back to a
-live LLM row choice call when no decision applies) and, if that still does
-not compile --
-or compiles but the row it used ranked outside `max_grounding_rank` in
-fusion (plan.md §15's confidence threshold, checked on rank, not raw score;
-see `evidence_rendering.plan_grounding_rank` for why) -- walks a recovery
-ladder: Attempt 1 (Candidate Switching across the retrieved row labels) then
-Attempt 2 (Context Expansion, giving the LLM table/row context instead of
-bare labels). Column refinement runs inside every tier whenever a compile
-fails specifically with `cell_ambiguous`. A compiling-but-unconfident answer
-is kept as a fallback throughout: an answer that costs exactly what an
-abstention costs (this project's official scoring) but might be right beats
-returning nothing just because a more confident match was never found.
+Nguyên tắc N6: không thang tầng, không candidate switching, không context
+expansion. Một câu hỏi đi qua đúng một chuỗi bước -- hỏng ở đâu thì hỏng rõ
+ở đó, với đúng một mã lỗi chỉ về đúng một bước.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
 from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.execution.compiler import compile_plan
 from financial_report_qa.execution.contracts import CompiledQuery
-from financial_report_qa.normalization.companies import label_is_company_name
-from financial_report_qa.planning.column_refinement import plan_with_column
 from financial_report_qa.planning.entity_contracts import QueryEntities
-from financial_report_qa.planning.evidence_rendering import (
-    evidence_table_context,
-    plan_grounding_rank,
-    plan_grounding_score,
-)
+from financial_report_qa.planning.evidence_rendering import plan_grounding_score
 from financial_report_qa.planning.fact_grounding import bind_plan_to_rows, grounded_facts
 from financial_report_qa.planning.grounding_contracts import GroundedFact
-from financial_report_qa.planning.llm_cell_grounding import (
-    choose_column_label,
-    choose_row_label,
-    choose_row_label_with_context,
-)
-from financial_report_qa.planning.llm_client import ChatCompletionClient
-from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
-from financial_report_qa.planning.raw_metric_grounding import candidate_column_labels
-from financial_report_qa.planning.row_choice_decision import selector_for
-from financial_report_qa.planning.rule_planner import RulePlanResult, build_plan
-from financial_report_qa.planning.table_context_rendering import render_table_context
+from financial_report_qa.planning.plan_contracts import FinancialQueryPlan
+from financial_report_qa.planning.question_plan import RowChoiceDecision, assemble_plan
 from financial_report_qa.retrieval.contracts import _FrozenModel
 from financial_report_qa.retrieval.row_fusion_contracts import RowFusedCandidate
 
 
 class GroundingResult(_FrozenModel):
-    """The result of the cell grounding and recovery phase."""
+    """The result of grounding one question down the single answering path."""
 
     status: Literal["accepted", "failed"]
     plan: FinancialQueryPlan | None = None
     compiled: CompiledQuery | None = None
-    plan_source: str | None = None
+    # spec 2026-08-23 §6: chỉ còn một nguồn plan -- quyết định của LLM.
+    plan_source: Literal["llm_decision"] | None = None
     error_code: str | None = None
-    recovery_attempts: int = 0
     # plan.md §9: the retrieval confidence backing the accepted plan's row
     # selector(s) -- `None` when the plan was never scored by fusion (e.g. a
     # deterministic canonical-alias match).
     grounding_score: float | None = None
-    # plan.md §15: True when this accepted result is the recovery ladder's
-    # best-effort fallback -- every row selector it used ranked outside
-    # `max_grounding_rank` in fusion, and the ladder never found (or was
-    # never given the means to find) a more confidently-ranked alternative.
+    # Vestiges of the removed recovery ladder, kept so downstream consumers
+    # keep their shape: on the single path they are always at their defaults.
+    recovery_attempts: int = 0
     low_confidence: bool = False
     # plan.md §9: per-fact provenance for the accepted answer -- each cell it
     # was computed from, identified by `(table_id, row_index)`. Empty when
@@ -122,359 +95,44 @@ def _accepted(
     )
 
 
-DEFAULT_MAX_GROUNDING_RANK = 3
-"""plan.md §15 threshold, expressed as a fused-rank cutoff rather than a raw
-score cutoff (see `evidence_rendering.plan_grounding_rank`). Top-3 mirrors
-the Row Recall@3 checkpoint plan.md §20 tracks; an unvalidated starting
-point (like the row-fusion branch weights), not a calibrated value -- no
-gold row/column labels exist yet to tune it against."""
-
-
-def _bind_metric_to_position(
-    plan_result: RulePlanResult, selector: MetricSelector
-) -> RulePlanResult:
-    """Gắn `table_id`/`row_index` đã chọn vào `metric` của plan.
-
-    `build_plan` dựng selector từ nhãn nên nó chưa position-bound. Ghim vị trí
-    ở đây để `locator._metric_mask` đi nhánh `_position_mask`, bỏ hẳn việc so
-    khớp nhãn ở thời điểm truy vấn.
-    """
-    plan = plan_result.plan
-    if plan is None or plan.metric is None:
-        return plan_result
-    bound = plan.metric.model_copy(
-        update={"table_id": selector.table_id, "row_index": selector.row_index}
-    )
-    return plan_result.model_copy(update={"plan": plan.model_copy(update={"metric": bound})})
-
-
-def ground_with_recovery(
-    question: str,
+def ground_question(
+    *,
     entities: QueryEntities,
-    retrieved: Sequence[str],
-    row_labels: Sequence[str],
+    decision: RowChoiceDecision | None,
     fusion_rows: Sequence[RowFusedCandidate],
+    candidate_table_ids: Sequence[str],
     release_dir: Path,
     execution_settings: ExecutionSettings,
-    llm_client: ChatCompletionClient | None = None,
-    max_grounding_rank: int = DEFAULT_MAX_GROUNDING_RANK,
-    row_decisions: Mapping[int, int] | None = None,
-    question_id: int | None = None,
 ) -> GroundingResult:
-    """Ground query metrics to verified row and column labels with recovery."""
-    # Issuer-name rows (subsidiary listings, consolidation headers) sit in
-    # numeric tables and therefore compile, but they carry no metric. Drop
-    # them once, here, so no tier below -- LLM row choice, candidate
-    # switching, context expansion -- can select one: a real run accepted
-    # "▪ Tập đoàn Dệt May Việt Nam - Công ty mẹ" as the row for "Tổng cộng
-    # dự phòng phải trả" (plan.md §19 dev benchmark, question 175).
-    row_labels = tuple(label for label in row_labels if not label_is_company_name(label))
+    """Đường answering duy nhất: quyết định -> plan -> compile.
 
-    # Attempt 0: quyết định chọn dòng của LLM (thiết kế 2026-08-22 §5).
-    #
-    # Trước đây chỗ này là so khớp nhãn bằng từ điển luật (rule dictionary
-    # grounding). Đo trên lần export 2026-08-22: 491/1012 câu chết ở
-    # `metric_not_found` vì câu hỏi tiếng Việt diễn đạt tự do hiếm khi trùng
-    # khít `row_label_raw` trong báo cáo. Việc "dòng nào trong 20 dòng ứng
-    # viên trả lời câu hỏi này" là phân loại có ràng buộc -- dạng bài model
-    # 8B làm tốt, khác hẳn sinh code tự do mà nó làm kém.
-    plan_result = RulePlanResult(abstain_codes=("operation_unknown",))
-    plan_source = "rule"
-    recovery_attempts = 0
-    # plan.md §15/§7.1: a genuine (non-fallback) LLM row decision was chosen
-    # specifically to overrule the retrieval-confidence rank heuristic -- the
-    # whole point of Track B is that lexical retrieval often ranks the
-    # correct row poorly. Tracked separately from `plan_source` because
-    # column refinement below can rewrite `plan_source` to
-    # "llm_column_refined" without changing where the row came from.
-    is_genuine_llm_row_choice = False
-
-    if question_id is not None and fusion_rows and row_decisions is not None:
-        selector, decision_source = selector_for(
-            question_id, fusion_rows, row_decisions
+    Không có tầng thứ hai. Nguyên tắc N6: thang tầng cũ che giấu một tầng có
+    tỷ lệ trả lời 0% trên 409 câu, và không tầng nào chịu trách nhiệm. Ở đây
+    một câu hỏi hỏng có đúng một mã lỗi, chỉ về đúng một bước.
+    """
+    if not fusion_rows:
+        return GroundingResult(
+            status="failed", error_code="no_row_candidates", plan_source="llm_decision"
         )
-        if selector is not None and selector.raw_text is not None:
-            labelled = QueryEntities.model_validate(
-                {
-                    **entities.model_dump(mode="python"),
-                    "metrics": (selector.raw_text,),
-                    "ambiguity": tuple(
-                        code for code in entities.ambiguity if code != "metric_unknown"
-                    ),
-                }
-            )
-            chosen = build_plan(
-                labelled,
-                candidate_table_ids=retrieved,
-                known_table_ids=frozenset(retrieved),
-            )
-            if chosen.plan is not None:
-                plan_result = _bind_metric_to_position(chosen, selector)
-                is_genuine_llm_row_choice = decision_source == "llm"
-                plan_source = (
-                    "llm_row_choice"
-                    if is_genuine_llm_row_choice
-                    else "row_choice_fallback_rank1"
-                )
 
-    # If the LLM row decision fails, try LLM-based grounding (Attempt 0 LLM)
-    if plan_result.plan is None and llm_client is not None:
-        chosen_label = choose_row_label(
-            question,
-            row_labels,
-            client=llm_client,
+    plan = assemble_plan(entities, decision, fusion_rows, candidate_table_ids)
+    if plan is None:
+        return GroundingResult(
+            status="failed", error_code="plan_not_assembled", plan_source="llm_decision"
         )
-        if chosen_label is not None:
-            labelled = QueryEntities.model_validate(
-                {
-                    **entities.model_dump(mode="python"),
-                    "metrics": (chosen_label,),
-                    "ambiguity": tuple(
-                        code for code in entities.ambiguity if code != "metric_unknown"
-                    ),
-                }
-            )
-            relabelled = build_plan(
-                labelled,
-                candidate_table_ids=retrieved,
-                known_table_ids=frozenset(retrieved),
-            )
-            if relabelled.plan is not None:
-                plan_result, plan_source = relabelled, "llm_cell_grounded"
 
-    # If no plan could be built at all, fail grounding
-    if plan_result.plan is None:
-        error_code = (
-            "+".join(plan_result.abstain_codes) if plan_result.abstain_codes else "planning_failed"
-        )
+    compiled_plan, compiled = compile_grounded(
+        plan, fusion_rows, release_dir, execution_settings
+    )
+    if compiled.status != "answered":
         return GroundingResult(
             status="failed",
-            error_code=error_code,
-            plan_source=plan_source,
+            error_code=compiled.error_code or "execution_failed",
+            plan_source="llm_decision",
         )
-
-    plan, compiled = compile_grounded(
-        plan_result.plan, fusion_rows, release_dir, execution_settings
-    )
-
-    # Day 26 Column Refinement on Attempt 0
-    if compiled.error_code == "cell_ambiguous" and llm_client is not None:
-        refined = plan_with_column(
-            plan,
-            lambda row_label, columns: choose_column_label(
-                question, row_label, columns, client=llm_client
-            ),
-            columns_for=lambda row_label: candidate_column_labels(
-                release_dir, plan.candidate_table_ids, row_label
-            ),
-        )
-        if refined is not None:
-            retried_plan, retried_compiled = compile_grounded(
-                refined, fusion_rows, release_dir, execution_settings
-            )
-            if retried_compiled.status == "answered":
-                plan = retried_plan
-                compiled = retried_compiled
-                plan_source = "llm_column_refined"
-
-    # If Attempt 0 succeeds and is confidently ranked, accept it outright.
-    # plan.md §15: a compile succeeding is not by itself enough -- a row
-    # fusion ranked outside the top `max_grounding_rank` candidates is not
-    # trusted just because *some* cell happened to be found for it. Keep it
-    # as `fallback` and keep looking instead of returning error OR accepting
-    # blindly.
-    fallback: GroundingResult | None = None
-    if compiled.status == "answered":
-        rank = plan_grounding_rank(plan, fusion_rows)
-        # A genuine LLM row choice (not the rank-1 fallback) was accepted
-        # specifically to overrule the rank heuristic below -- gating it on
-        # `rank <= max_grounding_rank` would defeat the entire point of
-        # asking the LLM to pick deliberately, since a deliberately-chosen
-        # row is very often ranked well outside the top few by fusion.
-        if rank is None or rank <= max_grounding_rank or is_genuine_llm_row_choice:
-            return _accepted(
-                plan=plan, compiled=compiled, plan_source=plan_source, fusion_rows=fusion_rows
-            )
-        fallback = _accepted(
-            plan=plan,
-            compiled=compiled,
-            plan_source=plan_source,
-            fusion_rows=fusion_rows,
-            low_confidence=True,
-        )
-
-    # Attempt 1: Grounding Recovery (Candidate Switching)
-    GROUNDING_ERROR_CODES = {
-        "metric_not_found",
-        "cell_ambiguous",
-        "period_unresolved",
-        "unit_missing",
-    }
-    if compiled.error_code in GROUNDING_ERROR_CODES or fallback is not None:
-        tried_labels: set[str] = set()
-        selectors = (
-            plan.metric,
-            plan.metric_a,
-            plan.metric_b,
-            plan.numerator_metric,
-            plan.denominator_metric,
-        )
-        for selector in selectors:
-            if selector is not None:
-                if selector.raw_text:
-                    tried_labels.add(selector.raw_text)
-                if selector.canonical:
-                    tried_labels.add(selector.canonical)
-
-        max_recovery_attempts = 5
-        for candidate_label in row_labels:
-            if candidate_label in tried_labels:
-                continue
-            if recovery_attempts >= max_recovery_attempts:
-                break
-            tried_labels.add(candidate_label)
-            recovery_attempts += 1
-
-            # Rebuild plan using the candidate label
-            labelled = QueryEntities.model_validate(
-                {
-                    **entities.model_dump(mode="python"),
-                    "metrics": (candidate_label,),
-                    "ambiguity": tuple(
-                        code for code in entities.ambiguity if code != "metric_unknown"
-                    ),
-                }
-            )
-            relabelled = build_plan(
-                labelled,
-                candidate_table_ids=retrieved,
-                known_table_ids=frozenset(retrieved),
-            )
-            if relabelled.plan is not None:
-                candidate_plan, candidate_compiled = compile_grounded(
-                    relabelled.plan, fusion_rows, release_dir, execution_settings
-                )
-
-                # Day 26 cell_ambiguous recovery inside candidate switching:
-                if candidate_compiled.error_code == "cell_ambiguous" and llm_client is not None:
-                    refined = plan_with_column(
-                        candidate_plan,
-                        lambda row_label, columns: choose_column_label(
-                            question, row_label, columns, client=llm_client
-                        ),
-                        columns_for=lambda row_label: candidate_column_labels(
-                            release_dir, candidate_plan.candidate_table_ids, row_label
-                        ),
-                    )
-                    if refined is not None:
-                        retried_plan, retried_compiled = compile_grounded(
-                            refined, fusion_rows, release_dir, execution_settings
-                        )
-                        if retried_compiled.status == "answered":
-                            candidate_plan = retried_plan
-                            candidate_compiled = retried_compiled
-
-                if candidate_compiled.status == "answered":
-                    candidate_rank = plan_grounding_rank(candidate_plan, fusion_rows)
-                    if candidate_rank is None or candidate_rank <= max_grounding_rank:
-                        return _accepted(
-                            plan=candidate_plan,
-                            compiled=candidate_compiled,
-                            plan_source="llm_cell_grounded_recovered",
-                            fusion_rows=fusion_rows,
-                            recovery_attempts=recovery_attempts,
-                        )
-                    if fallback is None:
-                        fallback = _accepted(
-                            plan=candidate_plan,
-                            compiled=candidate_compiled,
-                            plan_source="llm_cell_grounded_recovered",
-                            fusion_rows=fusion_rows,
-                            recovery_attempts=recovery_attempts,
-                            low_confidence=True,
-                        )
-
-    # Attempt 2: Context Expansion
-    if (fallback is not None or compiled.status != "answered") and llm_client is not None:
-        table_context = (
-            evidence_table_context(fusion_rows)
-            if fusion_rows
-            else render_table_context(release_dir, retrieved)
-        )
-        chosen_label = choose_row_label_with_context(
-            question,
-            row_labels,
-            table_context,
-            client=llm_client,
-        )
-        if chosen_label is not None:
-            labelled = QueryEntities.model_validate(
-                {
-                    **entities.model_dump(mode="python"),
-                    "metrics": (chosen_label,),
-                    "ambiguity": tuple(
-                        code for code in entities.ambiguity if code != "metric_unknown"
-                    ),
-                }
-            )
-            relabelled = build_plan(
-                labelled,
-                candidate_table_ids=retrieved,
-                known_table_ids=frozenset(retrieved),
-            )
-            if relabelled.plan is not None:
-                candidate_plan, candidate_compiled = compile_grounded(
-                    relabelled.plan, fusion_rows, release_dir, execution_settings
-                )
-
-                if candidate_compiled.error_code == "cell_ambiguous":
-                    refined = plan_with_column(
-                        candidate_plan,
-                        lambda row_label, columns: choose_column_label(
-                            question, row_label, columns, client=llm_client
-                        ),
-                        columns_for=lambda row_label: candidate_column_labels(
-                            release_dir, candidate_plan.candidate_table_ids, row_label
-                        ),
-                    )
-                    if refined is not None:
-                        retried_plan, retried_compiled = compile_grounded(
-                            refined, fusion_rows, release_dir, execution_settings
-                        )
-                        if retried_compiled.status == "answered":
-                            candidate_plan = retried_plan
-                            candidate_compiled = retried_compiled
-
-                if candidate_compiled.status == "answered":
-                    candidate_rank = plan_grounding_rank(candidate_plan, fusion_rows)
-                    if candidate_rank is None or candidate_rank <= max_grounding_rank:
-                        return _accepted(
-                            plan=candidate_plan,
-                            compiled=candidate_compiled,
-                            plan_source="llm_cell_grounded_context_expanded",
-                            fusion_rows=fusion_rows,
-                            recovery_attempts=recovery_attempts + 1,
-                        )
-                    if fallback is None:
-                        fallback = _accepted(
-                            plan=candidate_plan,
-                            compiled=candidate_compiled,
-                            plan_source="llm_cell_grounded_context_expanded",
-                            fusion_rows=fusion_rows,
-                            recovery_attempts=recovery_attempts + 1,
-                            low_confidence=True,
-                        )
-
-    # plan.md §15: an unconfident-but-compiling answer beats returning
-    # nothing -- an abstention scores the same as a wrong answer under this
-    # project's official metric, so a low-confidence guess still has a
-    # chance of being right where an abstention has none.
-    if fallback is not None:
-        return fallback
-
-    return GroundingResult(
-        status="failed",
-        error_code=compiled.error_code or "execution_failed",
-        plan_source=plan_source,
-        recovery_attempts=recovery_attempts,
+    return _accepted(
+        plan=compiled_plan,
+        compiled=compiled,
+        plan_source="llm_decision",
+        fusion_rows=fusion_rows,
     )
