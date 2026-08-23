@@ -16,7 +16,11 @@ from financial_report_qa.execution.compiler import compile_plan
 from financial_report_qa.execution.contracts import CompiledQuery
 from financial_report_qa.planning.entity_contracts import QueryEntities
 from financial_report_qa.planning.evidence_rendering import plan_grounding_score
-from financial_report_qa.planning.fact_grounding import bind_plan_to_rows, grounded_facts
+from financial_report_qa.planning.fact_grounding import (
+    bind_plan_to_rows,
+    grounded_facts,
+    is_position_bound_plan,
+)
 from financial_report_qa.planning.grounding_contracts import GroundedFact
 from financial_report_qa.planning.plan_contracts import FinancialQueryPlan
 from financial_report_qa.planning.question_plan import RowChoiceDecision, assemble_plan
@@ -63,7 +67,18 @@ def compile_grounded(
     plan when binding is impossible or does not compile keeps every question
     that already worked working -- binding can only add answers here, never
     remove them.
+
+    A plan that is *already* position-bound is skipped entirely. On the single
+    answering path (spec 2026-08-23 6) `assemble_plan` pins the row the
+    offline LLM decision named, and `bind_plan_to_rows` re-derives the row from
+    `label match + min(rank)` -- so on such a plan binding cannot add anything,
+    it can only overrule the choice. And it overrules it in exactly the case
+    the row choice exists for: two rows sharing a label (measured 4.37% of
+    rows, OCR line duplication), where the label cannot tell them apart and
+    binding silently reverts to rank 1.
     """
+    if is_position_bound_plan(plan):
+        return plan, compile_plan(plan, release_dir, execution_settings=execution_settings)
     bound = bind_plan_to_rows(plan, fusion_rows)
     if bound is not None:
         compiled = compile_plan(bound, release_dir, execution_settings=execution_settings)

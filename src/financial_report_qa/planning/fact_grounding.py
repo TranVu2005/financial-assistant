@@ -37,6 +37,21 @@ _SELECTOR_FIELDS = (
 )
 
 
+def is_position_bound_plan(plan: FinancialQueryPlan) -> bool:
+    """Whether every selector `plan` carries is already pinned to a row.
+
+    Such a plan has nothing left for `bind_plan_to_rows` to decide, and
+    re-deciding is not neutral: binding picks by label plus lowest rank, so it
+    can only *replace* a position that was chosen deliberately.
+    """
+    selectors = [
+        selector
+        for selector in (getattr(plan, field) for field in _SELECTOR_FIELDS)
+        if selector is not None
+    ]
+    return bool(selectors) and all(selector.is_position_bound for selector in selectors)
+
+
 def _matches(selector: MetricSelector, candidate: RowFusedCandidate) -> bool:
     """Whether `candidate` is the row this selector was built from.
 

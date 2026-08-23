@@ -15,12 +15,14 @@ không thể bơm số liệu mâu thuẫn với corpus vào bài nộp.
 
 from __future__ import annotations
 
+import warnings
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 
 from pydantic import Field, ValidationError
 
+from financial_report_qa.core.errors import PlanningInputError
 from financial_report_qa.planning.entity_contracts import QueryEntities
 from financial_report_qa.planning.plan_contracts import (
     FinancialQueryPlan,
@@ -69,17 +71,42 @@ def load_decisions(path: Path) -> dict[int, RowChoiceDecision]:
 
     Câu bị bỏ qua sẽ rơi vào `DEFAULT_DECISION` ở `assemble_plan` -- đúng như
     bảng xử lý lỗi trong spec §6.2, không phải một nhánh im lặng khác.
+
+    Nhưng *mọi* dòng hỏng thì không còn là "một dòng hỏng", đó là sai định
+    dạng, và nó phải nổ chứ không được trả về `{}`. File quyết định v1 mang
+    `chosen_index`; `RowChoiceDecision` cấm trường lạ nên mỗi dòng ném
+    `ValidationError`. Bản đầu nuốt sạch: 970 quyết định biến mất không một
+    cảnh báo, mọi câu rơi về `DEFAULT_DECISION` (lookup hạng 1), và một lần
+    export dài một tiếng cho ra đúng baseline mà không ai biết vì sao. Bỏ qua
+    100% input là chế độ hỏng tệ nhất có thể -- nó trông y hệt thành công.
     """
     decisions: dict[int, RowChoiceDecision] = {}
+    total = 0
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped:
             continue
+        total += 1
         try:
             decision = RowChoiceDecision.model_validate_json(stripped)
         except ValidationError:
             continue
         decisions[decision.question_id] = decision
+
+    if total and not decisions:
+        raise PlanningInputError(
+            f"{path}: đọc được 0/{total} quyết định. Kỳ vọng các trường "
+            "`question_id`/`operation`/`chosen`/`top_k`; file quyết định v1 "
+            "(`chosen_index`) không còn dùng được -- chạy lại notebook v2."
+        )
+    if len(decisions) < total:
+        warnings.warn(
+            f"{path}: chỉ đọc được {len(decisions)}/{total} quyết định, "
+            f"{total - len(decisions)} dòng bị bỏ qua vì không hợp lệ. "
+            "Các câu tương ứng sẽ dùng mặc định (lookup hạng 1).",
+            UserWarning,
+            stacklevel=2,
+        )
     return decisions
 
 

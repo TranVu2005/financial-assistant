@@ -203,3 +203,47 @@ def test_load_decisions_skips_a_corrupt_line_without_losing_the_file(tmp_path: P
     assert set(decisions) == {1, 2}
     assert decisions[2].operation == "rank"
     assert decisions[2].top_k == 1
+
+
+def test_load_decisions_rejects_a_file_whose_every_line_fails_to_parse(tmp_path: Path) -> None:
+    """Cả file hỏng không phải "một dòng hỏng" -- đó là sai định dạng.
+
+    File quyết định v1 mang `chosen_index`; `RowChoiceDecision` cấm trường lạ,
+    nên mỗi dòng ném `ValidationError` và bản cũ nuốt sạch, trả về `{}`. Hậu
+    quả đo được: 970 quyết định biến mất không một cảnh báo, mọi câu rơi về
+    `DEFAULT_DECISION` (lookup hạng 1), và lần export một tiếng cho ra đúng
+    baseline mà không ai biết vì sao.
+    """
+    import pytest
+
+    from financial_report_qa.core.errors import PlanningInputError
+
+    path = tmp_path / "v1.jsonl"
+    path.write_text(
+        '{"question_id": 1, "chosen_index": 3}\n{"question_id": 2, "chosen_index": 0}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(PlanningInputError, match="0/2"):
+        load_decisions(path)
+
+
+def test_load_decisions_warns_when_it_skips_some_but_not_all_lines(tmp_path: Path) -> None:
+    """Bỏ qua một phần vẫn phải để lại dấu vết -- im lặng là chế độ hỏng tệ nhất."""
+    import pytest
+
+    path = tmp_path / "mixed.jsonl"
+    path.write_text(
+        '{"question_id": 1, "operation": "lookup", "chosen": [0]}\n'
+        '{"question_id": 2, "chosen_index": 3}\n',
+        encoding="utf-8",
+    )
+    with pytest.warns(UserWarning, match="1/2"):
+        decisions = load_decisions(path)
+    assert set(decisions) == {1}
+
+
+def test_load_decisions_accepts_an_empty_file_without_raising(tmp_path: Path) -> None:
+    """Không dòng nào để hỏng thì không có gì để báo."""
+    path = tmp_path / "empty.jsonl"
+    path.write_text("", encoding="utf-8")
+    assert load_decisions(path) == {}
