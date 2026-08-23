@@ -185,3 +185,7 @@ class SubmissionError(FinancialReportQAError):
 
 class SubmissionInputError(SubmissionError):
     """A question file, ZIP, or CLI input to the submission bundle is invalid."""
+
+
+class ExportError(FinancialReportQAError):
+    """A CSV, metadata, or synced-text export artifact cannot be produced."""
