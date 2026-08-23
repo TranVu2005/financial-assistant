@@ -9,12 +9,11 @@ import zipfile
 from decimal import Decimal
 from pathlib import Path
 
-import httpx
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from financial_report_qa.core.config import ExecutionSettings, LLMSettings
+from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.core.errors import SubmissionInputError
 from financial_report_qa.data.dataset_builder import (
     CELL_SCHEMA,
@@ -22,8 +21,8 @@ from financial_report_qa.data.dataset_builder import (
     PLACEMENT_SCHEMA,
     TABLE_SCHEMA,
 )
-from financial_report_qa.planning.llm_client import LLMClient
 from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
+from financial_report_qa.planning.question_plan import RowChoiceDecision
 from financial_report_qa.retrieval.contracts import (
     MetricLabelObservation,
     TableDocument,
@@ -34,7 +33,6 @@ from financial_report_qa.retrieval.row_fusion import DEFAULT_ROW_CANDIDATE_COUNT
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.contracts import RawQuestion
 from financial_report_qa.submission.exporter import (
-    _bare_year_periods,
     _render_csv_bytes,
     export_submission,
     load_raw_questions,
@@ -46,15 +44,6 @@ DOC_ID = "doc_" + "a" * 64
 CELL_ID = "cell_" + "a" * 64
 
 _ALLOW_LOOKUP = ExecutionSettings(timeout_seconds=5, max_rows=20000, allow_operations=("lookup",))
-_LLM_SETTINGS = LLMSettings(
-    base_url="http://127.0.0.1:8080/v1",
-    model="qwen3-4b-instruct-2507-q4_k_m",
-    timeout_seconds=5.0,
-    max_output_tokens=160,
-    temperature=0.0,
-    context_length=4096,
-    json_schema_constrained=True,
-)
 
 
 def _write_release(
@@ -456,6 +445,7 @@ def test_export_submission_evidence_csv_contains_the_full_extracted_table(
         execution_settings=_ALLOW_LOOKUP,
         dataset_fingerprint="0" * 64,
         k=10,
+        row_fusion=_evidence_planner_fusion(),
     )
 
     assert report.answered_count == 1
@@ -477,6 +467,7 @@ def test_export_submission_answers_a_real_unseen_question(tmp_path: Path) -> Non
         execution_settings=_ALLOW_LOOKUP,
         dataset_fingerprint="0" * 64,
         k=10,
+        row_fusion=_evidence_planner_fusion(),
     )
 
     assert report.question_count == 1
@@ -510,13 +501,13 @@ def test_export_submission_records_no_candidate_tables_as_abstained(tmp_path: Pa
     assert csv_rows == {}
 
 
-def test_export_submission_rule_abstain_without_llm_client_stays_abstained(
+def test_export_submission_unanswerable_question_stays_abstained(
     tmp_path: Path,
 ) -> None:
-    """Regression: `llm_client=None` (the default) must reproduce the exact
-    pre-LLM-fallback behavior -- rule-planner abstain stays a `planning`
-    abstain, nothing tries to reach a network endpoint. `apply_backstop=False`
-    isolates this from the Day 23 backstop tier, a separate concern."""
+    """A question whose metric matches nothing in the candidate rows fails
+    the single answering path with exactly one planning-stage code -- no
+    second tier runs to the rescue, and nothing reaches a network endpoint
+    (`apply_backstop=False` isolates this from the backstop tier)."""
     release_dir = _write_release(tmp_path)
     question = RawQuestion(id=3, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
 
@@ -536,52 +527,11 @@ def test_export_submission_rule_abstain_without_llm_client_stays_abstained(
     assert report.outcomes[0].stage == "planning"
 
 
-def test_export_submission_falls_back_to_llm_when_rule_planner_abstains(
-    tmp_path: Path,
-) -> None:
-    """Day 22 coverage-improvement follow-up: when the rule planner abstains
-    but an LLM client is supplied, `plan_router.route_plan` must be given a
-    chance before the question is written off -- exercised here with a
-    mocked httpx transport, never a live server (ADR 0006's existing test
-    pattern in test_plan_router.py)."""
-    release_dir = _write_release(tmp_path)
-    question = RawQuestion(id=3, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
-    valid_plan = json.dumps(
-        {
-            "operation": "lookup",
-            "companies": ["ACB"],
-            "periods": ["2023"],
-            "metric": {"canonical": "net_revenue"},
-        }
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"choices": [{"message": {"content": valid_plan}}]})
-
-    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
-
-    report, items, csv_rows = export_submission(
-        [question],
-        _service(),
-        release_dir,
-        execution_settings=_ALLOW_LOOKUP,
-        dataset_fingerprint="0" * 64,
-        k=10,
-        llm_client=llm_client,
-    )
-
-    assert report.answered_count == 1
-    assert items[0].answer == 100.0
-    assert report.outcomes[0].plan_source == "llm"
-
-
-def test_export_submission_grounds_raw_metric_when_rule_planner_would_abstain(
-    tmp_path: Path,
-) -> None:
-    """Day 23 plan §1.1/Step 1: a question naming a metric that only exists
-    as a `row_label_raw` (no canonical alias) must not die with
-    `metric_unknown` when that exact label is the unambiguous match among
-    this question's own retrieved candidate tables."""
+def test_export_submission_grounds_a_raw_label_metric(tmp_path: Path) -> None:
+    """Spec 2026-08-23 §6: a question naming a metric that only exists as a
+    `row_label_raw` (no canonical alias) is answered by the single path --
+    the offline decision's row is assembled into a position-bound plan, so
+    answering never depends on a canonical label existing."""
     release_dir = tmp_path / "release"
     release_dir.mkdir(exist_ok=True)
     documents = [
@@ -687,63 +637,54 @@ def test_export_submission_grounds_raw_metric_when_rule_planner_would_abstain(
     service = RetrievalService(build_bm25_index((document,), dataset_fingerprint="f" * 64))
     question = RawQuestion(id=1, question="Lãi tiền gửi của ACB năm 2020 là bao nhiêu?")
 
-    report, items, csv_rows = export_submission(
+    from unittest.mock import MagicMock
+
+    from financial_report_qa.retrieval.row_documents import RowMetadata
+    from financial_report_qa.retrieval.row_fusion import RowFusionService
+    from financial_report_qa.retrieval.row_fusion_contracts import (
+        RowFusedCandidate,
+        RowFusionTrace,
+        RowFusionWeights,
+    )
+
+    row_fusion = MagicMock(spec=RowFusionService)
+    row_fusion.retrieve_rows.return_value = RowFusionTrace(
+        query=question.question,
+        weights=RowFusionWeights(bm25=1, dense=0),
+        candidate_table_ids=(TABLE_ID,),
+        bm25_candidate_count=1,
+        dense_candidate_count=0,
+        results=(
+            RowFusedCandidate(
+                row_id=f"{TABLE_ID}|row_0",
+                table_id=TABLE_ID,
+                row_idx=0,
+                rank=1,
+                fused_score=0.9,
+                snippet="Lãi tiền gửi | 2020 | 70",
+                metadata=RowMetadata(
+                    table_id=TABLE_ID,
+                    row_idx=0,
+                    company_code="ACB",
+                    row_label_raw="Lãi tiền gửi",
+                ),
+            ),
+        ),
+    )
+
+    report, items, _ = export_submission(
         [question],
         service,
         release_dir,
         execution_settings=_ALLOW_LOOKUP,
         dataset_fingerprint="0" * 64,
         k=10,
+        row_fusion=row_fusion,
     )
 
     assert report.answered_count == 1
     assert items[0].answer == 70.0
-    assert report.outcomes[0].plan_source == "rule_raw_grounded"
-
-
-def test_export_submission_falls_to_grounded_llm_when_typed_llm_abstains(
-    tmp_path: Path,
-) -> None:
-    """Day 23 full-coverage strategy tier 3: when the typed, vocabulary-free
-    LLM planner (ADR 0006 B1) can't produce a valid plan, a second attempt
-    shown the real candidate-table content should succeed by copying the
-    real row label verbatim."""
-    release_dir = _write_release(tmp_path)
-    question = RawQuestion(id=3, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
-
-    invalid_typed_plan = json.dumps({"operation": "not_a_real_operation"})
-    grounded_valid_plan = json.dumps(
-        {
-            "operation": "lookup",
-            "companies": ["ACB"],
-            "periods": ["2023"],
-            "metric": {"raw_text": "Doanh thu thuan"},
-        }
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
-        user_message = body["messages"][1]["content"]
-        content = (
-            grounded_valid_plan if "Nội dung bảng ứng viên" in user_message else invalid_typed_plan
-        )
-        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
-
-    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
-
-    report, items, csv_rows = export_submission(
-        [question],
-        _service(),
-        release_dir,
-        execution_settings=_ALLOW_LOOKUP,
-        dataset_fingerprint="0" * 64,
-        k=10,
-        llm_client=llm_client,
-    )
-
-    assert report.answered_count == 1
-    assert report.outcomes[0].plan_source == "llm_grounded"
-    assert items[0].answer == 100.0
+    assert report.outcomes[0].plan_source == "llm_decision"
 
 
 def test_export_submission_backstop_fills_when_every_tier_fails(tmp_path: Path) -> None:
@@ -787,33 +728,6 @@ def test_export_submission_backstop_disabled_keeps_old_behavior(tmp_path: Path) 
     assert report.backstopped_count == 0
     assert len(items) == 0
     assert report.outcomes[0].status == "abstained"
-
-
-def test_export_submission_rule_success_never_calls_llm(tmp_path: Path) -> None:
-    """Mirrors test_plan_router.py's own guarantee, at the exporter's own
-    call site -- an LLM client being present must never override a rule plan
-    that already succeeded."""
-    release_dir = _write_release(tmp_path)
-    question = RawQuestion(id=1, question="Tra cứu doanh thu thuần của ACB năm 2023.")
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("LLM must not be called when the rule planner already succeeded")
-
-    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
-
-    report, items, _ = export_submission(
-        [question],
-        _service(),
-        release_dir,
-        execution_settings=_ALLOW_LOOKUP,
-        dataset_fingerprint="0" * 64,
-        k=10,
-        llm_client=llm_client,
-    )
-
-    assert report.answered_count == 1
-    assert report.outcomes[0].plan_source == "rule"
-    assert report.outcomes[0].status == "answered"
 
 
 def test_load_raw_questions_parses_and_sorts_by_id(tmp_path: Path) -> None:
@@ -864,8 +778,9 @@ def test_export_submission_with_row_fusion(tmp_path: Path) -> None:
     release_dir = _write_release(tmp_path)
     question = RawQuestion(id=1, question="Tra cứu doanh thu thuần của ACB năm 2023.")
 
-    # 1. Test when row_fusion is None (backward compatibility check)
-    report, items, _ = export_submission(
+    # 1. row_fusion=None: grounding sees no ranked row candidate, so the
+    #    single path cannot assemble a plan and the backstop tier fills in.
+    report, _items, _ = export_submission(
         [question],
         _service(),
         release_dir,
@@ -874,17 +789,17 @@ def test_export_submission_with_row_fusion(tmp_path: Path) -> None:
         k=10,
         row_fusion=None,
     )
-    assert report.answered_count == 1
+    assert report.backstopped_count == 1
 
-    # 2. Test when row_fusion is a mock service. It should be called during planning fallback.
-    # To force fallback to LLM planners (where row_fusion results are actually used),
-    # we use a question that the rule planner is guaranteed to abstain on (e.g. unknown metric).
+    # 2. A row_fusion service is queried exactly once per question, with the
+    #    same default candidate count `submission row-batches --rows-
+    #    per-question` uses: a decision file's `chosen` indices are only
+    #    valid against this exact candidate list.
     unsupported_question = RawQuestion(
         id=2, question="Tra cứu chỉ số không tồn tại của ACB năm 2023."
     )
 
     mock_fusion = MagicMock(spec=RowFusionService)
-    # Set up mock to return an empty trace
     mock_fusion.retrieve_rows.return_value = RowFusionTrace(
         query=unsupported_question.question,
         weights=RowFusionWeights(bm25=1, dense=1),
@@ -894,13 +809,6 @@ def test_export_submission_with_row_fusion(tmp_path: Path) -> None:
         results=(),
     )
 
-    # Note: LLM client is needed because LLM fallback only executes when llm_client is not None.
-    # We mock LLM client to return a dummy json choice.
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"choice": 0})
-
-    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
-
     export_submission(
         [unsupported_question],
         _service(),
@@ -908,11 +816,9 @@ def test_export_submission_with_row_fusion(tmp_path: Path) -> None:
         execution_settings=_ALLOW_LOOKUP,
         dataset_fingerprint="0" * 64,
         k=10,
-        llm_client=llm_client,
         row_fusion=mock_fusion,
     )
 
-    # Verify retrieve_rows was called exactly once on our mock
     mock_fusion.retrieve_rows.assert_called_once_with(
         unsupported_question.question,
         candidate_table_ids=(TABLE_ID,),
@@ -978,12 +884,6 @@ def test_export_submission_decoy_pick_fails_cleanly_without_a_ladder(
         results=candidates,
     )
 
-    # LLM từ chối chọn ở mọi tầng planner (payload không hợp lệ).
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"choices": [{"message": {"content": '{"choice": 1}'}}]})
-
-    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
-
     report, items, csv_rows = export_submission(
         [unsupported_question],
         _service(),
@@ -991,7 +891,6 @@ def test_export_submission_decoy_pick_fails_cleanly_without_a_ladder(
         execution_settings=_ALLOW_LOOKUP,
         dataset_fingerprint="0" * 64,
         k=10,
-        llm_client=llm_client,
         row_fusion=mock_fusion,
     )
 
@@ -1050,13 +949,13 @@ def _duplicate_label_release(tmp_path: Path) -> Path:
     return release_dir
 
 
-def test_export_submission_grounds_the_rule_plan_to_the_retrieved_row_position(
+def test_export_submission_binds_the_plan_to_the_ranked_row_position(
     tmp_path: Path,
 ) -> None:
-    """plan.md §9/§14 on the primary path: the rule planner answers most
-    questions without ever entering grounding recovery, so position binding
-    has to apply there too -- otherwise the wrong-row answers the dev
-    benchmark measured are never touched, because they are answers."""
+    """plan.md §9/§14: the plan's row selector is bound to the position row
+    retrieval ranked first and extraction is `df.loc[row_index, column]` --
+    two identically-labelled rows are told apart by `row_idx`, so the rank-1
+    default decision answers with exactly the row the ranking picked."""
     from unittest.mock import MagicMock
 
     from financial_report_qa.retrieval.row_documents import RowMetadata
@@ -1109,11 +1008,10 @@ def test_export_submission_grounds_the_rule_plan_to_the_retrieved_row_position(
     assert report.answered_count == 1
     assert items[0].answer == 900.0
     assert "df1.loc[" in items[0].pandas_query
-    # Spec 2026-08-21 §5.2: position binding no longer strips the semantic
-    # label from the predicate -- the label names the metric, `row_idx` only
-    # breaks the tie between these two identically-labelled rows (0: 100,
-    # 1: 900).
-    assert 'df1.row_label_canonical == "net_revenue"' in items[0].pandas_query
+    # Spec §7.1/§9/§14: the predicate names the corpus label (`row_label_raw`)
+    # of the position-bound selector, and `row_idx` breaks the tie between
+    # these two identically-labelled rows (0: 100, 1: 900).
+    assert 'df1.row_label_raw == "Doanh thu thuan"' in items[0].pandas_query
 
 
 def _evidence_planner_fusion(row_idx: int = 0) -> object:
@@ -1155,144 +1053,13 @@ def _evidence_planner_fusion(row_idx: int = 0) -> object:
     return row_fusion
 
 
-def test_export_submission_uses_the_evidence_aware_planner_when_rules_abstain(
+def test_export_submission_offline_row_decisions_drive_the_single_path(
     tmp_path: Path,
 ) -> None:
-    """plan.md §12: with grounded facts in hand the planner only has to name
-    `{operation, operands}` -- it is never asked to invent a table, a row
-    locator, a column locator or a metric name."""
-    release_dir = _write_release(tmp_path)
-    question = RawQuestion(id=7, question="Tra cứu chỉ tiêu không rõ ràng của ACB năm 2023.")
-
-    seen: list[dict[str, object]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(json.loads(request.content))
-        return httpx.Response(
-            200,
-            json={
-                "choices": [
-                    {
-                        "message": {
-                            "content": json.dumps({"operation": "lookup", "operands": ["F1"]})
-                        }
-                    }
-                ]
-            },
-        )
-
-    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
-
-    report, items, _ = export_submission(
-        [question],
-        _service(),
-        release_dir,
-        execution_settings=_ALLOW_LOOKUP,
-        dataset_fingerprint="0" * 64,
-        k=10,
-        llm_client=llm_client,
-        row_fusion=_evidence_planner_fusion(),
-    )
-
-    assert report.answered_count == 1
-    assert items[0].answer == 100.0
-    assert report.outcomes[0].plan_source == "llm_evidence_planner"
-    # §9/§14: the plan it produced is position-bound, so execution is a
-    # deterministic positional read rather than another label match.
-    assert "df1.loc[" in items[0].pandas_query
-    # The very first model call is the evidence-planner one: the facts are in
-    # the prompt and no locator field is in the schema.
-    first_prompt = "\n".join(str(m["content"]) for m in seen[0]["messages"])  # type: ignore[index,union-attr]
-    assert "F1:" in first_prompt
-    assert "Doanh thu thuan" in first_prompt
-
-
-def test_export_submission_evidence_planner_falls_through_when_the_model_declines(
-    tmp_path: Path,
-) -> None:
-    """The tier is additive: a planner that cannot name an operation must
-    leave the existing LLM planner chain exactly as it was."""
-    release_dir = _write_release(tmp_path)
-    question = RawQuestion(id=8, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
-    typed_plan = json.dumps(
-        {
-            "operation": "lookup",
-            "companies": ["ACB"],
-            "periods": ["2023"],
-            "metric": {"canonical": "net_revenue"},
-        }
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
-        prompt = "\n".join(str(m["content"]) for m in body["messages"])
-        # Decline only the evidence-planner call; answer the typed-plan one.
-        content = "không rõ" if "Các số liệu đã trích sẵn" in prompt else typed_plan
-        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
-
-    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
-
-    report, items, _ = export_submission(
-        [question],
-        _service(),
-        release_dir,
-        execution_settings=_ALLOW_LOOKUP,
-        dataset_fingerprint="0" * 64,
-        k=10,
-        llm_client=llm_client,
-        row_fusion=_evidence_planner_fusion(),
-    )
-
-    assert report.answered_count == 1
-    assert items[0].answer == 100.0
-    assert report.outcomes[0].plan_source == "llm"
-
-
-def test_export_submission_evidence_planner_is_skipped_without_row_fusion(
-    tmp_path: Path,
-) -> None:
-    """No row retrieval means no grounded facts, and §12 explicitly refuses to
-    let the planner work without them -- so the tier must not fire at all."""
-    release_dir = _write_release(tmp_path)
-    question = RawQuestion(id=9, question="Tra cứu tổng lợi thế cạnh tranh của ACB năm 2023.")
-    typed_plan = json.dumps(
-        {
-            "operation": "lookup",
-            "companies": ["ACB"],
-            "periods": ["2023"],
-            "metric": {"canonical": "net_revenue"},
-        }
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
-        prompt = "\n".join(str(m["content"]) for m in body["messages"])
-        assert "Các số liệu đã trích sẵn" not in prompt
-        return httpx.Response(200, json={"choices": [{"message": {"content": typed_plan}}]})
-
-    llm_client = LLMClient(_LLM_SETTINGS, transport=httpx.MockTransport(handler), max_retries=1)
-
-    report, _, _ = export_submission(
-        [question],
-        _service(),
-        release_dir,
-        execution_settings=_ALLOW_LOOKUP,
-        dataset_fingerprint="0" * 64,
-        k=10,
-        llm_client=llm_client,
-        row_fusion=None,
-    )
-    assert report.outcomes[0].plan_source == "llm"
-
-
-def test_export_submission_offline_row_decisions_work_without_a_live_llm_client(
-    tmp_path: Path,
-) -> None:
-    """An offline `--row-choice-decisions` file must still answer with
-    `llm_client=None`: spec 2026-08-23 §6 makes the offline decision the one
-    input of the single answering path (`cell_grounding.ground_question`),
-    which assembles the plan position-bound from it -- no live model call
-    anywhere on that path."""
+    """An offline `--row-choice-decisions` file is the one input of the
+    single answering path (spec 2026-08-23 §6): `cell_grounding.
+    ground_question` assembles the plan position-bound from it -- no live
+    model call anywhere on that path."""
     release_dir = _write_release(tmp_path)
     question = RawQuestion(id=7, question="Tra cứu chỉ tiêu không rõ ràng của ACB năm 2023.")
 
@@ -1303,41 +1070,14 @@ def test_export_submission_offline_row_decisions_work_without_a_live_llm_client(
         execution_settings=_ALLOW_LOOKUP,
         dataset_fingerprint="0" * 64,
         k=10,
-        llm_client=None,
         row_fusion=_evidence_planner_fusion(),
-        row_decisions={7: 0},
+        row_decisions={7: RowChoiceDecision(question_id=7, chosen=(0,))},
     )
 
     assert report.answered_count == 1
     assert items[0].answer == 100.0
     assert report.outcomes[0].plan_source == "llm_decision"
     assert "df1.loc[" in items[0].pandas_query
-
-
-def test_bare_year_periods_keeps_bare_four_digit_years() -> None:
-    assert _bare_year_periods(("2022", "2023")) == (2022, 2023)
-
-
-def test_bare_year_periods_drops_a_full_iso_date() -> None:
-    r"""A live full-export run crashed on question text naming an explicit
-    date ("ngày 31/12/2015") rather than a bare year: `entity_parser`
-    resolves such a question's `entities.periods` to an ISO date string
-    ("2015-12-31"), which the §12 wiring passed straight into `int(...)` and
-    blew up with an uncaught `ValueError` -- taking down the whole export,
-    not just this one question. `rule_planner.py` already guards this exact
-    case (only ever building a plan when every period matches the bare-year
-    pattern, `_PERIOD_PATTERN = re.compile(r"^\d{4}$")`); the evidence-planner
-    wiring must apply the same filter instead of assuming every parsed
-    period is a bare year."""
-    assert _bare_year_periods(("2015-12-31",)) == ()
-
-
-def test_bare_year_periods_drops_only_the_non_year_entries() -> None:
-    assert _bare_year_periods(("2023", "2015-12-31", "2022")) == (2023, 2022)
-
-
-def test_bare_year_periods_of_no_periods_is_empty() -> None:
-    assert _bare_year_periods(()) == ()
 
 
 def test_render_csv_bytes_includes_position_columns() -> None:
@@ -1402,6 +1142,7 @@ def test_answered_path_never_emits_synthesized_single_row(tmp_path: Path) -> Non
             execution_settings=_ALLOW_LOOKUP,
             dataset_fingerprint="0" * 64,
             k=10,
+            row_fusion=_evidence_planner_fusion(),
             apply_backstop=False,
         )
     finally:
@@ -1477,3 +1218,36 @@ def test_evidence_gate_still_rejects_a_genuinely_wrong_replay(tmp_path: Path) ->
 
     tampered = compiled.model_copy(update={"answer": compiled.answer + Decimal("5")})
     assert exporter._real_table_evidence_rows(tampered, release_dir, timeout_seconds=5) is None
+
+
+def test_export_reports_only_the_two_allowed_plan_sources(tmp_path: Path) -> None:
+    """Tiêu chí thành công §12.5: chỉ còn `llm_decision` và `backstop`."""
+    release_dir = _write_release(tmp_path)
+    questions = [RawQuestion(id=1, question="Tra cứu doanh thu thuần của ACB năm 2023.")]
+    report, _items, _rows = export_submission(
+        questions,
+        _service(),
+        release_dir,
+        execution_settings=_ALLOW_LOOKUP,
+        dataset_fingerprint="0" * 64,
+        k=5,
+    )
+    assert {outcome.plan_source for outcome in report.outcomes} <= {"llm_decision", "backstop"}
+
+
+def test_exporter_no_longer_imports_any_deleted_tier() -> None:
+    """Ghim N6 ở mức module: các tầng đã bỏ không được quay lại qua import."""
+    import financial_report_qa.submission.exporter as exporter_module
+
+    source = Path(exporter_module.__file__).read_text(encoding="utf-8")
+    for gone in (
+        "plan_router",
+        "llm_planner",
+        "llm_evidence_planner",
+        "evidence_planner",
+        "column_refinement",
+        "raw_metric_grounding",
+        "llm_cell_grounding",
+        "rule_planner",
+    ):
+        assert gone not in source, f"{gone} thuộc thang tầng đã bỏ"

@@ -127,67 +127,20 @@ class QuestionOutcome(_FrozenModel):
     status: Literal["answered", "abstained", "error", "backstopped"]
     stage: PipelineStage | None
     code: NonEmptyString | None
-    # Which planner actually produced the plan (Day 22 coverage-improvement
-    # follow-up: route_plan tries the rule planner first, falling back to the
-    # LLM planner only on abstain -- ADR 0006 decision A1). None whenever
-    # planning was never reached (e.g. stage == "retrieval").
-    # "rule_raw_grounded" (Day 23 plan Step 1): the rule planner still built
-    # the plan, but only after `raw_metric_grounding.ground_raw_metric`
-    # resolved a metric_unknown abstain -- kept distinct from "rule" so
-    # coverage gained by this fallback is measurable on its own.
-    # "llm_grounded" (Day 23 full-coverage strategy): the typed LLM planner
-    # (vocabulary-free prompt) abstained, but a second attempt shown the
-    # real candidate-table content (`llm_planner.build_plan_grounded`)
-    # succeeded -- kept distinct so its yield is measurable on its own.
-    # "llm_cell_grounded" (Day 25): the LLM chose only WHICH ROW from the
-    # real candidate labels; the rule planner still built and validated
-    # the plan. Distinct so this tier's yield is measurable on its own.
-    # "llm_column_refined" (Day 26): row and period compiled to more than one
-    # candidate cell (`cell_ambiguous`), and the LLM chose WHICH COLUMN from
-    # that row's real headers. Distinct so this tier's yield is measurable on
-    # its own, and so a column-narrowed answer is never mistaken for one the
-    # deterministic locator resolved unaided.
-    plan_source: (
-        Literal[
-            "rule",
-            "rule_raw_grounded",
-            "llm",
-            "llm_grounded",
-            # plan.md §7.1: Attempt 0's row decision, either a genuine LLM
-            # pick ("llm_row_choice") or its deterministic rank-1 fallback
-            # ("row_choice_fallback_rank1") when no decision applied. Kept
-            # distinct from "llm_cell_grounded" (the live-LLM row choice
-            # call) since this one can run with `llm_client=None` via an
-            # offline decisions file.
-            "llm_row_choice",
-            "row_choice_fallback_rank1",
-            "llm_cell_grounded",
-            "llm_cell_grounded_recovered",
-            "llm_cell_grounded_context_expanded",
-            "llm_column_refined",
-            # plan.md §12: the Evidence-Aware Planner chose `{operation,
-            # operands}` over facts grounding had already resolved, rather
-            # than emitting a whole typed plan of its own.
-            "llm_evidence_planner",
-            # spec 2026-08-23 §6: the single answering path -- `cell_grounding.
-            # ground_question` assembled the plan from the offline LLM row
-            # decision (or its rank-1 default). Replaces the ladder-era
-            # sources above, which stay listed for already-written reports.
-            "llm_decision",
-        ]
-        | None
-    ) = None
+    # Nguồn plan của outcome (spec 2026-08-23 §6): nhánh answering duy nhất
+    # chỉ có một nguồn -- "llm_decision", plan do `cell_grounding.
+    # ground_question` dựng từ quyết định offline của LLM (hoặc mặc định
+    # hạng 1). "backstop" dành cho item không-reasoned của tầng backstop.
+    # None khi planning chưa được chạm tới (ví dụ stage == "retrieval").
+    plan_source: Literal["llm_decision", "backstop"] | None = None
     # plan.md §9: retrieval confidence backing the plan's row selector(s)
     # (min across every selector the plan uses), when the row went through
     # fusion at all. `None` for a deterministic canonical-dictionary match,
     # or whenever planning never resolved a row (abstained/erred earlier).
     grounding_score: float | None = None
-    # plan.md §15: True only when `cell_grounding.ground_with_recovery`'s
-    # threshold retry ran and never found a row ranked within
-    # `max_grounding_rank` in fusion -- this answer is its best-effort
-    # fallback, not a confidently-ranked match. Always False when the rule
-    # or LLM planner answered directly without going through that ladder
-    # (a direct rule-planner success is never threshold-checked today).
+    # Vestige of the removed recovery ladder, kept so already-written reports
+    # keep their shape: on the single answering path (spec 2026-08-23 §6) this
+    # is always False -- there is no threshold retry left to fall back from.
     low_confidence: bool = False
 
     @model_validator(mode="after")

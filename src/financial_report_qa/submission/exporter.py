@@ -16,36 +16,18 @@ import zipfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Literal
 
 import pandas as pd
 
 from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.core.errors import SubmissionInputError
 from financial_report_qa.execution.cell_frame import build_cell_frame
-from financial_report_qa.execution.compiler import compile_plan
 from financial_report_qa.execution.contracts import CompiledQuery
 from financial_report_qa.execution.sandbox import replay_in_sandbox
 from financial_report_qa.pipeline.contracts import PipelineStage
-from financial_report_qa.planning import llm_planner
-from financial_report_qa.planning.cell_grounding import compile_grounded, ground_question
-from financial_report_qa.planning.column_refinement import plan_with_column
+from financial_report_qa.planning.cell_grounding import ground_question
 from financial_report_qa.planning.entity_parser import parse_query_entities
-from financial_report_qa.planning.evidence_rendering import (
-    evidence_table_context,
-    plan_grounding_score,
-)
-from financial_report_qa.planning.llm_cell_grounding import choose_column_label
-from financial_report_qa.planning.llm_client import ChatCompletionClient
-from financial_report_qa.planning.llm_evidence_planner import plan_with_evidence
-from financial_report_qa.planning.plan_contracts import _PERIOD_PATTERN, map_requested_unit
-from financial_report_qa.planning.plan_router import route_plan
 from financial_report_qa.planning.question_plan import RowChoiceDecision
-from financial_report_qa.planning.raw_metric_grounding import (
-    candidate_column_labels,
-    plan_with_raw_grounding_fallback,
-)
-from financial_report_qa.planning.table_context_rendering import render_table_context
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
 from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
 from financial_report_qa.retrieval.row_fusion import (
@@ -89,22 +71,6 @@ def load_raw_questions(path: Path) -> tuple[RawQuestion, ...]:
             seen_ids.add(question.id)
             records.append(question)
     return tuple(sorted(records, key=lambda item: item.id))
-
-
-def _bare_year_periods(periods: Sequence[str]) -> tuple[int, ...]:
-    """plan.md §12: the periods `enumerate_candidate_facts` filters on.
-
-    `entities.periods` (entity_parser.py) is not always a bare 4-digit year
-    -- a question naming an explicit date ("ngày 31/12/2015") resolves to an
-    ISO date string ("2015-12-31"), and a quarter can resolve to its own
-    non-year token. `rule_planner.py` already guards this: it abstains with
-    `period_grammar_unsupported` unless every period matches
-    `_PERIOD_PATTERN`. This tier has to apply the same filter -- silently
-    dropping a non-bare-year entry, rather than crashing the whole export on
-    one question's phrasing, since a live full-export run did exactly that
-    (`int('2015-12-31')` raising `ValueError` out of `_run_one_question`).
-    """
-    return tuple(int(period) for period in periods if _PERIOD_PATTERN.match(period))
 
 
 def _synthetic_question_id(question_id: int) -> str:
@@ -191,10 +157,9 @@ def _run_one_question(
     *,
     execution_settings: ExecutionSettings,
     k: int,
-    llm_client: ChatCompletionClient | None,
     row_fusion: RowFusionService | None = None,
     allow_inferred_scope: bool = False,
-    row_decisions: Mapping[int, int] | None = None,
+    row_decisions: Mapping[int, RowChoiceDecision] | None = None,
 ) -> tuple[QuestionOutcome, SubmissionItem | None, tuple[CsvRow, ...] | None]:
     question = raw_question.question
 
@@ -214,14 +179,12 @@ def _run_one_question(
             None,
         )
 
-    # Evidence-aware planner: run row fusion to get ranked rows for downstream
-    # tiers. When row_fusion is None (backward compatible), fusion_rows stays
-    # empty and all tiers fall back to their existing unranked behavior.
+    # Row fusion feeds the single answering path its ranked row candidates.
     # `k` must match `submission row-batches --rows-per-question`'s default
-    # (DEFAULT_ROW_CANDIDATE_COUNT): an LLM decision file produced by
-    # `row-batches` may reference `chosen_index` values up to that count - 1,
-    # and if this candidate list were shorter, those indices would look
-    # "out of range" here and silently fall back to a worse rank-1 choice.
+    # (DEFAULT_ROW_CANDIDATE_COUNT): a decision file produced by `row-batches`
+    # may reference `chosen` indices up to that count - 1, and if this
+    # candidate list were shorter, those indices would be out of range and
+    # silently fall back to rank 1.
     fusion_rows = (
         row_fusion.retrieve_rows(
             question, candidate_table_ids=retrieved, k=DEFAULT_ROW_CANDIDATE_COUNT
@@ -231,225 +194,37 @@ def _run_one_question(
     )
 
     entities = parse_query_entities(question)
-    # Day 23 plan Step 1: try the rule planner, with one grounded retry when
-    # it abstains purely on `metric_unknown` (raw_metric_grounding.py). Only
-    # once *that* combined attempt still has no plan does the Day 22
-    # coverage-improvement follow-up (`route_plan`, ADR 0006 A1) get to try
-    # the LLM planner -- never the reverse, so the Day 16
-    # false-plan-rate-0.0 guarantee is unaffected. `llm_client=None`
-    # reproduces the exact pre-fallback behavior (no network call attempted).
-    plan_result, grounded = plan_with_raw_grounding_fallback(
-        entities,
+    # Nhánh answering duy nhất (spec 2026-08-23 §6, nguyên tắc N6): câu hỏi đi
+    # qua đúng một đường `ground_question` -- quyết định offline của LLM (hoặc
+    # mặc định hạng 1 khi không có) -> plan -> compile. Không tầng thứ hai chạy
+    # ra cứu; hỏng ở đâu thì hỏng rõ ở đó với đúng một mã lỗi.
+    grounding = ground_question(
+        entities=entities,
+        decision=(row_decisions or {}).get(raw_question.id),
+        fusion_rows=fusion_rows,
         candidate_table_ids=retrieved,
-        known_table_ids=frozenset(retrieved),
         release_dir=release_dir,
+        execution_settings=execution_settings,
     )
-    plan_source: Literal[
-        "rule",
-        "rule_raw_grounded",
-        "llm",
-        "llm_grounded",
-        "llm_column_refined",
-        "llm_evidence_planner",
-        # spec 2026-08-23 §6: plan do `ground_question` dựng từ quyết định
-        # offline của LLM -- nguồn duy nhất còn lại của nhánh answering.
-        "llm_decision",
-    ]
-    compiled: CompiledQuery | None = None
-    low_confidence = False
-
-    if plan_result.plan is not None:
-        plan_source = "rule_raw_grounded" if grounded else "rule"
-        # plan.md §9/§14: bind the plan's row selector to the position row
-        # retrieval ranked first, and extract with `df.loc[row_index, column]`.
-        # This has to happen on the primary path, not only inside the recovery
-        # ladder below: a plan that picked the wrong row still *compiles*, so
-        # recovery never sees it -- which is exactly how 71 of 88 wrong dev
-        # benchmark answers were produced.
-        primary_plan, compiled = compile_grounded(
-            plan_result.plan, fusion_rows, release_dir, execution_settings
-        )
-        plan_result = plan_result.model_copy(update={"plan": primary_plan})
-        # Column refinement on deterministic rule plan if ambiguous
-        if compiled.error_code == "cell_ambiguous" and llm_client is not None:
-            refined = plan_with_column(
-                primary_plan,
-                lambda row_label, columns: choose_column_label(
-                    question, row_label, columns, client=llm_client
-                ),
-                columns_for=lambda row_label: candidate_column_labels(
-                    release_dir, primary_plan.candidate_table_ids, row_label
-                ),
-            )
-            if refined is not None:
-                retried_plan, retried = compile_grounded(
-                    refined, fusion_rows, release_dir, execution_settings
-                )
-                if retried.status == "answered":
-                    plan_result = plan_result.model_copy(update={"plan": retried_plan})
-                    compiled = retried
-                    plan_source = "llm_column_refined"
-    elif llm_client is not None:
-        # plan.md §12 Evidence-Aware Planner, tried before the typed-plan
-        # router. Given the facts row retrieval already grounded, the model
-        # only has to name `{operation, operands}` -- it is never asked to
-        # invent a table, a row locator, a column locator or a metric name,
-        # which is the reasoning chain §12 blames for the 231
-        # `llm_plan_invalid` questions. Purely additive: every decline path
-        # (no rows, no facts, a model that will not choose, an operand set
-        # that fails `build_plan_from_facts`) returns None and leaves the
-        # existing router chain below exactly as it was.
-        evidence_plan = (
-            plan_with_evidence(
-                question,
-                fusion_rows,
-                release_dir,
-                client=llm_client,
-                company_code=entities.company_codes[0] if entities.company_codes else None,
-                periods=_bare_year_periods(entities.periods),
-                expected_unit=map_requested_unit(entities.requested_unit),
-            )
-            if fusion_rows
-            else None
-        )
-        plan_source = "llm_evidence_planner"
-        if evidence_plan is not None:
-            evidence_compiled = compile_plan(
-                evidence_plan, release_dir, execution_settings=execution_settings
-            )
-            if evidence_compiled.status == "answered":
-                plan_result = plan_result.model_copy(update={"plan": evidence_plan})
-                compiled = evidence_compiled
-
-        if compiled is None:
-            # LLM Planner (Attempt 0 LLM)
-            routed = route_plan(
-                entities,
-                client=llm_client,
-                candidate_table_ids=retrieved,
-                known_table_ids=frozenset(retrieved),
-            )
-            plan_result, plan_source = routed.result, routed.source
-
-            if plan_result.plan is None:
-                table_context = (
-                    evidence_table_context(fusion_rows)
-                    if fusion_rows
-                    else render_table_context(release_dir, retrieved)
-                )
-                grounded_result = llm_planner.build_plan_grounded(
-                    question,
-                    client=llm_client,
-                    candidate_table_ids=retrieved,
-                    known_table_ids=frozenset(retrieved),
-                    table_context=table_context,
-                )
-                if grounded_result.plan is not None:
-                    plan_result, plan_source = grounded_result, "llm_grounded"
-
-            if plan_result.plan is not None:
-                routed_plan, compiled = compile_grounded(
-                    plan_result.plan, fusion_rows, release_dir, execution_settings
-                )
-                plan_result = plan_result.model_copy(update={"plan": routed_plan})
-                if compiled.error_code == "cell_ambiguous":
-                    refined = plan_with_column(
-                        routed_plan,
-                        lambda row_label, columns: choose_column_label(
-                            question, row_label, columns, client=llm_client
-                        ),
-                        columns_for=lambda row_label: candidate_column_labels(
-                            release_dir, routed_plan.candidate_table_ids, row_label
-                        ),
-                    )
-                    if refined is not None:
-                        retried_plan, retried = compile_grounded(
-                            refined, fusion_rows, release_dir, execution_settings
-                        )
-                        if retried.status == "answered":
-                            plan_result = plan_result.model_copy(update={"plan": retried_plan})
-                            compiled = retried
-                            plan_source = "llm_column_refined"
-    else:
-        plan_source = "rule"
-        compiled = None
-
-    # Nhánh answering duy nhất (spec 2026-08-23 §6, nguyên tắc N6): khi mọi
-    # tầng phía trên vẫn chưa trả lời được, câu hỏi đi qua đúng một đường
-    # `ground_question` -- không tầng thứ hai chạy ra cứu.
-    needs_grounding = plan_result.plan is None or compiled is None or compiled.status != "answered"
-    decision = (
-        RowChoiceDecision(
-            question_id=raw_question.id, chosen=(row_decisions[raw_question.id],)
-        )
-        if row_decisions and raw_question.id in row_decisions
-        else None
-    )
-    if needs_grounding:
-        grounding_res = ground_question(
-            entities=entities,
-            decision=decision,
-            fusion_rows=fusion_rows,
-            candidate_table_ids=retrieved,
-            release_dir=release_dir,
-            execution_settings=execution_settings,
-        )
-        if grounding_res.status == "accepted":
-            assert grounding_res.plan is not None
-            assert grounding_res.compiled is not None
-
-            plan_result = plan_result.model_copy(update={"plan": grounding_res.plan})
-            compiled = grounding_res.compiled
-            plan_source = grounding_res.plan_source
-            low_confidence = grounding_res.low_confidence
-        elif plan_result.plan is not None:
-            plan_result = plan_result.model_copy(
-                update={"plan": None, "abstain_codes": (grounding_res.error_code,)}
-            )
-
-    if compiled is None or compiled.status != "answered":
-        if compiled is None:
-            abstain_code = (
-                "+".join(plan_result.abstain_codes)
-                if plan_result.abstain_codes
-                else "planning_failed"
-            )
-            return (
-                QuestionOutcome.model_validate(
-                    {
-                        "id": raw_question.id,
-                        "question": question,
-                        "status": "abstained",
-                        "stage": "planning",
-                        "code": abstain_code,
-                        "plan_source": plan_source,
-                    }
-                ),
-                None,
-                None,
-            )
-        assert compiled.error_code is not None
-        # Day 22 plan §1 §3: no gold exists for this question set, so the
-        # retrieval/planning/normalization/execution stage split
-        # `pipeline/evaluation.py` computes from `gold_in_retrieved` cannot be
-        # replicated here -- every `compile_plan` error is reported under
-        # "execution", a documented simplification, not a hidden one.
+    if grounding.status != "accepted":
         return (
             QuestionOutcome.model_validate(
                 {
                     "id": raw_question.id,
                     "question": question,
-                    "status": "error",
-                    "stage": "execution",
-                    "code": compiled.error_code,
-                    "plan_source": plan_source,
+                    "status": "abstained",
+                    "stage": "planning",
+                    "code": grounding.error_code,
+                    "plan_source": "llm_decision",
                 }
             ),
             None,
             None,
         )
-
-    plan = plan_result.plan
+    assert grounding.plan is not None and grounding.compiled is not None
+    plan = grounding.plan
+    compiled = grounding.compiled
+    low_confidence = grounding.low_confidence
     cell_ids = tuple(cell_id for cell in compiled.evidence for cell_id in cell.cell_ids)
     citation_lookup = build_citation_lookup(release_dir, cell_ids)
     package = build_answer_package(
@@ -472,7 +247,7 @@ def _run_one_question(
                     "status": "error",
                     "stage": "verification",
                     "code": "+".join(issue.code for issue in package.verification_issues),
-                    "plan_source": plan_source,
+                    "plan_source": "llm_decision",
                 }
             ),
             None,
@@ -496,7 +271,7 @@ def _run_one_question(
                     "status": "error",
                     "stage": "execution",
                     "code": "evidence_frame_replay_mismatch",
-                    "plan_source": plan_source,
+                    "plan_source": "llm_decision",
                 }
             ),
             None,
@@ -525,8 +300,8 @@ def _run_one_question(
                 "status": "answered",
                 "stage": None,
                 "code": None,
-                "plan_source": plan_source,
-                "grounding_score": plan_grounding_score(plan, fusion_rows),
+                "plan_source": "llm_decision",
+                "grounding_score": grounding.grounding_score,
                 "low_confidence": low_confidence,
             }
         ),
@@ -573,37 +348,32 @@ def export_submission(
     execution_settings: ExecutionSettings,
     dataset_fingerprint: str,
     k: int = 10,
-    llm_client: ChatCompletionClient | None = None,
     row_fusion: RowFusionService | None = None,
     apply_backstop: bool = True,
     allow_inferred_scope: bool = False,
-    row_decisions: Mapping[int, int] | None = None,
+    row_decisions: Mapping[int, RowChoiceDecision] | None = None,
 ) -> tuple[SubmissionExportReport, tuple[SubmissionItem, ...], dict[str, tuple[CsvRow, ...]]]:
     """Run every question through the live pipeline once. Returns the
     coverage report (all questions), the ``SubmissionItem``s to package into
     ``submission.json``, and their CSV rows keyed by ``csv_path``.
 
-    ``llm_client=None`` (the default) keeps the pre-Day-22-coverage-follow-up
-    behavior: only the rule planner ever runs. Passing a client routes every
-    rule-planner abstain through ``plan_router.route_plan``'s LLM fallback
-    (ADR 0006 decision A1), then a grounded LLM retry (Day 23 tier 3) -- the
-    rule planner still always runs first and is never overridden once it
-    succeeds.
+    The answering path is single (spec 2026-08-23 §6, N6): every question
+    goes through exactly one ``cell_grounding.ground_question`` call --
+    the offline LLM decision (or the deterministic rank-1 default) is
+    assembled into a plan, compiled position-bound, verified. No second tier
+    ever runs to the rescue.
 
-    ``row_fusion=None`` (the default) keeps the pre-evidence-aware behavior:
-    LLM grounding tiers use unranked row labels and full table context.
-    Passing a ``RowFusionService`` enables ranked, evidence-aware label lists
-    and focused context for the LLM.
+    ``row_fusion=None`` keeps grounding from seeing any ranked row candidate:
+    every question then abstains with ``no_row_candidates``, so production
+    callers pass a ``RowFusionService`` (assembled by ``submission/cli.py``
+    from the row BM25 index, optionally plus the dense branch).
 
-    ``row_decisions=None`` (the default) keeps grounding recovery's Attempt 0
-    LLM row decision unavailable unless a live ``llm_client`` is also given.
-    Passing a ``{question_id: chosen_index}`` mapping (`row_choice_decision.
-    load_decisions`) makes that decision come from an *offline* file instead
-    -- grounding recovery then runs even when ``llm_client`` is ``None``,
-    which is why the gate below checks either, not just the client.
+    ``row_decisions`` maps ``question_id -> RowChoiceDecision``
+    (``planning.question_plan.load_decisions``): the offline LLM's per-question
+    choice of row. A missing entry defaults to the rank-1 candidate.
 
     ``apply_backstop=True`` (the default, Day 23 full-coverage strategy): any
-    question every reasoning tier still failed gets a contract-valid but
+    question the answering path failed gets a contract-valid but
     not-reasoned item (tier 4, ``backstop_answer.build_backstop_item``), so
     ``items`` always covers every question in ``raw_questions`` -- required by
     plan.md §2.4 rule 1 (a single missing id fails the whole ZIP) and safe
@@ -625,7 +395,6 @@ def export_submission(
             release_dir,
             execution_settings=execution_settings,
             k=k,
-            llm_client=llm_client,
             row_fusion=row_fusion,
             allow_inferred_scope=allow_inferred_scope,
             row_decisions=row_decisions,

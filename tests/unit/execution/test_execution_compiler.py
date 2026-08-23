@@ -981,9 +981,16 @@ def test_compile_plan_rejects_incompatible_unit_conversion(tmp_path: Path) -> No
     assert result.error_code == "unit_incompatible"
 
 
-def test_planners_propagate_expected_unit() -> None:
+def test_plan_assembly_propagates_expected_unit() -> None:
+    """Spec 2026-08-23 §8.4 re-pin: the requested unit still reaches
+    `plan.expected_unit` on the single answering path -- the same behavior
+    the deleted `rule_planner.build_plan` used to pin. The compiler consumes
+    this field for unit conversion (`compile_plan`), so planning must keep
+    propagating it."""
     from financial_report_qa.planning.entity_contracts import QueryEntities
-    from financial_report_qa.planning.rule_planner import build_plan
+    from financial_report_qa.planning.question_plan import RowChoiceDecision, assemble_plan
+    from financial_report_qa.retrieval.row_documents import RowMetadata
+    from financial_report_qa.retrieval.row_fusion_contracts import RowFusedCandidate
 
     entities = QueryEntities(
         parser_version="entity-parser-v2",
@@ -993,13 +1000,29 @@ def test_planners_propagate_expected_unit() -> None:
         metrics=("net_revenue",),
         requested_unit="billion_vnd",
     )
-    result = build_plan(
-        entities,
-        candidate_table_ids=(TABLE_ID,),
-        known_table_ids=frozenset([TABLE_ID]),
+    candidate = RowFusedCandidate(
+        row_id=f"{TABLE_ID}|row_1",
+        table_id=TABLE_ID,
+        row_idx=1,
+        rank=1,
+        fused_score=1.0,
+        metadata=RowMetadata(
+            table_id=TABLE_ID,
+            row_idx=1,
+            company_code="ACB",
+            row_label_raw="Doanh thu thuần",
+            periods=("2023",),
+        ),
+        snippet="Doanh thu thuần",
     )
-    assert result.plan is not None
-    assert result.plan.expected_unit == "VND_billion"
+    plan = assemble_plan(
+        entities,
+        RowChoiceDecision(question_id=1, operation="lookup", chosen=(0,)),
+        (candidate,),
+        (TABLE_ID,),
+    )
+    assert plan is not None
+    assert plan.expected_unit == "VND_billion"
 
 
 

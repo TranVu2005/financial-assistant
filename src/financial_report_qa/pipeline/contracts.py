@@ -1,12 +1,9 @@
 """Day 21 E2E pipeline contracts (ADR 0010 decision E1).
 
-Unlike `verification/evaluation.py::evaluate_answer_packages_on_gold`
-(Day 20), which feeds `gold_table_ids` into both `candidate_table_ids` and
-`retrieved_table_ids` -- bypassing retrieval entirely (Day 21 plan §1.1) --
-`pipeline.evaluation.run_e2e_pipeline` runs retrieval's own saved ranking
-through the full plan -> compile -> verify chain and records every abstain
-as a first-class result, not a swallowed `continue` (Day 21 plan §1.9: 19/70
-gold70 abstains were invisible in the Day 20 report).
+Historical note: these contracts fed `pipeline.evaluation.run_e2e_pipeline`
+(Day 21, deleted 2026-08-23 with the planner ladder it measured). What
+remains live is `PipelineStage` and the outcome models the submission
+exporter uses to classify every non-answered question by stage.
 """
 
 from __future__ import annotations
@@ -28,8 +25,9 @@ PipelineStage = Literal["retrieval", "planning", "normalization", "execution", "
 # `cell_ambiguous` is deliberately absent -- it is stage-ambiguous by nature
 # (Day 21 plan §1.2: 22/24 `cell_ambiguous` failures under real retrieval had
 # gold IN the candidate set, so a static "cell_ambiguous = retrieval" rule
-# would misclassify the majority case) and is resolved per-question from
-# `gold_in_retrieved` in `evaluation.py`, not from this table.
+# would misclassify the majority case) and was resolved per-question from
+# `gold_in_retrieved` in the since-deleted Day 21 `evaluation.py`, not from
+# this table.
 NORMALIZATION_ISSUE_CODES: frozenset[str] = frozenset(
     {"metric_not_found", "period_unresolved", "unit_missing"}
 )

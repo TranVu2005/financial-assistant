@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from financial_report_qa.retrieval.row_dense_service import RowDenseRetrievalService
     from financial_report_qa.retrieval.row_fusion import RowFusionService
 
-from financial_report_qa.core.config import load_execution_settings, load_llm_settings
+from financial_report_qa.core.config import load_execution_settings
 from financial_report_qa.core.errors import (
     ExecutionError,
     PlanningArtifactError,
@@ -27,9 +27,8 @@ from financial_report_qa.core.errors import (
     SubmissionError,
 )
 from financial_report_qa.planning.entity_parser import parse_query_entities
-from financial_report_qa.planning.llm_client import LLMClient
+from financial_report_qa.planning.question_plan import load_decisions
 from financial_report_qa.planning.row_choice_batch import build_batch_payload
-from financial_report_qa.planning.row_choice_decision import load_decisions
 from financial_report_qa.retrieval.index import load_bm25_index
 from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
 from financial_report_qa.retrieval.release import resolve_retrieval_release
@@ -61,17 +60,6 @@ def _parser() -> argparse.ArgumentParser:
         '{"id": int, "question": str} (e.g. data/raw/ViFinQA/questions/questions.jsonl).',
     )
     export.add_argument("--execution-config", type=Path, nargs="+", required=True)
-    export.add_argument(
-        "--llm-config",
-        type=Path,
-        nargs="+",
-        default=None,
-        help="One or more YAML files layering the `llm:` block (e.g. configs/base.yaml "
-        "configs/local_rtx3050.yaml). When given, a rule-planner abstain falls back to "
-        "the LLM planner (plan_router.route_plan, ADR 0006 A1) against this endpoint -- "
-        "the rule planner still always runs first and is never overridden once it "
-        "succeeds. Omit to keep the rule-planner-only behavior.",
-    )
     export.add_argument("--output-zip", type=Path, required=True)
     export.add_argument("--report-dir", type=Path, required=True)
     export.add_argument("--k", type=int, default=10)
@@ -138,8 +126,9 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "File JSONL {question_id, chosen_index} do Qwen3-8B sinh offline "
-            "(xem subcommand `row-batches`). Bỏ qua để dùng fallback hạng 1."
+            "File JSONL {question_id, operation, chosen, top_k} do Qwen3-8B sinh "
+            "offline (xem subcommand `row-batches`); đọc bằng "
+            "`question_plan.load_decisions`. Bỏ qua để dùng ứng viên hạng 1."
         ),
     )
 
@@ -324,33 +313,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else None
             )
 
-            if args.llm_config is not None:
-                llm_settings = load_llm_settings(args.llm_config)
-                with LLMClient(llm_settings) as llm_client:
-                    report, items, csv_rows = export_submission(
-                        questions,
-                        service,
-                        release.release_dir,
-                        execution_settings=execution_settings,
-                        dataset_fingerprint=release.dataset_fingerprint,
-                        k=args.k,
-                        llm_client=llm_client,
-                        row_fusion=row_fusion,
-                        row_decisions=row_decisions,
-                        allow_inferred_scope=args.allow_inferred_scope,
-                    )
-            else:
-                report, items, csv_rows = export_submission(
-                    questions,
-                    service,
-                    release.release_dir,
-                    execution_settings=execution_settings,
-                    dataset_fingerprint=release.dataset_fingerprint,
-                    k=args.k,
-                    row_fusion=row_fusion,
-                    row_decisions=row_decisions,
-                    allow_inferred_scope=args.allow_inferred_scope,
-                )
+            report, items, csv_rows = export_submission(
+                questions,
+                service,
+                release.release_dir,
+                execution_settings=execution_settings,
+                dataset_fingerprint=release.dataset_fingerprint,
+                k=args.k,
+                row_fusion=row_fusion,
+                row_decisions=row_decisions,
+                allow_inferred_scope=args.allow_inferred_scope,
+            )
             # Write the per-question coverage report BEFORE the compliance gate
             # (Important 5, 2026-08-21 final review): it writes only to
             # --report-dir, never to the ZIP, so writing it first cannot ship a

@@ -1,27 +1,23 @@
-"""Tests for the Day 20 verify-answers evaluation report (task 20.10)."""
+"""Tests for `verification.evaluation.build_citation_lookup`.
+
+The Day 20 gold-measurement harness that used to share this module
+(`evaluate_answer_packages_on_gold`, `load_answer_gold`,
+`write_answer_verification_report`) measured the deleted planner tiers and
+went away with it (spec 2026-08-23 §8); its tests went with it. What remains
+is the live half: resolving citation provenance for evidence cell ids on the
+single answering path.
+"""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
-from financial_report_qa.retrieval.contracts import (
-    GoldRetrievalQuestion,
-    GoldTableEvidence,
-    RetrievalFilters,
-)
-from financial_report_qa.verification.evaluation import (
-    build_citation_lookup,
-    evaluate_answer_packages_on_gold,
-    load_answer_gold,
-    write_answer_verification_report,
-)
+from financial_report_qa.verification.evaluation import build_citation_lookup
 
 TABLE_ID = "tbl_" + "1" * 64
 DOC_ID = "doc_" + "a" * 64
@@ -103,81 +99,3 @@ def test_build_citation_lookup_resolves_provenance_fields(tmp_path: Path) -> Non
     assert lookup[CELL_ID]["doc_relative_path"] == "ACB/2023/report.txt"
     assert lookup[CELL_ID]["source_line_start"] == 5
     assert lookup[CELL_ID]["table_title"] == "Bang can doi ke toan"
-
-
-def test_evaluate_answer_packages_reports_verified_and_accuracy(tmp_path: Path) -> None:
-    release_dir = _write_release(tmp_path)
-    question = GoldRetrievalQuestion(
-        question_id="retq_" + "b" * 64,
-        question="Tra cứu doanh thu thuần của ACB năm 2023.",
-        intent="lookup",
-        filters=RetrievalFilters(),
-        gold_table_ids=(TABLE_ID,),
-        reviewed_by="tester",
-        reviewed_at=datetime(2026, 8, 15, tzinfo=UTC),
-        gold_evidence=(
-            GoldTableEvidence(
-                table_id=TABLE_ID,
-                relative_path="ACB/2023/report.txt",
-                line_start=5,
-                line_end=5,
-                verified=True,
-            ),
-        ),
-        dataset_fingerprint="0" * 64,
-    )
-    settings = ExecutionSettings(timeout_seconds=5, max_rows=20000, allow_operations=("lookup",))
-    report = evaluate_answer_packages_on_gold(
-        [question],
-        release_dir,
-        execution_settings=settings,
-        answer_gold={"retq_" + "b" * 64: Decimal("100")},
-    )
-    assert report.plannable_count == 1
-    assert report.answered_count == 1
-    assert report.verified_count == 1
-    assert report.rejected_count == 0
-    assert report.accuracy_against_gold == 1.0
-
-
-def test_write_answer_verification_report_creates_files(tmp_path: Path) -> None:
-    release_dir = _write_release(tmp_path)
-    question = GoldRetrievalQuestion(
-        question_id="retq_" + "c" * 64,
-        question="Tra cứu doanh thu thuần của ACB năm 2023.",
-        intent="lookup",
-        filters=RetrievalFilters(),
-        gold_table_ids=(TABLE_ID,),
-        reviewed_by="tester",
-        reviewed_at=datetime(2026, 8, 15, tzinfo=UTC),
-        gold_evidence=(
-            GoldTableEvidence(
-                table_id=TABLE_ID,
-                relative_path="ACB/2023/report.txt",
-                line_start=5,
-                line_end=5,
-                verified=True,
-            ),
-        ),
-        dataset_fingerprint="0" * 64,
-    )
-    settings = ExecutionSettings(timeout_seconds=5, max_rows=20000, allow_operations=("lookup",))
-    report = evaluate_answer_packages_on_gold(
-        [question], release_dir, execution_settings=settings, answer_gold=None
-    )
-    output_dir = tmp_path / "artifacts"
-    json_path, markdown_path = write_answer_verification_report(report, output_dir)
-    assert json_path.exists()
-    assert markdown_path.exists()
-
-
-def test_load_answer_gold_parses_jsonl(tmp_path: Path) -> None:
-    path = tmp_path / "answer-gold-v1.jsonl"
-    path.write_text(
-        '{"question_id": "retq_' + "b" * 64 + '", "answer": "100"}\n'
-        '{"question_id": "retq_' + "c" * 64 + '", "answer": "-56617982.0"}\n',
-        encoding="utf-8",
-    )
-    gold = load_answer_gold(path)
-    assert gold["retq_" + "b" * 64] == Decimal("100")
-    assert gold["retq_" + "c" * 64] == Decimal("-56617982.0")

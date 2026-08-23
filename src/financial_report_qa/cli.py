@@ -45,22 +45,6 @@ def _parser() -> argparse.ArgumentParser:
         help="Generate and evaluate the deterministic Day 10 entity parser.",
     )
     commands.add_parser(
-        "execution",
-        add_help=False,
-        help="Compile financial query plans to scalar answers (Day 18).",
-    )
-    commands.add_parser(
-        "verification",
-        add_help=False,
-        help="Verify and cite compiled answers, template-first (Day 20).",
-    )
-    commands.add_parser(
-        "pipeline",
-        add_help=False,
-        help="Run the real text -> retrieval -> plan -> execution -> "
-        "verification E2E chain (Day 21).",
-    )
-    commands.add_parser(
         "submission",
         add_help=False,
         help="Export and validate the Dashboard submission ZIP (Day 22).",
@@ -93,18 +77,6 @@ def main(
         from financial_report_qa.planning.cli import main as planning_main
 
         return planning_main(remaining)
-    if parsed.command == "execution":
-        from financial_report_qa.execution.cli import main as execution_main
-
-        return execution_main(remaining)
-    if parsed.command == "verification":
-        from financial_report_qa.verification.cli import main as verification_main
-
-        return verification_main(remaining)
-    if parsed.command == "pipeline":
-        from financial_report_qa.pipeline.cli import main as pipeline_main
-
-        return pipeline_main(remaining)
     if parsed.command == "submission":
         from financial_report_qa.submission.cli import main as submission_main
 
