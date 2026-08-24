@@ -28,6 +28,7 @@ from financial_report_qa.core.errors import (
     SubmissionError,
 )
 from financial_report_qa.planning.entity_parser import parse_query_entities
+from financial_report_qa.planning.program_decisions import load_program_decisions
 from financial_report_qa.planning.question_plan import load_decisions
 from financial_report_qa.planning.row_choice_batch import build_batch_payload
 from financial_report_qa.retrieval.cli import _build_table_retriever
@@ -135,6 +136,15 @@ def _parser() -> argparse.ArgumentParser:
             "File JSONL {question_id, operation, chosen, top_k} do Qwen3-8B sinh "
             "offline (xem subcommand `row-batches`); đọc bằng "
             "`question_plan.load_decisions`. Bỏ qua để dùng ứng viên hạng 1."
+        ),
+    )
+    export.add_argument(
+        "--program-decisions",
+        type=Path,
+        default=None,
+        help=(
+            "File JSONL quyết định masked-PAL (spec 2026-08-24 §4.3). Bỏ qua "
+            "thì chạy đường cũ. Thay --row-choice-decisions khi có mặt."
         ),
     )
     export.add_argument(
@@ -348,6 +358,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if args.row_choice_decisions is not None
                 else None
             )
+            # Masked-PAL quyết định (spec 2026-08-24 §4.3): chỉ nạp khi cờ có
+            # mặt -- không truyền thì đường cũ chạy nguyên vẹn như trước.
+            program_decisions = (
+                load_program_decisions(args.program_decisions)
+                if args.program_decisions is not None
+                else None
+            )
 
             report, items, csv_rows = export_submission(
                 questions,
@@ -360,6 +377,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 row_fusion=row_fusion,
                 row_decisions=row_decisions,
                 allow_inferred_scope=args.allow_inferred_scope,
+                program_decisions=program_decisions,
             )
             # Write the per-question coverage report BEFORE the compliance gate
             # (Important 5, 2026-08-21 final review): it writes only to
