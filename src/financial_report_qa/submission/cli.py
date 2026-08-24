@@ -30,7 +30,10 @@ from financial_report_qa.core.errors import (
 from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.program_decisions import load_program_decisions
 from financial_report_qa.planning.question_plan import load_decisions
-from financial_report_qa.planning.row_choice_batch import build_batch_payload
+from financial_report_qa.planning.row_choice_batch import (
+    build_batch_payload,
+    build_program_batch_payload,
+)
 from financial_report_qa.retrieval.cli import _build_table_retriever
 from financial_report_qa.retrieval.index import load_bm25_index
 from financial_report_qa.retrieval.live_query import (
@@ -43,6 +46,7 @@ from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.compliance import check_bundle
 from financial_report_qa.submission.contracts import SubmissionExportReport
 from financial_report_qa.submission.exporter import (
+    build_question_cell_candidates,
     export_submission,
     load_raw_questions,
     write_export_report,
@@ -195,6 +199,20 @@ def _parser() -> argparse.ArgumentParser:
         help="Số dòng ứng viên mỗi câu.",
     )
     batches.add_argument("--batch-size", type=int, default=64, help="Số câu mỗi file batch.")
+    batches.add_argument(
+        "--program",
+        action="store_true",
+        help=(
+            "Sinh payload ứng viên Ô cho masked PAL (spec 2026-08-24 §4.3) "
+            "thay vì ứng viên dòng. Cần --release-dir."
+        ),
+    )
+    batches.add_argument(
+        "--release-dir",
+        type=Path,
+        default=None,
+        help="Thư mục release Parquet, để dựng cell frame khi bật --program.",
+    )
 
     validate = commands.add_parser("validate")
     validate.add_argument("--zip-path", type=Path, required=True)
@@ -455,12 +473,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                         candidate_table_ids=retrieved,
                         k=args.rows_per_question,
                     ).results
-                    payload = build_batch_payload(
-                        raw_question.id,
-                        raw_question.question,
-                        parse_query_entities(raw_question.question),
-                        fused,
-                    )
+                    if args.program:
+                        if args.release_dir is None:
+                            raise SubmissionError("--program cần --release-dir")
+                        payload = build_program_batch_payload(
+                            raw_question.id,
+                            raw_question.question,
+                            parse_query_entities(raw_question.question),
+                            build_question_cell_candidates(
+                                args.release_dir, raw_question.question, retrieved, fused
+                            ),
+                        )
+                    else:
+                        payload = build_batch_payload(
+                            raw_question.id,
+                            raw_question.question,
+                            parse_query_entities(raw_question.question),
+                            fused,
+                        )
                     lines.append(json.dumps(payload, ensure_ascii=False))
                     written += 1
                 target = args.output_dir / f"batch_{batch_number:03d}.jsonl"

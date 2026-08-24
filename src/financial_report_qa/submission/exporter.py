@@ -25,6 +25,7 @@ from financial_report_qa.core.errors import ProgramBindingError, SubmissionInput
 from financial_report_qa.execution.cell_frame import build_cell_frame
 from financial_report_qa.execution.contracts import CompiledQuery
 from financial_report_qa.execution.program_contracts import (
+    CellCandidate,
     ExecutedProgram,
     ProgramDecision,
 )
@@ -50,6 +51,7 @@ from financial_report_qa.retrieval.row_fusion import (
     DEFAULT_ROW_CANDIDATE_COUNT,
     RowFusionService,
 )
+from financial_report_qa.retrieval.row_fusion_contracts import RowFusedCandidate
 from financial_report_qa.submission.backstop_answer import build_backstop_item
 from financial_report_qa.submission.citation_summary import (
     relevant_docs_and_tables as _relevant_docs_and_tables,
@@ -199,6 +201,27 @@ def _scope_candidate_tables(
     return filter_table_ids_by_scope(release_dir, table_ids, effective_scope) or table_ids
 
 
+def build_question_cell_candidates(
+    release_dir: Path,
+    question: str,
+    retrieved: Sequence[str],
+    fusion_rows: Sequence[RowFusedCandidate],
+) -> tuple[CellCandidate, ...]:
+    """Dựng danh sách ô đánh số cho một câu, một cách duy nhất.
+
+    `ProgramDecision.cells` là vị trí trong danh sách này, nên lúc sinh payload
+    và lúc export phải cho ra danh sách y hệt. Đó là lý do hàm này tồn tại
+    thay vì hai lời gọi `build_cell_candidates` song song ở hai file.
+
+    `retrieved` là đúng danh sách bảng ứng viên của nhánh retrieval (thứ tự
+    retrieval-rank), KHÔNG bản đã thu hẹp theo scope -- việc thu hẹp, nếu cần,
+    thuộc bước sau và không được đụng vào danh sách đã đánh số này.
+    """
+    entities = parse_query_entities(question)
+    frame = build_cell_frame(release_dir, list(retrieved))
+    return build_cell_candidates(frame, fusion_rows, periods=entities.periods)
+
+
 def _run_one_question(
     raw_question: RawQuestion,
     service: TableRetriever,
@@ -258,16 +281,19 @@ def _run_one_question(
     )
 
     # Masked-PAL answering branch (spec 2026-08-24 §4.3), behind
-    # --program-decisions. The candidate list is built in exactly ONE place
-    # here -- `build_cell_frame` over the FULL `retrieved` list plus
-    # `build_cell_candidates` over the fusion rows -- so Task 11 can lift this
-    # pair into the one shared helper both this path and the batch generator
-    # must call: `ProgramDecision.cells` are positions in this list, and a
-    # list that differs between payload generation and export shifts every
-    # index. The frame uses `retrieved`, NOT the scope-narrowed `answerable`.
+    # --program-decisions. The numbered candidate list comes from exactly ONE
+    # place -- `build_question_cell_candidates` -- which is also what
+    # `submission row-batches --program` calls at payload-generation time:
+    # `ProgramDecision.cells` are positions in this list, and a list that
+    # differs between payload generation and export shifts every index. It
+    # receives the FULL `retrieved` list, NOT the scope-narrowed `answerable`.
     if program_decisions is not None:
-        frame = build_cell_frame(release_dir, retrieved)
-        candidates = build_cell_candidates(frame, fusion_rows, periods=entities.periods)
+        candidates = build_question_cell_candidates(release_dir, question, retrieved, fusion_rows)
+        # Same deterministic frame the helper just built internally, rebuilt
+        # here because `run_question` needs it as well and the shared
+        # helper's contract is candidates-only (the batch path feeds its
+        # result straight to `build_program_batch_payload`).
+        frame = build_cell_frame(release_dir, list(retrieved))
         result = run_question(
             raw_question.id,
             candidates,
