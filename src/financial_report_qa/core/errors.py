@@ -191,6 +191,22 @@ class ExecutionReplayMismatchError(ExecutionError):
     """A compiled `pandas_query` did not replay to the compiler's own answer."""
 
 
+class ProgramError(ExecutionError):
+    """Masked-PAL program handling failed (spec 2026-08-24)."""
+
+
+class ProgramGuardError(ProgramError):
+    """A generated program violated the N4' AST whitelist."""
+
+
+class ProgramBindingError(ProgramError):
+    """A candidate index could not be bound to a real cell."""
+
+
+class ProgramEvalError(ProgramError):
+    """A guarded program failed at evaluation time."""
+
+
 class SubmissionError(FinancialReportQAError):
     """Base class for Day 22 submission bundle failures."""
 
