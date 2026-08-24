@@ -375,9 +375,13 @@ def _build_table_retriever(
 
     `encoder`/`reranker` là điểm tiêm cho test -- production để `None` và nhận
     encoder dựng từ chính manifest của dense index (nên spec hash luôn khớp
-    index) và reranker pinned `qwen3-reranker-4b`. Rerank chạy TUẦN TỰ sau
-    fusion, không song song với encoder: corpus đã embed xong offline nên tại
-    thời điểm chạy chỉ còn reranker chiếm VRAM.
+    index) và reranker pinned `qwen3-reranker-4b`.
+
+    Về bộ nhớ: chỉ việc embed *corpus* là offline. Encoder dense vẫn phải
+    thường trú lúc chạy để embed từng câu hỏi, nên khi bật `--rerank` cả hai
+    model cùng nằm trong RAM (~16GB + ~16GB fp32, xem help của `--rerank`).
+    Rerank tuần tự *sau* fusion trong mỗi câu, nhưng đó là thứ tự thực thi --
+    không phải là hai model thay phiên nhau chiếm chỗ.
     """
     bm25_service = RetrievalService(index)
     dense_index_dir: Path | None = getattr(args, "dense_index", None)
