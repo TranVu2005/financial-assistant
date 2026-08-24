@@ -55,6 +55,9 @@ ocr = [
 ]
 
 [tool.pytest.ini_options]
+# Lets bare `uv run pytest` import the tests.* package from cross-file test
+# imports (e.g. test_sweep -> test_live_query) without installing the suite.
+pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-ra"
 cache_dir = ".cache/pytest"

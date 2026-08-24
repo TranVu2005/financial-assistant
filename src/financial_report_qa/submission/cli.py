@@ -157,7 +157,9 @@ def _parser() -> argparse.ArgumentParser:
         "--rerank",
         action="store_true",
         help="Xếp lại top-50 của RRF tầng bảng bằng Qwen3-Reranker-4B (pinned). "
-        "Cần --dense-index.",
+        "Cần --dense-index và ~32GB RAM (encoder dense ~16GB fp32 vẫn thường trú "
+        "khi reranker nạp thêm ~16GB); Colab là nơi chạy phù hợp cho phép đo "
+        "fused+rerank.",
     )
 
     batches = commands.add_parser(

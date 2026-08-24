@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from financial_report_qa.core.errors import RerankInputError
+from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.retrieval.contracts import (
     RetrievalCandidate,
     RetrievalTrace,
@@ -14,7 +15,6 @@ from financial_report_qa.retrieval.fusion_contracts import (
 )
 from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
 from financial_report_qa.retrieval.rerank_contracts import RerankerSpec
-from financial_report_qa.planning.entity_parser import parse_query_entities
 
 _QUESTION = "Doanh thu thuần của VCB năm 2023 là bao nhiêu?"
 
