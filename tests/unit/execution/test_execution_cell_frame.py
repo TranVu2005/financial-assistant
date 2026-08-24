@@ -507,7 +507,8 @@ def test_build_cell_frame_does_not_emit_the_statutory_code_cell_as_a_value(
 def test_build_cell_frame_reads_the_statutory_codes_once_per_release(tmp_path: Path) -> None:
     """The statutory-code join was a SECOND `read_parquet` over the same 520 MB
     `cells.parquet`, so adding it doubled the per-question scan cost -- and
-    `compile_plan` calls this once per question. The code table is small
+    the masked-PAL answering path calls this once per question (`run_question`
+    via `exporter.build_question_cell_candidates`). The code table is small
     (172,966 rows on the locked release), so materializing it once per release
     removes the second scan without holding the 2.58M numeric cells in memory.
     """

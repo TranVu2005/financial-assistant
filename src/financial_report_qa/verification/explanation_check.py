@@ -8,6 +8,18 @@ the real numbers, and is checked with the same whitelist posture
 
 Nothing here can change the answer. It can only report a divergence, which
 the pipeline turns into at most one regeneration (N6).
+
+DORMANCY DISCLOSURE (final review 2026-08-24): Verify-A is implemented and
+unit-tested (`tests/unit/execution/test_program_pipeline.py`) but NOT yet
+wired into the live export path -- `submission/exporter.py` never passes an
+`explanations` source to `run_question`, so `check_explanation` and its
+failure code `explanation_number_not_grounded` are unreachable in
+production. Wiring it needs an offline explanation source produced after
+execution; until that exists, live verification of generated prose stays a
+use-claims-only check (`verification/use_checks.check_use_bindings`), and
+answer integrity rests on N4' (numeric literals banned from programs), N7
+(no values in payloads) and C8 (submission lint). Any wiring work must
+start by closing this gap.
 """
 
 from __future__ import annotations

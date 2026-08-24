@@ -167,7 +167,7 @@ def _run_one_question(
         )
 
     # Row fusion runs on the FULL `retrieved` list -- NOT a scope-narrowed
-    # subset. That is exactly what `submission row-batches --program` does at
+    # subset. That is exactly what `submission row-batches` does at
     # payload-generation time (`cli.py` passes raw `retrieved`), and the
     # numbered candidate list below is positions in the fusion result:
     # fusing over different table sets at batch time and export time shifts

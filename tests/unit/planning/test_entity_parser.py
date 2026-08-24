@@ -60,7 +60,7 @@ def test_missing_company_is_flagged_not_guessed() -> None:
 def test_year_and_quarter_phrasings_keep_their_existing_grammar() -> None:
     """Spec §6.4 normalizes date phrasings to bare fiscal years only — plain
     years and quarters keep the exact forms extracted today: "2023-Q4" stays
-    non-bare (FinancialQueryPlan accepts bare years only downstream), which
+    non-bare (only bare years pass the downstream period grammar), which
     documents the still-unsupported quarter grammar."""
     assert parse_query_entities("Doanh thu thuần của DBC năm 2023 là bao nhiêu?").periods == (
         "2023",

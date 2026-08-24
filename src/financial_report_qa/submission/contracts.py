@@ -132,9 +132,10 @@ class QuestionOutcome(_FrozenModel):
     stage: PipelineStage | None
     code: NonEmptyString | None
     # Nguồn plan của outcome (spec 2026-08-23 §6): nhánh answering duy nhất
-    # chỉ có một nguồn -- "llm_decision", plan do `cell_grounding.
-    # ground_question` dựng từ quyết định offline của LLM (hoặc mặc định
-    # hạng 1). "backstop" dành cho item không-reasoned của tầng backstop.
+    # chỉ có một nguồn -- "llm_decision", chương trình masked-PAL sinh từ
+    # quyết định offline của LLM mà `execution.program_pipeline.run_question`
+    # thực thi (spec 2026-08-24 §4.3). "backstop" dành cho item không-reasoned
+    # của tầng backstop.
     # None khi planning chưa được chạm tới (ví dụ stage == "retrieval").
     plan_source: Literal["llm_decision", "backstop"] | None = None
     # plan.md §9: retrieval confidence backing the plan's row selector(s)
@@ -145,9 +146,10 @@ class QuestionOutcome(_FrozenModel):
     # Báo cáo export cần nói được câu nào phải sinh lại chương trình
     # (spec 2026-08-24) và câu nào vẫn lệch (`low_confidence` bên dưới).
     regenerated: bool = False
-    # Vestige of the removed recovery ladder, kept so already-written reports
-    # keep their shape: on the single answering path (spec 2026-08-23 §6) this
-    # is always False -- there is no threshold retry left to fall back from.
+    # Set by `run_question` when both N6 attempts ran and neither was clean
+    # but one still produced a number: the answer ships anyway, flagged
+    # uncertain (program_pipeline's exhausted-retry path). Still False for a
+    # first-attempt answer and for every backstop fill.
     low_confidence: bool = False
 
     @model_validator(mode="after")

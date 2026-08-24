@@ -3,7 +3,7 @@
 The most important invariant of the whole plan lives here: the numbered
 cell-candidate list must be built through exactly ONE shared helper
 (`exporter.build_question_cell_candidates`) by BOTH production paths --
-`submission row-batches --program` at payload-generation time and
+`submission row-batches` at payload-generation time and
 `_run_one_question`'s answering branch at export time -- fed identical
 inputs (full un-narrowed `retrieved`). A list that differs between the two
 moments shifts every `ProgramDecision.cells` index.
@@ -282,7 +282,7 @@ def test_batch_time_and_export_time_candidate_lists_are_identical(tmp_path: Path
     THIS ordering."""
     release_dir = _write_release(tmp_path)
 
-    # ---- batch time (cli.py row-batches --program branch, verbatim) ----
+    # ---- batch time (cli.py row-batches branch, verbatim) ----
     retrieved = retrieve_candidate_table_ids(_QUESTION, _bm25_service(), k=10)
     assert retrieved == (_TABLE_ID,), "fixture must retrieve the fixture table"
     fused = (

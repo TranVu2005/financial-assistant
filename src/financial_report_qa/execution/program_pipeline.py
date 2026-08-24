@@ -41,6 +41,11 @@ class DecisionSource(Protocol):
     def decide(self, question_id: int, attempt: int) -> ProgramDecision: ...
 
 
+#: Verify-A seam: maps an executed program to its explanation text for the
+#: numeric-whitelist guard. The live export path currently passes
+#: ``explanations=None`` (no offline explanation source exists yet), so the
+#: guard below is dormant in production -- see
+#: ``verification/explanation_check.py``'s module docstring.
 ExplanationSource = Callable[[ExecutedProgram], str]
 
 

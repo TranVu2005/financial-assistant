@@ -32,8 +32,10 @@ VerificationIssueCode = Literal[
     "display_roundtrip_mismatch",
     "period_inferred_warning",
     "scope_inferred",
-    # plan.md §15: per-fact re-location, independent of the compile that
-    # produced the fact in the first place (`fact_checks.verify_fact`).
+    # plan.md §15: per-fact re-location codes. Their producer
+    # (`verification/checks.fact_checks.verify_fact`) died with the
+    # operation-enum path; the literal retains both codes so reports and
+    # answer packages serialized before that removal still validate.
     "fact_not_found",
     "fact_value_mismatch",
 ]
