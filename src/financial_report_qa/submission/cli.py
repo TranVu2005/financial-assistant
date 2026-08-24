@@ -48,6 +48,11 @@ from financial_report_qa.submission.exporter import (
     write_export_report,
     write_submission_zip,
 )
+from financial_report_qa.submission.retrieval_fingerprint import (
+    RetrievalFingerprint,
+    assert_fingerprint_matches,
+    write_retrieval_fingerprint,
+)
 from financial_report_qa.submission.validator import validate_submission_zip
 
 
@@ -120,8 +125,23 @@ def _parser() -> argparse.ArgumentParser:
         required=True,
         help=(
             "File JSONL quyết định masked-PAL (spec 2026-08-24 §4.3) sinh "
-            "offline bởi `submission row-batches --program`. Bắt buộc: đây là "
-            "đường answering duy nhất."
+            "offline bởi lệnh `submission row-batches` -- lệnh này giờ chỉ "
+            "sinh payload masked-PAL (yêu cầu --release-dir), không còn chế "
+            "độ nào khác. Bắt buộc: đây là đường answering duy nhất."
+        ),
+    )
+    export.add_argument(
+        "--assert-payload-fingerprint",
+        type=Path,
+        default=None,
+        help=(
+            "Đường dẫn tới retrieval-fingerprint.json do `submission "
+            "row-batches` ghi cạnh các file batch. Trước khi chạy câu nào, "
+            "lượt export này phải khớp cài đặt retrieval lúc sinh payload "
+            "(k, rows_per_question, reranker, --dense-index, release lock); "
+            "lệch trường nào bị từ chối ngay, nêu rõ tên trường -- vì lệch đó "
+            "làm dịch mọi chỉ số ProgramDecision.cells. Không truyền thì "
+            "không khẳng định gì (hành vi cũ)."
         ),
     )
     export.add_argument(
@@ -341,6 +361,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             # là đường answering duy nhất còn lại.
             program_decisions = load_program_decisions(args.program_decisions)
 
+            # Final review 2026-08-24: `ProgramDecision.cells` là chỉ số trong
+            # danh sách ô ứng viên, phụ thuộc đúng các cài đặt retrieval dưới
+            # đây. So với sidecar lúc sinh payload TRƯỚC khi chạy câu nào --
+            # lệch thì chặn, nêu rõ trường, thay vì dịch im lặng mọi chỉ số.
+            # `export` luôn fusion DEFAULT_ROW_CANDIDATE_COUNT dòng (hằng số
+            # trong exporter), và reranker/dense-index đến từ _build_table_retriever.
+            current_fingerprint = RetrievalFingerprint(
+                k=args.k,
+                rows_per_question=DEFAULT_ROW_CANDIDATE_COUNT,
+                reranker_enabled=reranker is not None,
+                dense_index=args.dense_index.name if args.dense_index is not None else None,
+                release_lock=release.lock_path.name,
+                release_lock_sha256=release.lock_sha256,
+            )
+            if args.assert_payload_fingerprint is not None:
+                assert_fingerprint_matches(args.assert_payload_fingerprint, current_fingerprint)
+
             report, items, csv_rows = export_submission(
                 questions,
                 retriever,
@@ -415,6 +452,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
 
             args.output_dir.mkdir(parents=True, exist_ok=True)
+            # Final review 2026-08-24: ghi cạnh payload các cài đặt retrieval
+            # đã dùng, để `export --assert-payload-fingerprint` chặn mọi lượt
+            # chạy sinh lại danh sách ô ứng viên khác lúc batch (mọi chỉ số
+            # ProgramDecision.cells sẽ dịch). row-batches không có cờ
+            # reranker/dense-index nên luôn ghi False/None.
+            write_retrieval_fingerprint(
+                args.output_dir,
+                RetrievalFingerprint(
+                    k=args.k,
+                    rows_per_question=args.rows_per_question,
+                    reranker_enabled=False,
+                    dense_index=None,
+                    release_lock=release.lock_path.name,
+                    release_lock_sha256=release.lock_sha256,
+                ),
+            )
             written = 0
             for batch_number, start in enumerate(range(0, len(questions), args.batch_size)):
                 chunk = questions[start : start + args.batch_size]

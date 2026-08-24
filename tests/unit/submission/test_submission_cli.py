@@ -20,6 +20,7 @@ from financial_report_qa.retrieval.contracts import (
 )
 from financial_report_qa.retrieval.index import build_bm25_index, save_bm25_index
 from financial_report_qa.retrieval.release import ResolvedRetrievalRelease
+from financial_report_qa.retrieval.row_fusion import DEFAULT_ROW_CANDIDATE_COUNT
 from financial_report_qa.submission.cli import main
 
 _FINGERPRINT = "37a61be7aebde1fbcfe3aca42e6ba4ff37ae87bdd1a9ba6696506bcd188e7d1f"
@@ -554,3 +555,75 @@ def test_export_parser_defaults_the_table_stack_flags(tmp_path: Path) -> None:
     assert args.dense_index is None
     assert args.table_dense_weight == 1.0
     assert args.rerank is False
+
+
+def _row_batches_argv(tmp_path: Path, index_dir: Path, release_dir: Path, *extra: str) -> list[str]:
+    questions_path = tmp_path / "questions.jsonl"
+    _write_questions(questions_path)
+    return [
+        "row-batches",
+        "--release-lock",
+        "lock.json",
+        "--bm25-index",
+        str(index_dir),
+        "--questions-path",
+        str(questions_path),
+        "--output-dir",
+        str(tmp_path / "batches"),
+        "--release-dir",
+        str(release_dir),
+        *extra,
+    ]
+
+
+def test_row_batches_writes_fingerprint_and_export_asserts_it(
+    tmp_path: Path, monkeypatch: MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Final review 2026-08-24 (Important): regenerating payloads under
+    different retrieval flags and then reusing the old decisions file would
+    silently shift every ProgramDecision.cells index -- so row-batches pins
+    its retrieval settings in a sidecar, export can assert against it before
+    any question executes, and without the flag nothing is asserted."""
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    index_dir = tmp_path / "index"
+    _write_bm25_index(index_dir)
+    _write_row_index(release.release_dir, index_dir)
+    _write_program_decisions(tmp_path / "decisions.jsonl")
+
+    exit_code = main(_row_batches_argv(tmp_path, index_dir, release.release_dir))
+    assert exit_code == 0
+    sidecar = tmp_path / "batches" / "retrieval-fingerprint.json"
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload == {
+        "k": 10,
+        "rows_per_question": DEFAULT_ROW_CANDIDATE_COUNT,
+        "reranker_enabled": False,
+        "dense_index": None,
+        "release_lock": "lock.json",
+        "release_lock_sha256": "2" * 64,
+    }
+
+    # Flag absent -> no assertion: even a drifted --k still exports.
+    assert main(_export_argv(tmp_path, index_dir, "--k", "12")) == 0
+
+    # Matching settings pass the guard and export normally.
+    assert (
+        main(_export_argv(tmp_path, index_dir, "--assert-payload-fingerprint", str(sidecar))) == 0
+    )
+
+    # A differing field stops the run before any question executes, named.
+    exit_code = main(
+        _export_argv(
+            tmp_path,
+            index_dir,
+            "--k",
+            "12",
+            "--assert-payload-fingerprint",
+            str(sidecar),
+        )
+    )
+    assert exit_code == 2
+    stderr = capsys.readouterr().err
+    assert "submission error" in stderr
+    assert "k: payloads=10 vs export=12" in stderr
