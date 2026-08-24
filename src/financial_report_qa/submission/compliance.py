@@ -21,6 +21,8 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from financial_report_qa.core.errors import ProgramGuardError
+from financial_report_qa.execution.masked_program import parse_program
 from financial_report_qa.execution.sandbox import replay_in_sandbox
 from financial_report_qa.submission.contracts import SubmissionItem
 from financial_report_qa.submission.exporter import _render_csv_bytes
@@ -35,6 +37,10 @@ _ANSWER_LIKE_COLUMNS = frozenset({"answer", "result", "ans", "expected"})
 # literal `1` and `1200.0` still matches in full.
 _NUMBER_LITERAL_PATTERN = re.compile(r"(?<![A-Za-z0-9_])-?\d+(?:\.\d+)?(?![A-Za-z0-9_])")
 _VALUE_TOLERANCE = 1e-6
+
+# C8 chỉ kiểm hình dạng chương trình, không kiểm số ứng viên -- việc đó thuộc
+# về binding lúc chạy. Giới hạn rộng để `[NUM_i]` hợp lệ nào cũng qua được.
+_MAX_NUM_PLACEHOLDERS = 1000
 
 # C4 (2026-08-21 final review, Important 4): a quoted string literal in the
 # query -- most commonly a `column_label` value rendered via `json.dumps`,
@@ -60,6 +66,12 @@ _STRUCTURAL_COMPARISON_PATTERN = re.compile(r"\b(?:row_idx|col_idx|period)\s*==\
 # way `_STRUCTURAL_COMPARISON_PATTERN` strips `row_idx == N` clauses.
 _POSITIONAL_INDEX_PATTERN = re.compile(r"\.(?:iloc|iat)\s*\[\s*-?\d+(?:\.\d+)?\s*\]")
 
+# Hệ số đổi thang do `program_binding.render_program_pandas` nối vào cuối
+# truy vấn (spec 2026-08-24 §4.5). Nó là hằng số của renderer, không phải của
+# model, và không bao giờ là chỗ giấu đáp án -- nhưng một đáp án tình cờ bằng
+# 100 sẽ trượt C4 nếu không strip. Danh sách đóng, khớp đúng `SCALE_SUFFIX`.
+_SCALE_SUFFIX_PATTERN = re.compile(r"(?:\*\s*100|/\s*1000(?:000)?(?:000)?)\s*$")
+
 
 @dataclass(frozen=True)
 class ComplianceViolation:
@@ -75,12 +87,11 @@ def _numbers_in(query: str) -> list[float]:
     match -- i.e. NOT inside a quoted string, NOT the right-hand side of a
     structural `row_idx`/`col_idx`/`period` equality (position-binding
     locators, not stand-ins for the answer), NOT a positional `.iloc[N]`/
-    `.iat[N]` index, and NOT a digit that is actually part of an identifier
+    `.iat[N]` index, NOT a renderer-appended scale suffix (`* 100`,
+    `/ 1000`, ...), and NOT a digit that is actually part of an identifier
     such as `df1`/`df2` (handled by `_NUMBER_LITERAL_PATTERN`'s word-boundary
     lookaround)."""
-    stripped = _QUOTED_STRING_PATTERN.sub("", query)
-    stripped = _STRUCTURAL_COMPARISON_PATTERN.sub("", stripped)
-    stripped = _POSITIONAL_INDEX_PATTERN.sub("", stripped)
+    stripped = _strip_structural_tokens(query)
     out: list[float] = []
     for token in _NUMBER_LITERAL_PATTERN.findall(stripped):
         try:
@@ -88,6 +99,25 @@ def _numbers_in(query: str) -> list[float]:
         except ValueError:  # pragma: no cover -- regex chỉ khớp số hợp lệ
             continue
     return out
+
+
+def _strip_structural_tokens(query: str) -> str:
+    """Bỏ mọi token cấu trúc trước khi quét literal cho C4."""
+    stripped = _QUOTED_STRING_PATTERN.sub(" ", query)
+    stripped = _SCALE_SUFFIX_PATTERN.sub(" ", stripped)
+    stripped = _STRUCTURAL_COMPARISON_PATTERN.sub(" ", stripped)
+    return _POSITIONAL_INDEX_PATTERN.sub(" ", stripped)
+
+
+def check_program_literals(program: str) -> str | None:
+    """C8: chương trình đã lưu phải qua được guard N4'. `None` là hợp lệ."""
+    if not program:
+        return None
+    try:
+        parse_program(program, value_count=_MAX_NUM_PLACEHOLDERS)
+    except ProgramGuardError as error:
+        return str(error)
+    return None
 
 
 def check_item(
@@ -163,6 +193,11 @@ def check_item(
         elif abs(value_float - item.answer) > _VALUE_TOLERANCE:
             add("C7", f"replay ra {value_float} nhưng answer là {item.answer}")
 
+    # C8: N4' -- chương trình do LLM sinh ra không được chứa literal số.
+    program_detail = check_program_literals(item.program)
+    if program_detail is not None:
+        add("C8", f"program vi phạm N4': {program_detail}")
+
     return tuple(violations)
 
 
@@ -207,9 +242,7 @@ def check_bundle(
         rows = csv_rows.get(csv_path)
         if rows is None:
             violations.append(
-                ComplianceViolation(
-                    question_id=item.id, code="C0", detail=f"thiếu CSV {csv_path}"
-                )
+                ComplianceViolation(question_id=item.id, code="C0", detail=f"thiếu CSV {csv_path}")
             )
             continue
         csv_bytes = _render_csv_bytes(rows)

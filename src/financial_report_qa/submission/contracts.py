@@ -62,9 +62,10 @@ class SubmissionEvidence(_FrozenModel):
 
 
 class SubmissionItem(_FrozenModel):
-    """One row of `submission.json` -- plan.md §2.4's exact seven-field
-    contract. No internal field (`status`, `run_id`, `cell_ids`, `page`,
-    `bbox`, error detail) may appear here."""
+    """One row of `submission.json` -- plan.md §2.4's contract plus the
+    masked-PAL `program` field (spec 2026-08-24). No internal field
+    (`status`, `run_id`, `cell_ids`, `page`, `bbox`, error detail) may appear
+    here."""
 
     id: StrictInt = Field(gt=0)
     question: NonEmptyString
@@ -73,6 +74,9 @@ class SubmissionItem(_FrozenModel):
     relevant_tables: tuple[NonEmptyString, ...]
     evidence: tuple[SubmissionEvidence, ...]
     pandas_query: NonEmptyString
+    #: Biểu thức masked-PAL đã sinh ra `pandas_query`. Rỗng cho câu đi
+    #: backstop. C8 parse trường này để thi hành N4'.
+    program: str = ""
 
     @field_validator("answer")
     @classmethod
@@ -138,6 +142,9 @@ class QuestionOutcome(_FrozenModel):
     # fusion at all. `None` for a deterministic canonical-dictionary match,
     # or whenever planning never resolved a row (abstained/erred earlier).
     grounding_score: float | None = None
+    # Báo cáo export cần nói được câu nào phải sinh lại chương trình
+    # (spec 2026-08-24) và câu nào vẫn lệch (`low_confidence` bên dưới).
+    regenerated: bool = False
     # Vestige of the removed recovery ladder, kept so already-written reports
     # keep their shape: on the single answering path (spec 2026-08-23 §6) this
     # is always False -- there is no threshold retry left to fall back from.
