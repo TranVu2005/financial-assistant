@@ -64,12 +64,12 @@ class _StubSentenceTransformerRecorder:
     """Captures how SentenceTransformerDenseEncoder drives the fake model."""
 
     init_kwargs: dict[str, Any] = field(default_factory=dict)
-    half_calls: int = 0
+    to_calls: list[Any] = field(default_factory=list)
     encode_kwargs: list[dict[str, Any]] = field(default_factory=list)
 
 
 class _StubSentenceTransformer:
-    """Fake SentenceTransformer: records calls, emits fp16 like a real halved model."""
+    """Fake SentenceTransformer: records calls, emits fp16 like a dtype-cast model."""
 
     def __init__(
         self,
@@ -81,8 +81,8 @@ class _StubSentenceTransformer:
         recorder.init_kwargs = dict(kwargs)
         self.max_seq_length = 0
 
-    def half(self) -> _StubSentenceTransformer:
-        self._recorder.half_calls += 1
+    def to(self, dtype: Any) -> _StubSentenceTransformer:
+        self._recorder.to_calls.append(dtype)
         return self
 
     def encode(self, texts: Any, **kwargs: Any) -> np.ndarray:
@@ -103,29 +103,41 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> _StubSentenceTrans
 
     sentence_transformers = ModuleType("sentence_transformers")
     sentence_transformers.SentenceTransformer = model_factory  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "torch", ModuleType("torch"))
+    # Dtype markers the encoder resolves via getattr(torch, knob); distinct
+    # sentinels let tests assert exactly which dtype was cast to.
+    torch_stub = ModuleType("torch")
+    torch_stub.float32 = "torch.float32"  # type: ignore[attr-defined]
+    torch_stub.float16 = "torch.float16"  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "torch", torch_stub)
     monkeypatch.setitem(sys.modules, "sentence_transformers", sentence_transformers)
     return recorder
 
 
-def test_default_construction_keeps_exact_legacy_behavior(
+def test_default_construction_enforces_float32_compute_dtype(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No knobs set: no half() call and no batch_size kwarg ever reach the model."""
+    """No knobs set: model is cast to spec.dtype once; no batch_size kwarg.
+
+    The legacy "never touch dtype" behavior asserted here previously WAS the
+    bug: Qwen3-Embedding-4B ships bf16 weights, so skipping the cast leaked
+    bf16 rounding into embeddings and failed QueryEmbeddingCache's unit-norm
+    check (measured L2 norm 1.0010896921157837 vs atol=1e-5). Compute dtype is
+    therefore now enforced to spec.dtype by default.
+    """
     recorder = _install_stub_modules(monkeypatch)
 
     encoder = SentenceTransformerDenseEncoder(approved_encoder_spec("multilingual-e5-small"))
     encoder.encode_documents(["bang can doi"])
 
-    assert recorder.half_calls == 0
+    assert recorder.to_calls == ["torch.float32"]
     assert len(recorder.encode_kwargs) == 1
     assert "batch_size" not in recorder.encode_kwargs[0]
 
 
-def test_model_dtype_float16_halves_the_model_exactly_once(
+def test_model_dtype_float16_casts_the_model_exactly_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """§5.4: fp16 compute lets Qwen3-4B fit a T4; applied once right after load."""
+    """§5.4: fp16 compute lets Qwen3-4B fit a T4; a single .to(fp16), never fp32."""
     recorder = _install_stub_modules(monkeypatch)
 
     encoder = SentenceTransformerDenseEncoder(
@@ -134,7 +146,7 @@ def test_model_dtype_float16_halves_the_model_exactly_once(
     )
     encoder.encode_documents(["bang can doi"])
 
-    assert recorder.half_calls == 1
+    assert recorder.to_calls == ["torch.float16"]
 
 
 def test_encode_batch_size_is_forwarded_to_sentence_transformer(
@@ -168,6 +180,6 @@ def test_fp16_compute_output_is_still_cast_to_float32(
     documents = encoder.encode_documents(["bang can doi"])
     query = encoder.encode_query("doanh thu")
 
-    # Stub emits float16 exactly like a halved model would.
+    # Stub emits float16 exactly like an fp16-cast model would.
     assert documents.dtype == np.float32
     assert query.dtype == np.float32

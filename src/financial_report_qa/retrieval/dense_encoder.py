@@ -64,18 +64,26 @@ class DenseEncoder(Protocol):
 
 
 class SentenceTransformerDenseEncoder:
-    """Wrapper around ``SentenceTransformer`` with compute-only tuning knobs.
+    """Wrapper around ``SentenceTransformer`` with a pinned compute dtype.
 
-    ``model_dtype`` and ``encode_batch_size`` are deliberately NOT part of
+    Compute dtype is ENFORCED right after load (single ``Module.to`` over the
+    whole model): by default it is ``spec.dtype`` (always ``"float32"``),
+    because native checkpoint dtype leaks into embeddings otherwise —
+    Qwen3-Embedding-4B ships bf16 weights, whose rounding produced unit-norm
+    deviations large enough to fail :meth:`QueryEmbeddingCache._validate`.
+    ``model_dtype="float16"`` remains an opt-in knob for constrained-VRAM
+    COMPUTE (T4), per plan §5.4.
+
+    Both ``model_dtype`` and ``encode_batch_size`` are deliberately NOT part of
     :class:`DenseEncoderSpec` (hence absent from ``encoder_spec_sha256`` and the
-    index manifests pinning it): target-architecture plan §5.4 sanctions fp16
-    COMPUTE so Qwen3-Embedding-4B fits a Colab T4 (~8GB fp16 weights instead of
-    ~16GB fp32 -> CUDA OOM), while constraint N5 ("không quantize") governs what
-    is STORED — this wrapper still casts every output to np.float32, so shards
-    and indexes stay float32 on disk. An fp16-encoded index paired with
-    fp32-encoded queries (or vice versa) differs only within fp16 rounding, and
-    retrieval consumes ranks (RRF), never absolute scores, so artifact identity
-    is unaffected by these knobs.
+    index manifests pinning it): §5.4 sanctions fp16 COMPUTE so
+    Qwen3-Embedding-4B fits a Colab T4 (~8GB fp16 weights instead of ~16GB
+    fp32 -> CUDA OOM), while constraint N5 ("không quantize") governs what is
+    STORED — this wrapper still casts every output to np.float32, so shards and
+    indexes stay float32 on disk. An fp16-encoded index paired with fp32-encoded
+    queries (or vice versa) differs only within fp16 rounding, and retrieval
+    consumes ranks (RRF), never absolute scores, so artifact identity is
+    unaffected by these knobs.
     """
 
     def __init__(
@@ -108,9 +116,15 @@ class SentenceTransformerDenseEncoder:
                 trust_remote_code=False,
                 local_files_only=local_files_only,
             )
-            if self._model_dtype == "float16":
-                # Halve weights after load: compute runs fp16, storage stays float32.
-                self._model.half()
+            # Cast parameters AND buffers to the compute dtype right after load.
+            # Module.to(dtype) converts tensor-by-tensor in place (low memory
+            # peak -- no fp32 round-trip on GPU), so the fp16 T4 path stays
+            # safe mid-load. Without this, native checkpoint dtype (Qwen3
+            # ships bf16) leaks bf16 rounding into embeddings and breaks the
+            # downstream unit-norm contract.
+            knob = model_dtype or spec.dtype  # Literal["float32", "float16"]
+            torch_dtype = getattr(torch, knob)  # only float32/float16 possible
+            self._model.to(torch_dtype)
         except Exception as exc:
             raise DenseModelError(
                 f"Pinned dense model is unavailable: {spec.model_id}@{spec.revision}"
