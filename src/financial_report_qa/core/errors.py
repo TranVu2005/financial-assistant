@@ -101,6 +101,18 @@ class FusionArtifactError(FusionError):
     """A fusion evaluation artifact is corrupt or mismatched."""
 
 
+class RerankError(RetrievalError):
+    """Cross-encoder reranking failed."""
+
+
+class RerankInputError(RerankError):
+    """Caller supplied invalid rerank input."""
+
+
+class RerankModelError(RerankError):
+    """Pinned reranker model is unavailable or produced an unusable score."""
+
+
 class GraphError(RetrievalError):
     """Base class for deterministic GTR-lite graph failures."""
 
