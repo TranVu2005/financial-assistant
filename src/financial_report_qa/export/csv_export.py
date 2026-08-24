@@ -167,6 +167,8 @@ def build_normalized_table(
             return format(cell.value_numeric.normalize(), "f")
         return cell.value_raw.strip()
 
+    metric_col_idx = _detect_metric_column(cell_at, header_rows, row_count, column_count)
+
     rows: list[tuple[str, ...]] = []
     for row_idx in range(header_rows, row_count):
         row_columns = sorted(col for (r, col) in cell_at if r == row_idx)
@@ -181,34 +183,80 @@ def build_normalized_table(
         ]
         combined_label = " > ".join(parts)
         rows.append(
-            (combined_label, *(_cell_output(row_idx, col) for col in range(1, column_count)))
+            tuple(
+                combined_label if col_idx == metric_col_idx else _cell_output(row_idx, col_idx)
+                for col_idx in range(column_count)
+            )
+            if combined_label
+            else tuple(_cell_output(row_idx, col_idx) for col_idx in range(column_count))
         )
     return NormalizedTable(headers=headers, rows=tuple(rows))
 
 
+def _detect_metric_column(
+    cell_at: dict[tuple[int, int], CellRow],
+    header_rows: int,
+    row_count: int,
+    column_count: int,
+) -> int:
+    """Locate the grid column that actually holds the row label text.
+
+    The metric/label column is not always column 0 -- an "STT"/"Mã số" ordinal
+    column, or a "Thuyết minh" note column, is often placed to its left (see
+    `ingestion/table_extractor.py::_metric_column_index`, which the source
+    extraction already runs to avoid this same assumption). Every cell in a
+    data row shares the same `row_label_raw`, but only the cell holding the
+    label itself has `value_raw == row_label_raw`; the majority vote across
+    data rows makes this table-wide and resistant to one row's incidental
+    text collision. Falls back to column 0 when no row yields a match (e.g. a
+    table with no captured row labels at all), preserving the prior behavior
+    for that edge case.
+    """
+    votes: dict[int, int] = {}
+    for row_idx in range(header_rows, row_count):
+        row_label = next(
+            (
+                cell_at[(row_idx, col_idx)].row_label_raw
+                for col_idx in range(column_count)
+                if (row_idx, col_idx) in cell_at
+                and cell_at[(row_idx, col_idx)].row_label_raw is not None
+            ),
+            None,
+        )
+        if row_label is None:
+            continue
+        match_col = next(
+            (
+                col_idx
+                for col_idx in range(column_count)
+                if (row_idx, col_idx) in cell_at
+                and cell_at[(row_idx, col_idx)].value_raw == row_label
+            ),
+            None,
+        )
+        if match_col is not None:
+            votes[match_col] = votes.get(match_col, 0) + 1
+    if not votes:
+        return 0
+    return min(votes.items(), key=lambda item: (-item[1], item[0]))[0]
+
+
 @dataclass
 class _TableAccumulator:
-    """Per-table grouping bucket for the ordered DuckDB result rows."""
+    """Per-table grouping bucket for one contiguous run of the ordered stream."""
 
     table_id: str
     doc_id: str
-    line_start: int
-    source_ordinal: int
+    base_name: str
+    table_number: int
+    company: str
+    year: int
+    report_type: str
     statement_type: str | None
     unit_normalized: str | None
     unit_raw: str | None
     cells: list[CellRow] = field(default_factory=list)
     placements: list[PlacementRow] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class _DocumentMeta:
-    """Document-level fields needed to name files and fill metadata."""
-
-    relative_path: str
-    company: str
-    year: int
-    report_type: str
 
 
 def _dedup_consecutive(values: list[str]) -> list[str]:
@@ -282,6 +330,12 @@ def _read_expected_table_count(release_dir: Path) -> int:
     return expected_count
 
 
+#: Rows pulled from DuckDB per `fetchmany` call. Bounds peak memory to roughly
+#: one chunk of raw tuples plus the single table currently being accumulated,
+#: instead of the whole release (6.7M placements at ~146K tables).
+_FETCH_CHUNK_SIZE = 200_000
+
+
 def export_normalized_csvs(release_dir: Path, output_dir: Path) -> CsvExportManifest:
     """Export every release table as a normalized CSV plus a JSONL manifest.
 
@@ -290,10 +344,18 @@ def export_normalized_csvs(release_dir: Path, output_dir: Path) -> CsvExportMani
     ``doc_base_name`` is the parent directory segment of the document's
     ``relative_path``. The exported table count must match ``table_count`` in
     the release manifest.
+
+    Reads the join result in bounded chunks and flushes one CSV as soon as its
+    table's contiguous run of rows ends, rather than materializing every cell
+    and placement in the release before writing anything -- the DuckDB
+    `ORDER BY` groups one table's rows together, but does not include
+    `table_id` itself, so a change in `(doc_id, line_start, source_ordinal)`
+    -- or, defensively, a `table_id` change within an unchanged key -- is what
+    actually marks a table boundary.
     """
     connection = duckdb.connect(":memory:")
     try:
-        rows = connection.execute(
+        result = connection.execute(
             """
             SELECT
                 d.doc_id, d.relative_path, d.company_code, d.report_year,
@@ -314,124 +376,158 @@ def export_normalized_csvs(release_dir: Path, output_dir: Path) -> CsvExportMani
                 str(release_dir / "placements.parquet"),
                 str(release_dir / "cells.parquet"),
             ],
-        ).fetchall()
+        )
     except duckdb.Error as error:
         raise ExportError(f"cannot read release parquet in {release_dir}: {error}") from error
-    finally:
-        connection.close()
 
-    documents: dict[str, _DocumentMeta] = {}
-    tables_by_id: dict[str, _TableAccumulator] = {}
-    for row in rows:
-        (
-            doc_id,
-            relative_path,
-            company_code,
-            report_year,
-            statement_scope,
-            table_id,
-            source_ordinal,
-            statement_type,
-            unit_raw,
-            unit_normalized,
-            line_start,
-            row_idx,
-            col_idx,
-            cell_id,
-            value_raw,
-            value_numeric,
-            row_label_raw,
-            row_group_context_raw,
-            column_label_raw,
-        ) = row
-        documents.setdefault(
-            str(doc_id),
-            _DocumentMeta(
-                relative_path=str(relative_path),
-                company=str(company_code),
-                year=int(report_year),
-                report_type=str(statement_scope),
-            ),
-        )
-        table = tables_by_id.get(str(table_id))
-        if table is None:
-            table = tables_by_id[str(table_id)] = _TableAccumulator(
-                table_id=str(table_id),
-                doc_id=str(doc_id),
-                line_start=int(line_start),
-                source_ordinal=int(source_ordinal),
-                statement_type=None if statement_type is None else str(statement_type),
-                unit_normalized=None if unit_normalized is None else str(unit_normalized),
-                unit_raw=None if unit_raw is None else str(unit_raw),
-            )
-        table.placements.append(
-            PlacementRow(
-                table_id=str(table_id),
-                row_idx=int(row_idx),
-                col_idx=int(col_idx),
-                cell_id=str(cell_id),
-            )
-        )
-        table.cells.append(
-            CellRow(
-                cell_id=str(cell_id),
-                table_id=str(table_id),
-                row_idx=int(row_idx),
-                col_idx=int(col_idx),
-                value_raw=str(value_raw),
-                value_numeric=value_numeric,
-                row_label_raw=None if row_label_raw is None else str(row_label_raw),
-                row_group_context_raw=(
-                    None if row_group_context_raw is None else str(row_group_context_raw)
-                ),
-                column_label_raw=None if column_label_raw is None else str(column_label_raw),
-            )
-        )
+    try:
+        expected_count = _read_expected_table_count(release_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    expected_count = _read_expected_table_count(release_dir)
-    if expected_count != len(tables_by_id):
-        raise ExportError(
-            "release manifest table count differs from exported table count: "
-            f"expected={expected_count} found={len(tables_by_id)}"
-        )
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    seen_file_names: set[str] = set()
-    entries: list[TableExportMetadata] = []
-    for doc_id, meta in documents.items():
-        base_name = _safe_doc_base_name(meta.relative_path)
-        doc_tables = sorted(
-            (table for table in tables_by_id.values() if table.doc_id == doc_id),
-            key=lambda table: (table.line_start, table.source_ordinal),
-        )
+        seen_file_names: set[str] = set()
+        entries: list[TableExportMetadata] = []
+        current_table: _TableAccumulator | None = None
+        current_key: tuple[str, int, int] | None = None
+        current_doc_id: str | None = None
+        current_base_name = ""
+        table_number = 0
         seen_spans: set[tuple[int, int]] = set()
-        for number, table in enumerate(doc_tables, start=1):
-            span = (table.line_start, table.source_ordinal)
-            if span in seen_spans:
-                raise ExportError(
-                    f"duplicate (line_start, source_ordinal) within one document: "
-                    f"doc_id={doc_id} span={span}"
-                )
-            seen_spans.add(span)
-            file_name = f"{base_name}__table_{number}.csv"
+
+        def flush_table() -> None:
+            nonlocal current_table
+            if current_table is None:
+                return
+            file_name = f"{current_table.base_name}__table_{current_table.table_number}.csv"
             if file_name in seen_file_names:
                 raise ExportError(f"duplicate file name across exports: {file_name}")
             seen_file_names.add(file_name)
-
-            header_rows = detect_header_row_count(table.cells, table.placements)
-            normalized = build_normalized_table(table.cells, table.placements, header_rows)
+            header_rows = detect_header_row_count(current_table.cells, current_table.placements)
+            normalized = build_normalized_table(
+                current_table.cells, current_table.placements, header_rows
+            )
             _write_csv_atomically(output_dir / file_name, normalized)
             entries.append(
                 TableExportMetadata(
-                    table_id=table.table_id,
-                    company=meta.company,
-                    year=meta.year,
-                    report_type=meta.report_type,
-                    statement=table.statement_type,
-                    unit=table.unit_normalized or table.unit_raw,
+                    table_id=current_table.table_id,
+                    company=current_table.company,
+                    year=current_table.year,
+                    report_type=current_table.report_type,
+                    statement=current_table.statement_type,
+                    unit=current_table.unit_normalized or current_table.unit_raw,
                     csv_path=file_name,
                 )
             )
+            current_table = None
+
+        while True:
+            try:
+                batch = result.fetchmany(_FETCH_CHUNK_SIZE)
+            except duckdb.Error as error:
+                raise ExportError(
+                    f"cannot read release parquet in {release_dir}: {error}"
+                ) from error
+            if not batch:
+                break
+            for row in batch:
+                (
+                    doc_id,
+                    relative_path,
+                    company_code,
+                    report_year,
+                    statement_scope,
+                    table_id,
+                    source_ordinal,
+                    statement_type,
+                    unit_raw,
+                    unit_normalized,
+                    line_start,
+                    row_idx,
+                    col_idx,
+                    cell_id,
+                    value_raw,
+                    value_numeric,
+                    row_label_raw,
+                    row_group_context_raw,
+                    column_label_raw,
+                ) = row
+                doc_id = str(doc_id)
+                table_id = str(table_id)
+                key = (doc_id, int(line_start), int(source_ordinal))
+
+                if key != current_key:
+                    flush_table()
+                    current_key = key
+                    if doc_id != current_doc_id:
+                        current_doc_id = doc_id
+                        current_base_name = _safe_doc_base_name(str(relative_path))
+                        table_number = 0
+                        seen_spans = set()
+                    span = (int(line_start), int(source_ordinal))
+                    if span in seen_spans:
+                        raise ExportError(
+                            "duplicate (line_start, source_ordinal) within one document: "
+                            f"doc_id={doc_id} span={span}"
+                        )
+                    seen_spans.add(span)
+                    table_number += 1
+                    current_table = _TableAccumulator(
+                        table_id=table_id,
+                        doc_id=doc_id,
+                        base_name=current_base_name,
+                        table_number=table_number,
+                        company=str(company_code),
+                        year=int(report_year),
+                        report_type=str(statement_scope),
+                        statement_type=None if statement_type is None else str(statement_type),
+                        unit_normalized=(
+                            None if unit_normalized is None else str(unit_normalized)
+                        ),
+                        unit_raw=None if unit_raw is None else str(unit_raw),
+                    )
+                elif current_table is not None and table_id != current_table.table_id:
+                    # Same (doc_id, line_start, source_ordinal) but a different
+                    # table_id: two distinct tables claim the same source span.
+                    raise ExportError(
+                        "duplicate (line_start, source_ordinal) within one document: "
+                        f"doc_id={doc_id} span={key[1:]}"
+                    )
+
+                assert current_table is not None  # set unconditionally just above
+                current_table.placements.append(
+                    PlacementRow(
+                        table_id=table_id,
+                        row_idx=int(row_idx),
+                        col_idx=int(col_idx),
+                        cell_id=str(cell_id),
+                    )
+                )
+                current_table.cells.append(
+                    CellRow(
+                        cell_id=str(cell_id),
+                        table_id=table_id,
+                        row_idx=int(row_idx),
+                        col_idx=int(col_idx),
+                        value_raw=str(value_raw),
+                        value_numeric=value_numeric,
+                        row_label_raw=None if row_label_raw is None else str(row_label_raw),
+                        row_group_context_raw=(
+                            None if row_group_context_raw is None else str(row_group_context_raw)
+                        ),
+                        column_label_raw=(
+                            None if column_label_raw is None else str(column_label_raw)
+                        ),
+                    )
+                )
+
+        flush_table()
+    finally:
+        connection.close()
+
+    if expected_count != len(entries):
+        raise ExportError(
+            "release manifest table count differs from exported table count: "
+            f"expected={expected_count} found={len(entries)}"
+        )
 
     manifest_path = output_dir / "manifest.jsonl"
     _write_manifest_jsonl(manifest_path, tuple(entries))

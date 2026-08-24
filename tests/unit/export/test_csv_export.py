@@ -319,6 +319,29 @@ def test_build_colspan_header_dedupes_consecutive_duplicate_levels() -> None:
     assert table.headers == ("Chỉ_tiêu", "Số_tiền", "Số_tiền_Nợ")
 
 
+def test_build_keeps_a_leading_auxiliary_column_when_the_metric_column_is_second() -> None:
+    """The metric column is not always column 0 (an STT/ordinal column can lead
+    it, exactly as `ingestion/table_extractor.py::_metric_column_index` was
+    written to handle) -- column 0's own value must survive the export."""
+    stt_header = _header_cell("h00", 0, 0, "STT")
+    metric_header = _header_cell("h01", 0, 1, "Chỉ tiêu")
+    year_header = _header_cell("h02", 0, 2, "2023")
+    stt_value = _cell("d00", 1, 0, value_raw="1", row_label_raw="Doanh thu")
+    metric_value = _cell(
+        "d01", 1, 1, value_raw="Doanh thu", row_label_raw="Doanh thu", column_label_raw="Chỉ tiêu"
+    )
+    amount = _cell(
+        "d02", 1, 2, value_raw="100", value_numeric=Decimal("100.0000000000"),
+        row_label_raw="Doanh thu", column_label_raw="2023",
+    )
+    cells = [stt_header, metric_header, year_header, stt_value, metric_value, amount]
+
+    table = build_normalized_table(cells, _placements_for(cells), header_rows=1)
+
+    assert table.headers == ("STT", "Chỉ_tiêu", "2023")
+    assert table.rows == (("1", "Doanh thu", "100"),)
+
+
 def test_build_group_context_nested_two_levels() -> None:
     labeled = _cell(
         "c10",
