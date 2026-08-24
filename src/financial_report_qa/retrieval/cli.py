@@ -65,6 +65,7 @@ from financial_report_qa.retrieval.evaluation import (
 from financial_report_qa.retrieval.fusion_evaluation import evaluate_fusion_grid, write_day10_fusion
 from financial_report_qa.retrieval.gold import load_gold_questions
 from financial_report_qa.retrieval.index import build_bm25_index, load_bm25_index, save_bm25_index
+from financial_report_qa.retrieval.live_query import TableRetriever
 from financial_report_qa.retrieval.reference import (
     ReferenceVersion,
     load_bm25_reference_report,
@@ -87,6 +88,13 @@ from financial_report_qa.retrieval.row_dense_index import (
 from financial_report_qa.retrieval.row_documents import build_row_documents
 from financial_report_qa.retrieval.row_index import build_row_bm25_index, save_row_bm25_index
 from financial_report_qa.retrieval.service import RetrievalService
+from financial_report_qa.retrieval.sweep import (
+    DEFAULT_KS,
+    SweepResult,
+    recommend_k,
+    render_sweep_markdown,
+    run_sweep,
+)
 
 
 class _DenseBuildObservation(BaseModel):
@@ -174,6 +182,18 @@ def _parser() -> argparse.ArgumentParser:
     cleanup.add_argument("--repo-root", type=Path, required=True)
     cleanup.add_argument("--quarantine-root", type=Path, required=True)
     cleanup.add_argument("--apply", action="store_true")
+    sweep = commands.add_parser("sweep-k")
+    sweep.add_argument("--release-lock", type=Path, required=True)
+    sweep.add_argument("--bm25-index", type=Path, required=True)
+    sweep.add_argument("--gold", type=Path, required=True)
+    sweep.add_argument("--output-stem", type=Path, required=True)
+    sweep.add_argument(
+        "--ks",
+        type=int,
+        nargs="+",
+        default=list(DEFAULT_KS),
+        help="Các giá trị k cần đo (mặc định 1 2 3 5 8 10 15).",
+    )
     return parser
 
 
@@ -252,6 +272,22 @@ def _load_gold_for_cli(
         require_count=resolved.descriptor.question_count,
         question_ids=resolved.selected_question_ids,
     )
+
+
+def write_sweep_report(
+    results: Sequence[SweepResult], recommended_k: int, output_stem: Path
+) -> tuple[Path, Path]:
+    """Ghi báo cáo sweep ra <stem>.json và <stem>.md; trả về hai đường dẫn."""
+    output_stem.parent.mkdir(parents=True, exist_ok=True)
+    json_path = output_stem.with_suffix(".json")
+    markdown_path = output_stem.with_suffix(".md")
+    payload = {
+        "recommended_k": recommended_k,
+        "results": [{"k": item.k, "f2": item.f2, "mrr5": item.mrr5} for item in results],
+    }
+    write_text_atomic(json_path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    write_text_atomic(markdown_path, render_sweep_markdown(results, recommended_k))
+    return json_path, markdown_path
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -518,6 +554,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             except ValueError as exc:
                 raise FusionArtifactError("Fusion grid evaluation inputs are invalid") from exc
             json_path, markdown_path = write_day10_fusion(grid_report, args.output_dir)
+            print(json_path)
+            print(markdown_path)
+            return 0
+        if args.command == "sweep-k":
+            release = resolve_retrieval_release(args.release_lock, repo_root=Path.cwd())
+            index = load_bm25_index(args.bm25_index)
+            if index.manifest.dataset_fingerprint != release.dataset_fingerprint:
+                raise RetrievalArtifactError(
+                    "--bm25-index dataset_fingerprint does not match --release-lock"
+                )
+            questions = load_gold_questions(args.gold, release)
+            # cast: RetrievalTrace structurally satisfies TableRetriever but mypy
+            # cannot prove it against the _RankedResult protocol (same known
+            # pattern as the row_recall_evaluation / submission exporter callers).
+            results = run_sweep(
+                questions,
+                cast(TableRetriever, RetrievalService(index)),
+                ks=tuple(args.ks),
+            )
+            best = recommend_k(results)
+            json_path, markdown_path = write_sweep_report(results, best, args.output_stem)
+            print(render_sweep_markdown(results, best), end="")
+            print(f"k*={best}")
             print(json_path)
             print(markdown_path)
             return 0
