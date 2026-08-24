@@ -123,3 +123,13 @@ def test_a_decision_carrying_a_numeric_value_field_is_rejected(tmp_path: Path) -
 def test_a_missing_file_is_reported(tmp_path: Path) -> None:
     with pytest.raises(PlanningArtifactError):
         load_program_decisions(tmp_path / "absent.jsonl")
+
+
+def test_an_undecodable_file_is_reported(tmp_path: Path) -> None:
+    # A hand-edited file in a legacy Windows encoding fails as a planning
+    # artifact, not as a raw UnicodeDecodeError with no line context.
+    path = tmp_path / "decisions.jsonl"
+    path.write_bytes(b"\xff\xfe\x00")
+
+    with pytest.raises(PlanningArtifactError, match="not valid UTF-8"):
+        load_program_decisions(path)

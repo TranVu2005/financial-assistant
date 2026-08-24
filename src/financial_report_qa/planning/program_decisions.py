@@ -20,8 +20,14 @@ def load_program_decisions(path: Path) -> dict[int, ProgramDecision]:
     """Load every decision, keyed by `question_id`, in file order."""
     if not path.is_file():
         raise PlanningArtifactError(f"program decision file not found: {path}")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        # A hand-edited decision file saved in a legacy Windows encoding must
+        # fail like every other corrupt artifact, not as a bare codec error.
+        raise PlanningArtifactError(f"{path}: not valid UTF-8") from error
     decisions: dict[int, ProgramDecision] = {}
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for number, line in enumerate(text.splitlines(), 1):
         if not line.strip():
             continue
         try:
