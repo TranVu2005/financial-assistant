@@ -29,3 +29,8 @@ submissions/
 !data/qa/.gitkeep
 !artifacts/.gitkeep
 !submissions/.gitkeep
+
+# Phiếu gán nhãn gold v2: 9.3MB markdown sinh lại được bằng
+# scripts/sample_gold_v2.py. Chỉ answers.jsonl (công sức của người
+# gán nhãn) được commit.
+data/qa/gold-v2-review/questions/

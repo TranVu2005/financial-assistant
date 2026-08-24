@@ -67,7 +67,10 @@ from financial_report_qa.retrieval.evaluation import (
 from financial_report_qa.retrieval.fusion import FusionService
 from financial_report_qa.retrieval.fusion_contracts import FusionWeights
 from financial_report_qa.retrieval.fusion_evaluation import evaluate_fusion_grid, write_day10_fusion
-from financial_report_qa.retrieval.gold import load_gold_questions
+from financial_report_qa.retrieval.gold import (
+    REQUIRED_GOLD_QUESTION_COUNT,
+    load_gold_questions,
+)
 from financial_report_qa.retrieval.index import (
     BM25Index,
     build_bm25_index,
@@ -201,6 +204,15 @@ def _parser() -> argparse.ArgumentParser:
     sweep.add_argument("--bm25-index", type=Path, required=True)
     sweep.add_argument("--gold", type=Path, required=True)
     sweep.add_argument("--output-stem", type=Path, required=True)
+    sweep.add_argument(
+        "--gold-count",
+        type=int,
+        default=REQUIRED_GOLD_QUESTION_COUNT,
+        help="Số câu gold bắt buộc phải đọc được. Mặc định là kích thước gold "
+        "v1 (120); tập gold gán nhãn tay mới có kích thước khác thì truyền vào "
+        "-- đếm sai là dấu hiệu file gold bị cắt, nên đây là kiểm tra chứ "
+        "không phải tuỳ chọn tiện lợi.",
+    )
     sweep.add_argument(
         "--ks",
         type=int,
@@ -708,7 +720,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise RetrievalArtifactError(
                     "--bm25-index dataset_fingerprint does not match --release-lock"
                 )
-            questions = load_gold_questions(args.gold, release)
+            questions = load_gold_questions(
+                args.gold, release, require_count=args.gold_count
+            )
             retriever, reranker = _build_table_retriever(args, release, index)
             results = run_sweep(questions, retriever, ks=tuple(args.ks), reranker=reranker)
             best = recommend_k(results)
