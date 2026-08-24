@@ -81,9 +81,7 @@ def build_cell_candidates(
                     company_code=_optional_str(row.company_code),
                     row_idx=_frame_int(row.row_idx),
                     col_idx=_frame_int(row.col_idx),
-                    row_path=_row_path(
-                        label_raw, row_candidate.metadata.row_group_context_raw
-                    ),
+                    row_path=_row_path(label_raw, row_candidate.metadata.row_group_context_raw),
                     row_label_raw=label_raw,
                     row_label_canonical=_optional_str(row.row_label_canonical),
                     col_path=_optional_str(row.column_label) or "",
