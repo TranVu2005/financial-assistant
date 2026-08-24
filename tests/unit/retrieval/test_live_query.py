@@ -145,8 +145,18 @@ def test_reranking_asks_the_retriever_for_the_full_rerank_depth_not_just_k() -> 
 
 
 def test_rerank_depth_below_k_is_rejected() -> None:
-    with pytest.raises(RerankInputError):
+    with pytest.raises(RerankInputError, match="at least k"):
         retrieve_candidate_table_ids(
             _QUESTION, _FakeFusionService(("a",)), k=10,
+            reranker=_ReversingReranker(), rerank_depth=5,
+        )
+
+
+def test_reranker_over_a_plain_bm25_retriever_is_rejected() -> None:
+    """A reranker needs `.fused_score` inputs; feeding it a BM25 service must
+    fail closed at the live-path boundary, not crash inside rerank_candidates."""
+    with pytest.raises(RerankInputError, match="not plain BM25 results"):
+        retrieve_candidate_table_ids(
+            _QUESTION, _FakeBm25Service(("a",)), k=1,
             reranker=_ReversingReranker(), rerank_depth=5,
         )

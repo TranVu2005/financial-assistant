@@ -27,6 +27,7 @@ from financial_report_qa.core.errors import RerankInputError
 from financial_report_qa.planning.entity_contracts import to_retrieval_filters
 from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.retrieval.contracts import RetrievalFilters, TableId
+from financial_report_qa.retrieval.fusion_contracts import FusedCandidate
 from financial_report_qa.retrieval.rerank_contracts import DEFAULT_RERANK_DEPTH
 from financial_report_qa.retrieval.reranker import Reranker, rerank_candidates
 
@@ -77,9 +78,14 @@ def retrieve_candidate_table_ids(
     if reranker is None:
         return tuple(candidate.table_id for candidate in trace.results)
 
+    if trace.results and not isinstance(trace.results[0], FusedCandidate):
+        raise RerankInputError(
+            "reranker requires fused candidates (FusionService), not plain BM25 results"
+        )
+
     rerank_trace = rerank_candidates(
         question,
-        trace.results,  # type: ignore[arg-type]
+        trace.results,  # type: ignore[arg-type]  # guard above proves these are FusedCandidate at runtime
         reranker,
         k=k,
         depth=rerank_depth,
