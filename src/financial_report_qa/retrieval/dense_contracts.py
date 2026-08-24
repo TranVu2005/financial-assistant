@@ -17,7 +17,7 @@ from financial_report_qa.retrieval.contracts import (
     _FrozenModel,
 )
 
-EncoderName = Literal["bge-m3", "multilingual-e5-small"]
+EncoderName = Literal["bge-m3", "multilingual-e5-small", "qwen3-embedding-4b"]
 DenseEmptyReason = Literal["no_eligible_documents"]
 ModelRevision = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")]
 
@@ -29,7 +29,7 @@ class DenseEncoderSpec(_FrozenModel):
     model_id: NonEmptyString
     revision: ModelRevision
     dimension: int = Field(gt=0)
-    max_sequence_length: Literal[512] = 512
+    max_sequence_length: Literal[512, 1024, 2048, 8192] = 512
     query_prefix: str
     document_prefix: str
     pooling: Literal["sentence_transformers"] = "sentence_transformers"

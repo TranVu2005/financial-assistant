@@ -31,6 +31,20 @@ _SPECS = {
         document_prefix="passage: ",
         batch_size=32,
     ),
+    "qwen3-embedding-4b": DenseEncoderSpec(
+        name="qwen3-embedding-4b",
+        model_id="Qwen/Qwen3-Embedding-4B",
+        # Điền SHA commit thật của model trên Hugging Face trước khi chạy
+        # build-dense-index; `ModelRevision` từ chối mọi chuỗi không phải
+        # 40 ký tự hex, nên một revision sai sẽ hỏng ngay lúc import test.
+        revision="5cf2132abc99cad020ac570b19d031efec650f2b",
+        dimension=2560,
+        max_sequence_length=8192,
+        query_prefix="Instruct: Given a financial question, retrieve the "
+        "table that contains the answer\nQuery: ",
+        document_prefix="",
+        batch_size=4,
+    ),
 }
 
 
