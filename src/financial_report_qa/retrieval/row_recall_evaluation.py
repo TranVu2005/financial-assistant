@@ -23,13 +23,14 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from pydantic import Field
 
 from financial_report_qa.normalization._shared import normalized_key
 from financial_report_qa.retrieval.contracts import NonEmptyString, TableId, _FrozenModel
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
-from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
+from financial_report_qa.retrieval.live_query import TableRetriever, retrieve_candidate_table_ids
 from financial_report_qa.retrieval.row_fusion import RowFusionService
 from financial_report_qa.retrieval.service import RetrievalService
 
@@ -127,7 +128,12 @@ def evaluate_row_recall(
     `submission/exporter.py` calls them -- no gold-table shortcut."""
     outcomes: list[RowRecallOutcome] = []
     for question in questions:
-        retrieved = retrieve_candidate_table_ids(question.question, table_service, k=k_tables)
+        # cast: RetrievalTrace structurally satisfies TableRetriever but mypy
+        # cannot prove it against the _RankedResult protocol (same known
+        # pattern as retrieval/cli.py's sweep-k wiring).
+        retrieved = retrieve_candidate_table_ids(
+            question.question, cast(TableRetriever, table_service), k=k_tables
+        )
         table_recall_hit = bool(set(question.gold_table_ids) & set(retrieved))
 
         gold_keys = _label_matches(question.gold_row_labels)

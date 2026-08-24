@@ -16,11 +16,13 @@ missing id) -- `expected_ids` below is every question id, not just the
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from financial_report_qa.core.config import ExecutionSettings
 from financial_report_qa.retrieval.index import load_bm25_index
+from financial_report_qa.retrieval.live_query import TableRetriever
 from financial_report_qa.retrieval.release import resolve_retrieval_release
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.contracts import RawQuestion
@@ -66,7 +68,8 @@ def test_export_and_validate_a_handful_of_real_questions(tmp_path: Path) -> None
     release = resolve_retrieval_release(_RELEASE_LOCK, repo_root=_REPO_ROOT)
     index = load_bm25_index(_BM25_INDEX_DIR)
     assert index.manifest.dataset_fingerprint == release.dataset_fingerprint
-    service = RetrievalService(index)
+    # cast: same known invariant-protocol mypy wart as retrieval/cli.py's sweep-k wiring.
+    service = cast(TableRetriever, RetrievalService(index))
 
     with _QUESTIONS_PATH.open(encoding="utf-8") as handle:
         import json

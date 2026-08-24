@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 from json import JSONDecodeError
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from pydantic import ValidationError
 
@@ -24,13 +24,18 @@ from financial_report_qa.core.errors import (
     ExecutionError,
     PlanningArtifactError,
     PlanningInputError,
+    RetrievalError,
     SubmissionError,
 )
 from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.question_plan import load_decisions
 from financial_report_qa.planning.row_choice_batch import build_batch_payload
+from financial_report_qa.retrieval.cli import _build_table_retriever
 from financial_report_qa.retrieval.index import load_bm25_index
-from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
+from financial_report_qa.retrieval.live_query import (
+    TableRetriever,
+    retrieve_candidate_table_ids,
+)
 from financial_report_qa.retrieval.release import resolve_retrieval_release
 from financial_report_qa.retrieval.row_fusion import DEFAULT_ROW_CANDIDATE_COUNT
 from financial_report_qa.retrieval.service import RetrievalService
@@ -101,7 +106,8 @@ def _parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="Row-fusion weight for the dense branch (default 0.0, i.e. off, even when "
-        "--row-dense-corpus/--row-dense-index/--dense-encoder are all given). plan.md §20's "
+        "--row-dense-corpus/--row-dense-index/--dense-encoder are all given; do not "
+        "confuse with --table-dense-weight, the table-retrieval RRF weight). plan.md §20's "
         "row-recall benchmark (58 gold questions, dense weight 0.5) measured dense making "
         "Row Recall@3/@5 *worse* than bm25+fuzzy+alias alone (74.1%%->67.2%%, 82.8%%->74.1%%; "
         "@1/@10 unchanged) -- re-measure with `retrieval.row_recall_evaluation` before "
@@ -130,6 +136,28 @@ def _parser() -> argparse.ArgumentParser:
             "offline (xem subcommand `row-batches`); đọc bằng "
             "`question_plan.load_decisions`. Bỏ qua để dùng ứng viên hạng 1."
         ),
+    )
+    export.add_argument(
+        "--dense-index",
+        type=Path,
+        default=None,
+        help="Bật fusion BM25+dense cho TẦNG BẢNG (khác --row-dense-index của "
+        "row fusion): thư mục dense index (manifest.json + index.faiss). Corpus "
+        "đi kèm được tìm ở <dense-index>/corpus hoặc <thư mục cha>/corpus. Không "
+        "truyền thì tầng bảng chạy BM25-only như cũ.",
+    )
+    export.add_argument(
+        "--table-dense-weight",
+        type=float,
+        default=1.0,
+        help="Trọng số nhánh dense trong RRF của tầng bảng (bm25 luôn = 1.0). "
+        "Khác --dense-weight bên trên, vốn là trọng số dense của ROW fusion.",
+    )
+    export.add_argument(
+        "--rerank",
+        action="store_true",
+        help="Xếp lại top-50 của RRF tầng bảng bằng Qwen3-Reranker-4B (pinned). "
+        "Cần --dense-index.",
     )
 
     batches = commands.add_parser(
@@ -301,7 +329,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise SubmissionError(
                     "--bm25-index dataset_fingerprint does not match --release-lock"
                 )
-            service = RetrievalService(index)
+            try:
+                retriever, reranker = _build_table_retriever(args, release, index)
+            except RetrievalError as exc:
+                # Lỗi lắp bộ retrieve tầng bảng (fingerprint lệch, corpus thiếu,
+                # model không tải được) là lỗi đầu vào của lệnh export: báo đúng
+                # kiểu `submission error` thay vì để traceback sổ ra.
+                raise SubmissionError(str(exc)) from exc
             execution_settings = load_execution_settings(args.execution_config)
             questions = load_raw_questions(args.questions_path)
 
@@ -315,11 +349,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             report, items, csv_rows = export_submission(
                 questions,
-                service,
+                retriever,
                 release.release_dir,
                 execution_settings=execution_settings,
                 dataset_fingerprint=release.dataset_fingerprint,
                 k=args.k,
+                reranker=reranker,
                 row_fusion=row_fusion,
                 row_decisions=row_decisions,
                 allow_inferred_scope=args.allow_inferred_scope,
@@ -374,7 +409,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise SubmissionError(
                     "--bm25-index dataset_fingerprint does not match --release-lock"
                 )
-            service = RetrievalService(index)
+            # cast: RetrievalTrace structurally satisfies TableRetriever but mypy
+            # cannot prove it against the _RankedResult protocol (same known
+            # pattern as retrieval/cli.py's sweep-k wiring).
+            service = cast(TableRetriever, RetrievalService(index))
             questions = load_raw_questions(args.questions_path)
             row_fusion = _build_row_fusion(args, release)
             if row_fusion is None:

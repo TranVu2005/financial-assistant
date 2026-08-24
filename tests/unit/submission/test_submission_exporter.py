@@ -8,6 +8,7 @@ import json
 import zipfile
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 from unittest.mock import call
 
 import pyarrow as pa
@@ -30,6 +31,7 @@ from financial_report_qa.retrieval.contracts import (
     TableMetadata,
 )
 from financial_report_qa.retrieval.index import build_bm25_index
+from financial_report_qa.retrieval.live_query import TableRetriever
 from financial_report_qa.retrieval.row_fusion import DEFAULT_ROW_CANDIDATE_COUNT
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.contracts import RawQuestion
@@ -327,7 +329,7 @@ def test_relevant_tables_preserve_retrieval_rank_order(
     )
 
 
-def _service() -> RetrievalService:
+def _service() -> TableRetriever:
     document = TableDocument(
         table_id=TABLE_ID,
         doc_id=DOC_ID,
@@ -344,7 +346,11 @@ def _service() -> RetrievalService:
         ),
         metric_labels=(MetricLabelObservation(canonical="net_revenue", raw=None),),
     )
-    return RetrievalService(build_bm25_index((document,), dataset_fingerprint="f" * 64))
+    # cast: RetrievalTrace structurally satisfies TableRetriever but mypy
+    # cannot prove it against the _RankedResult protocol (same known pattern
+    # as retrieval/cli.py's sweep-k wiring).
+    index = build_bm25_index((document,), dataset_fingerprint="f" * 64)
+    return cast(TableRetriever, RetrievalService(index))
 
 
 def test_export_submission_evidence_csv_contains_the_full_extracted_table(
@@ -635,10 +641,11 @@ def test_export_submission_grounds_a_raw_label_metric(tmp_path: Path) -> None:
         ),
         metric_labels=(),
     )
-    service = RetrievalService(build_bm25_index((document,), dataset_fingerprint="f" * 64))
+    bm25 = build_bm25_index((document,), dataset_fingerprint="f" * 64)
+    service = cast(TableRetriever, RetrievalService(bm25))
     question = RawQuestion(id=1, question="Lãi tiền gửi của ACB năm 2020 là bao nhiêu?")
 
-    from unittest.mock import MagicMock, call
+    from unittest.mock import MagicMock
 
     from financial_report_qa.retrieval.row_documents import RowMetadata
     from financial_report_qa.retrieval.row_fusion import RowFusionService

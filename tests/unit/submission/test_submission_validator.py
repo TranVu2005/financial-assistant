@@ -7,6 +7,7 @@ from __future__ import annotations
 import zipfile
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -19,6 +20,7 @@ from financial_report_qa.retrieval.contracts import (
     TableMetadata,
 )
 from financial_report_qa.retrieval.index import build_bm25_index
+from financial_report_qa.retrieval.live_query import TableRetriever
 from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.contracts import (
     RawQuestion,
@@ -125,7 +127,7 @@ def _write_release(tmp_path: Path) -> Path:
     return release_dir
 
 
-def _service() -> RetrievalService:
+def _service() -> TableRetriever:
     document = TableDocument(
         table_id=TABLE_ID,
         doc_id=DOC_ID,
@@ -142,7 +144,9 @@ def _service() -> RetrievalService:
         ),
         metric_labels=(MetricLabelObservation(canonical="net_revenue", raw=None),),
     )
-    return RetrievalService(build_bm25_index((document,), dataset_fingerprint="f" * 64))
+    # cast: same known invariant-protocol mypy wart as retrieval/cli.py's sweep-k wiring.
+    index = build_bm25_index((document,), dataset_fingerprint="f" * 64)
+    return cast(TableRetriever, RetrievalService(index))
 
 
 def _build_zip(tmp_path: Path) -> tuple[Path, Path]:

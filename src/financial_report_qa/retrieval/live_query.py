@@ -21,7 +21,7 @@ at the call site, not a change here.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from financial_report_qa.core.errors import RerankInputError
 from financial_report_qa.planning.entity_contracts import to_retrieval_filters
@@ -40,6 +40,11 @@ class _RetrievalTraceLike(Protocol):
     results: tuple[_RankedResult, ...]
 
 
+# runtime_checkable: the submission exporter and the sweep-k CLI both take a
+# TableRetriever without knowing which concrete service is wired in, and the
+# protocol's own members are methods only, so `issubclass` stays legal (the
+# data-member protocols in the *return* types never participate in the check).
+@runtime_checkable
 class TableRetriever(Protocol):
     """Anything that ranks tables under metadata filters: BM25 or fusion."""
 

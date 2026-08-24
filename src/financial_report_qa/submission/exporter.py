@@ -34,12 +34,15 @@ from financial_report_qa.planning.entity_contracts import QueryEntities
 from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.question_plan import RowChoiceDecision
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
-from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
+from financial_report_qa.retrieval.live_query import (
+    TableRetriever,
+    retrieve_candidate_table_ids,
+)
+from financial_report_qa.retrieval.reranker import Reranker
 from financial_report_qa.retrieval.row_fusion import (
     DEFAULT_ROW_CANDIDATE_COUNT,
     RowFusionService,
 )
-from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.backstop_answer import build_backstop_item
 from financial_report_qa.submission.citation_summary import (
     relevant_docs_and_tables as _relevant_docs_and_tables,
@@ -191,18 +194,19 @@ def _scope_candidate_tables(
 
 def _run_one_question(
     raw_question: RawQuestion,
-    service: RetrievalService,
+    service: TableRetriever,
     release_dir: Path,
     *,
     execution_settings: ExecutionSettings,
     k: int,
+    reranker: Reranker | None = None,
     row_fusion: RowFusionService | None = None,
     allow_inferred_scope: bool = False,
     row_decisions: Mapping[int, RowChoiceDecision] | None = None,
 ) -> tuple[QuestionOutcome, SubmissionItem | None, tuple[CsvRow, ...] | None]:
     question = raw_question.question
 
-    retrieved = retrieve_candidate_table_ids(question, service, k=k)
+    retrieved = retrieve_candidate_table_ids(question, service, k=k, reranker=reranker)
     if not retrieved:
         return (
             QuestionOutcome.model_validate(
@@ -401,12 +405,13 @@ def _decision_row_hint(
 
 def _apply_backstop(
     raw_question: RawQuestion,
-    service: RetrievalService,
+    service: TableRetriever,
     release_dir: Path,
     *,
     k: int,
     outcome: QuestionOutcome,
     execution_settings: ExecutionSettings,
+    reranker: Reranker | None = None,
     row_fusion: RowFusionService | None = None,
     row_decisions: Mapping[int, RowChoiceDecision] | None = None,
 ) -> tuple[QuestionOutcome, SubmissionItem, tuple[CsvRow, ...]]:
@@ -422,7 +427,9 @@ def _apply_backstop(
     whether the answer is right. Only the row hint is computed from the
     scope-narrowed set.
     """
-    retrieved = retrieve_candidate_table_ids(raw_question.question, service, k=k)
+    retrieved = retrieve_candidate_table_ids(
+        raw_question.question, service, k=k, reranker=reranker
+    )
     preferred_row, preferred_period = _decision_row_hint(
         raw_question,
         retrieved,
@@ -453,12 +460,13 @@ def _apply_backstop(
 
 def export_submission(
     raw_questions: Sequence[RawQuestion],
-    service: RetrievalService,
+    service: TableRetriever,
     release_dir: Path,
     *,
     execution_settings: ExecutionSettings,
     dataset_fingerprint: str,
     k: int = 10,
+    reranker: Reranker | None = None,
     row_fusion: RowFusionService | None = None,
     apply_backstop: bool = True,
     allow_inferred_scope: bool = False,
@@ -467,6 +475,11 @@ def export_submission(
     """Run every question through the live pipeline once. Returns the
     coverage report (all questions), the ``SubmissionItem``s to package into
     ``submission.json``, and their CSV rows keyed by ``csv_path``.
+
+    ``service`` is anything that ranks tables under metadata filters: the
+    BM25-only ``RetrievalService`` (the historical default), or a
+    ``FusionService`` combining it with a dense branch, optionally followed
+    by the ``reranker`` cross-encoder on the fused top-N.
 
     The answering path is single (spec 2026-08-23 §6, N6): every question
     goes through exactly one ``cell_grounding.ground_question`` call --
@@ -506,6 +519,7 @@ def export_submission(
             release_dir,
             execution_settings=execution_settings,
             k=k,
+            reranker=reranker,
             row_fusion=row_fusion,
             allow_inferred_scope=allow_inferred_scope,
             row_decisions=row_decisions,
@@ -518,6 +532,7 @@ def export_submission(
                 k=k,
                 outcome=outcome,
                 execution_settings=execution_settings,
+                reranker=reranker,
                 row_fusion=row_fusion,
                 row_decisions=row_decisions,
             )

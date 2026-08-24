@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 from pytest import MonkeyPatch
 
 from financial_report_qa.data.dataset_builder import CELL_SCHEMA, DOCUMENT_SCHEMA, TABLE_SCHEMA
@@ -447,3 +448,70 @@ def test_export_defaults_row_choice_decisions_to_none() -> None:
         ]
     )
     assert args.row_choice_decisions is None
+
+
+def _export_argv(tmp_path: Path, index_dir: Path, *extra: str) -> list[str]:
+    config_path = tmp_path / "execution.yaml"
+    _write_execution_config(config_path)
+    questions_path = tmp_path / "questions.jsonl"
+    _write_questions(questions_path)
+    return [
+        "export",
+        "--release-lock",
+        "lock.json",
+        "--bm25-index",
+        str(index_dir),
+        "--questions-path",
+        str(questions_path),
+        "--execution-config",
+        str(config_path),
+        "--output-zip",
+        str(tmp_path / "out.zip"),
+        "--report-dir",
+        str(tmp_path / "report"),
+        *extra,
+    ]
+
+
+def test_export_table_dense_flags_fail_cleanly_without_a_corpus(
+    tmp_path: Path, monkeypatch: MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--dense-index trỏ tới thư mục không có corpus đi kèm phải thành
+    `submission error` (exit 2) với cả hai vị trí đã tìm, thay vì traceback."""
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    index_dir = tmp_path / "index"
+    _write_bm25_index(index_dir)
+    dense_dir = tmp_path / "dense-without-corpus"
+    dense_dir.mkdir()
+
+    exit_code = main(_export_argv(tmp_path, index_dir, "--dense-index", str(dense_dir)))
+
+    assert exit_code == 2
+    stderr = capsys.readouterr().err
+    assert "submission error" in stderr
+    assert str(dense_dir / "corpus") in stderr
+
+
+def test_export_rerank_requires_dense_index(
+    tmp_path: Path, monkeypatch: MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """--rerank một mình bị từ chối ngay trước khi bất kỳ model nào được tải."""
+    release = _fixture_release(tmp_path)
+    _patch_release_resolver(monkeypatch, release)
+    index_dir = tmp_path / "index"
+    _write_bm25_index(index_dir)
+
+    exit_code = main(_export_argv(tmp_path, index_dir, "--rerank"))
+
+    assert exit_code == 2
+    assert "--rerank cần --dense-index" in capsys.readouterr().err
+
+
+def test_export_parser_defaults_the_table_stack_flags(tmp_path: Path) -> None:
+    from financial_report_qa.submission import cli as submission_cli
+
+    args = submission_cli._parser().parse_args(_export_argv(tmp_path, Path("idx")))
+    assert args.dense_index is None
+    assert args.table_dense_weight == 1.0
+    assert args.rerank is False

@@ -31,7 +31,7 @@ from financial_report_qa.retrieval.contracts import GoldRetrievalQuestion
 from financial_report_qa.retrieval.data_cleanup import plan_day9_cleanup, quarantine_day9_cleanup
 from financial_report_qa.retrieval.dense_artifacts import write_text_atomic
 from financial_report_qa.retrieval.dense_cache import QueryEmbeddingCache
-from financial_report_qa.retrieval.dense_contracts import EncoderName
+from financial_report_qa.retrieval.dense_contracts import DenseIndexManifest, EncoderName
 from financial_report_qa.retrieval.dense_corpus import (
     DenseCorpus,
     build_dense_corpus,
@@ -39,6 +39,7 @@ from financial_report_qa.retrieval.dense_corpus import (
     save_dense_corpus,
 )
 from financial_report_qa.retrieval.dense_encoder import (
+    DenseEncoder,
     SentenceTransformerDenseEncoder,
     approved_encoder_spec,
     encoder_spec_sha256,
@@ -62,9 +63,16 @@ from financial_report_qa.retrieval.evaluation import (
     write_report,
     write_report_v2,
 )
+from financial_report_qa.retrieval.fusion import FusionService
+from financial_report_qa.retrieval.fusion_contracts import FusionWeights
 from financial_report_qa.retrieval.fusion_evaluation import evaluate_fusion_grid, write_day10_fusion
 from financial_report_qa.retrieval.gold import load_gold_questions
-from financial_report_qa.retrieval.index import build_bm25_index, load_bm25_index, save_bm25_index
+from financial_report_qa.retrieval.index import (
+    BM25Index,
+    build_bm25_index,
+    load_bm25_index,
+    save_bm25_index,
+)
 from financial_report_qa.retrieval.live_query import TableRetriever
 from financial_report_qa.retrieval.reference import (
     ReferenceVersion,
@@ -74,6 +82,11 @@ from financial_report_qa.retrieval.reference import (
 from financial_report_qa.retrieval.release import (
     ResolvedRetrievalRelease,
     resolve_retrieval_release,
+)
+from financial_report_qa.retrieval.reranker import (
+    Qwen3CrossEncoderReranker,
+    Reranker,
+    approved_reranker_spec,
 )
 from financial_report_qa.retrieval.row_dense_corpus import (
     RowDenseCorpus,
@@ -194,6 +207,26 @@ def _parser() -> argparse.ArgumentParser:
         default=list(DEFAULT_KS),
         help="Các giá trị k cần đo (mặc định 1 2 3 5 8 10 15).",
     )
+    sweep.add_argument(
+        "--dense-index",
+        type=Path,
+        default=None,
+        help="Bật fusion BM25+dense cho tầng bảng: thư mục dense index "
+        "(manifest.json + index.faiss). Corpus đi kèm được tìm ở "
+        "<dense-index>/corpus hoặc <thư mục cha>/corpus. Không truyền thì "
+        "đo BM25-only như cũ.",
+    )
+    sweep.add_argument(
+        "--table-dense-weight",
+        type=float,
+        default=1.0,
+        help="Trọng số nhánh dense trong RRF của tầng bảng (bm25 luôn = 1.0).",
+    )
+    sweep.add_argument(
+        "--rerank",
+        action="store_true",
+        help="Xếp lại top-50 của RRF bằng Qwen3-Reranker-4B (pinned). Cần --dense-index.",
+    )
     return parser
 
 
@@ -288,6 +321,110 @@ def write_sweep_report(
     write_text_atomic(json_path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     write_text_atomic(markdown_path, render_sweep_markdown(results, recommended_k))
     return json_path, markdown_path
+
+
+# Mặc định theo kế hoạch Task 8: QueryEmbeddingCache tự thêm thư mục con
+# `<encoder_spec_sha256[:12]>` bên dưới root này.
+_TABLE_DENSE_QUERY_CACHE_DEFAULT = Path("data/indexes/dense-query-cache/qwen3-4b")
+
+
+def _locate_table_dense_corpus(dense_index_dir: Path) -> Path:
+    """Tìm corpus đi kèm một dense index tầng bảng.
+
+    `load_dense_index` cần đúng corpus đã dùng lúc build (kiểm tra
+    `document_sha256`), nhưng cờ CLI chỉ nhận thư mục index nên corpus được
+    tìm theo quy ước bố trí: ngay trong thư mục index (`<index>/corpus`) hoặc
+    cạnh nó dưới cùng một thư mục cha (`<cha>/corpus`).
+    """
+    candidates = (dense_index_dir / "corpus", dense_index_dir.parent / "corpus")
+    for candidate in candidates:
+        if (candidate / "manifest.json").is_file():
+            return candidate
+    searched = "; ".join(str(candidate) for candidate in candidates)
+    raise DenseArtifactError(
+        "--dense-index cần cả dense corpus nhưng không thấy manifest.json ở "
+        f"{searched}. Hãy chạy `retrieval build-dense-corpus --output-root "
+        "<thư mục cha của dense-index>` hoặc đặt 'corpus' vào trong thư mục "
+        "dense-index."
+    )
+
+
+def _build_table_retriever(
+    args: argparse.Namespace,
+    release: ResolvedRetrievalRelease,
+    index: BM25Index,
+    *,
+    encoder: DenseEncoder | None = None,
+    reranker: Reranker | None = None,
+) -> tuple[TableRetriever, Reranker | None]:
+    """Lắp bộ retrieve tầng bảng cho đường live, dùng chung bởi
+    `submission export` và `retrieval sweep-k` để hai CLI không tự lắp hai
+    stack khác nhau cho cùng một câu hỏi.
+
+    Ba chế độ:
+    - mặc định (không cờ): BM25-only, hành vi cũ nguyên vẹn;
+    - `--dense-index`: fusion BM25+dense bằng weighted RRF
+      (`FusionWeights(bm25=1.0, dense=--table-dense-weight)`);
+    - `--dense-index --rerank`: cộng thêm cross-encoder xếp lại top-50.
+
+    `--rerank` không có `--dense-index` bị từ chối: reranker chỉ nhận ứng
+    viên fused (`FusedCandidate`), chạy trên BM25 thuần là sai ngữ nghĩa.
+
+    `encoder`/`reranker` là điểm tiêm cho test -- production để `None` và nhận
+    encoder dựng từ chính manifest của dense index (nên spec hash luôn khớp
+    index) và reranker pinned `qwen3-reranker-4b`. Rerank chạy TUẦN TỰ sau
+    fusion, không song song với encoder: corpus đã embed xong offline nên tại
+    thời điểm chạy chỉ còn reranker chiếm VRAM.
+    """
+    bm25_service = RetrievalService(index)
+    dense_index_dir: Path | None = getattr(args, "dense_index", None)
+    wants_rerank = bool(getattr(args, "rerank", False))
+
+    if dense_index_dir is None:
+        if wants_rerank:
+            raise DenseInputError("--rerank cần --dense-index: rerank chỉ chạy trên ứng viên fused")
+        # cast: RetrievalTrace structurally satisfies TableRetriever but mypy
+        # cannot prove it against the _RankedResult protocol (same known
+        # pattern as the row_recall_evaluation / submission exporter callers).
+        return cast(TableRetriever, bm25_service), None
+
+    corpus = load_dense_corpus(
+        _locate_table_dense_corpus(dense_index_dir), release_lock_sha256=release.lock_sha256
+    )
+    if corpus.manifest.dataset_fingerprint != release.dataset_fingerprint:
+        raise DenseArtifactError(
+            "--dense-index dataset_fingerprint does not match --release-lock"
+        )
+
+    # Encoder spec đến từ chính manifest của index: spec hash ghi trong
+    # manifest và hash tính từ spec này phải trùng nhau qua `load_dense_index`
+    # lẫn kiểm tra của `DenseRetrievalService`.
+    manifest = DenseIndexManifest.model_validate(
+        json.loads((dense_index_dir / "manifest.json").read_text(encoding="utf-8"))
+    )
+    if encoder is None:
+        encoder = SentenceTransformerDenseEncoder(manifest.encoder)
+    loaded_dense_index = load_dense_index(
+        dense_index_dir,
+        corpus,
+        expected_encoder_spec_sha256=encoder_spec_sha256(encoder.spec),
+        release_lock_sha256=release.lock_sha256,
+    )
+    cache = QueryEmbeddingCache(_TABLE_DENSE_QUERY_CACHE_DEFAULT, encoder.spec)
+    dense_service = DenseRetrievalService(loaded_dense_index, encoder, cache)
+
+    if wants_rerank:
+        if reranker is None:
+            reranker = Qwen3CrossEncoderReranker(approved_reranker_spec("qwen3-reranker-4b"))
+    else:
+        reranker = None
+
+    fusion = FusionService(
+        bm25_service,
+        dense_service,
+        FusionWeights(bm25=1.0, dense=getattr(args, "table_dense_weight", 1.0)),
+    )
+    return cast(TableRetriever, fusion), reranker
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -565,14 +702,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "--bm25-index dataset_fingerprint does not match --release-lock"
                 )
             questions = load_gold_questions(args.gold, release)
-            # cast: RetrievalTrace structurally satisfies TableRetriever but mypy
-            # cannot prove it against the _RankedResult protocol (same known
-            # pattern as the row_recall_evaluation / submission exporter callers).
-            results = run_sweep(
-                questions,
-                cast(TableRetriever, RetrievalService(index)),
-                ks=tuple(args.ks),
-            )
+            retriever, reranker = _build_table_retriever(args, release, index)
+            results = run_sweep(questions, retriever, ks=tuple(args.ks), reranker=reranker)
             best = recommend_k(results)
             json_path, markdown_path = write_sweep_report(results, best, args.output_stem)
             print(render_sweep_markdown(results, best), end="")
