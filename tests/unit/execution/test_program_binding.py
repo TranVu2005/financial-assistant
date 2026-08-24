@@ -141,3 +141,49 @@ def test_abs_and_unary_minus_survive_the_round_trip() -> None:
     replayed = replay_pandas_query(query, frame)
 
     assert replayed == pytest.approx(810.0)
+
+
+def _dirty_frame(values: tuple[object, object]) -> pd.DataFrame:
+    """Same layout as `_frame`, with the `value` column forced to object dtype
+    so a None stays None instead of pandas coercing it to NaN."""
+    frame = _frame().copy()
+    frame["value"] = pd.Series(values, dtype=object)
+    return frame
+
+
+def test_binding_rejects_a_nan_cell_instead_of_binding_it() -> None:
+    # Decimal("nan") parses, so an unconditional map would bind NaN and poison
+    # every computation downstream. The cell must surface as a binding error.
+    decision = ProgramDecision(question_id=7, cells=(0,), program="[NUM_0]")
+    frame = _dirty_frame((float("nan"), 5310.0))
+
+    with pytest.raises(ProgramBindingError, match="no numeric value"):
+        bind_values(decision, _candidates(), values_by_position(frame))
+
+
+def test_binding_rejects_a_none_cell_instead_of_crashing_on_decimal_none() -> None:
+    # `Decimal(str(None))` raises an uncaught decimal.InvalidOperation unless
+    # the unusable row is filtered out before binding.
+    decision = ProgramDecision(question_id=7, cells=(0,), program="[NUM_0]")
+    frame = _dirty_frame((None, 5310.0))
+
+    with pytest.raises(ProgramBindingError, match="no numeric value"):
+        bind_values(decision, _candidates(), values_by_position(frame))
+
+
+def test_values_by_position_omits_unusable_cells_entirely() -> None:
+    # NaN/None/inf/unconvertible junk all parse-or-crash paths; none of them
+    # may appear in the map, while usable cells keep their exact values.
+    frame = _frame().copy()
+    junk_rows = []
+    for row_idx, junk in enumerate((float("nan"), None, float("inf"), "không phải số"), start=10):
+        row = dict(frame.iloc[0])
+        row["row_idx"] = row_idx
+        row["value"] = junk
+        junk_rows.append(row)
+    dirty = pd.DataFrame([*frame.to_dict("records"), *junk_rows])
+
+    values = values_by_position(dirty)
+
+    assert set(values) == {(_TABLE_ID, 3, 1), (_TABLE_ID, 3, 2)}
+    assert values[(_TABLE_ID, 3, 2)] == Decimal("5310.0")

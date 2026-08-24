@@ -50,12 +50,24 @@ def values_by_position(frame: pd.DataFrame) -> dict[tuple[str, int, int], Decima
 
     Values go through `str()` before `Decimal` so a long significand keeps
     every digit -- the same round-trip hazard `compliance.check_bundle`
-    documents for `pd.read_csv`.
+    documents for `pd.read_csv`. A cell whose value cannot become a finite
+    `Decimal` (NaN, None, infinity, unconvertible junk) is omitted from the
+    map rather than bound: `bind_values` then fails closed on the missing
+    position with a typed `ProgramBindingError`. Binding NaN silently would
+    poison arithmetic downstream, and `Decimal("None")` crashing with an
+    uncaught `InvalidOperation` would bypass `run_question`'s ProgramError
+    handling -- both violate the global rule that an empty cell never binds.
     """
-    return {
-        (str(row.table_id), int(row.row_idx), int(row.col_idx)): Decimal(str(row.value))  # type: ignore[arg-type]
-        for row in frame.itertuples()
-    }
+    values: dict[tuple[str, int, int], Decimal] = {}
+    for row in frame.itertuples():
+        try:
+            value = Decimal(str(row.value))
+        except (ArithmeticError, ValueError):
+            continue  # unconvertible (e.g. None -> Decimal("None") -> InvalidOperation)
+        if not value.is_finite():
+            continue  # NaN/Infinity parse fine but must never enter arithmetic
+        values[(str(row.table_id), int(row.row_idx), int(row.col_idx))] = value  # type: ignore[arg-type]
+    return values
 
 
 def bind_values(
