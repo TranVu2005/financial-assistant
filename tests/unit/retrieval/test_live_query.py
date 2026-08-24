@@ -1,85 +1,152 @@
-"""Tests for the Day 22 live-retrieval bridge (plan §1/§2 decision B): a raw,
-never-before-seen question string -> ranked candidate table_ids, with no
-gold-labeled `RetrievalFilters` available. Wires two already-tested pieces
-(`parse_query_entities`, `to_retrieval_filters`) into `RetrievalService`."""
+import numpy as np
+import pytest
 
-from __future__ import annotations
-
+from financial_report_qa.core.errors import RerankInputError
 from financial_report_qa.retrieval.contracts import (
-    MetricLabelObservation,
-    TableDocument,
+    RetrievalCandidate,
+    RetrievalTrace,
     TableMetadata,
 )
-from financial_report_qa.retrieval.index import build_bm25_index
+from financial_report_qa.retrieval.fusion_contracts import (
+    FusedCandidate,
+    FusionTrace,
+    FusionWeights,
+)
 from financial_report_qa.retrieval.live_query import retrieve_candidate_table_ids
-from financial_report_qa.retrieval.service import RetrievalService
+from financial_report_qa.retrieval.rerank_contracts import RerankerSpec
+from financial_report_qa.planning.entity_parser import parse_query_entities
 
-TABLE_ACB = "tbl_" + "a" * 64
-TABLE_VIC = "tbl_" + "b" * 64
+_QUESTION = "Doanh thu thuần của VCB năm 2023 là bao nhiêu?"
 
 
-def _documents() -> tuple[TableDocument, ...]:
-    return (
-        TableDocument(
-            table_id=TABLE_ACB,
-            doc_id="doc_a",
-            text="company_code: ACB\nperiod: 2023\nDoanh thu thuần | 2023 | 100",
-            metadata=TableMetadata(
-                table_id=TABLE_ACB,
-                doc_id="doc_a",
-                company_code="ACB",
-                periods=("2023",),
-                statement_type="income",
-                source_path="a.txt",
-                line_start=1,
-                line_end=3,
+def _table_id(suffix: str) -> str:
+    return "tbl_" + suffix * 64
+
+
+def _metadata(suffix: str) -> TableMetadata:
+    return TableMetadata(
+        table_id=_table_id(suffix),
+        doc_id="doc_" + "0" * 64,
+        company_code="VCB",
+        periods=("2023",),
+        source_path="VCB/2023/x/x_extracted.txt",
+        line_start=1,
+        line_end=2,
+    )
+
+
+class _FakeBm25Service:
+    def __init__(self, suffixes: tuple[str, ...]) -> None:
+        self._suffixes = suffixes
+        self.last_k: int | None = None
+        self.last_filters = None
+
+    def retrieve(self, query, *, filters, k=10, question_id=None):  # type: ignore[no-untyped-def]
+        self.last_k = k
+        self.last_filters = filters
+        return RetrievalTrace(
+            query=query,
+            query_tokens=(),
+            eligible_count=len(self._suffixes),
+            filter_decisions=(),
+            results=tuple(
+                RetrievalCandidate(
+                    table_id=_table_id(suffix),
+                    score=1.0 - index / 10,
+                    rank=index + 1,
+                    metadata=_metadata(suffix),
+                    snippet=f"snippet-{suffix}",
+                    matched_tokens=("doanh",),
+                )
+                for index, suffix in enumerate(self._suffixes[:k])
             ),
-            metric_labels=(MetricLabelObservation(canonical="net_revenue", raw=None),),
-        ),
-        TableDocument(
-            table_id=TABLE_VIC,
-            doc_id="doc_b",
-            text="company_code: VIC\nperiod: 2023\nDoanh thu thuần | 2023 | 200",
-            metadata=TableMetadata(
-                table_id=TABLE_VIC,
-                doc_id="doc_b",
-                company_code="VIC",
-                periods=("2023",),
-                statement_type="income",
-                source_path="b.txt",
-                line_start=1,
-                line_end=3,
+        )
+
+
+class _FakeFusionService:
+    def __init__(self, suffixes: tuple[str, ...]) -> None:
+        self._suffixes = suffixes
+        self.last_k: int | None = None
+
+    def retrieve(self, query, *, filters, k=10, question_id=None):  # type: ignore[no-untyped-def]
+        self.last_k = k
+        return FusionTrace(
+            query=query,
+            weights=FusionWeights(bm25=1, dense=1),
+            entities=parse_query_entities(query),
+            eligible_count=len(self._suffixes),
+            bm25_candidate_count=len(self._suffixes),
+            dense_candidate_count=len(self._suffixes),
+            results=tuple(
+                FusedCandidate(
+                    table_id=_table_id(suffix),
+                    rank=index + 1,
+                    fused_score=1.0 - index / 10,
+                    contradiction_count=0,
+                    metadata=_metadata(suffix),
+                    snippet=f"snippet-{suffix}",
+                )
+                for index, suffix in enumerate(self._suffixes[:k])
             ),
-            metric_labels=(MetricLabelObservation(canonical="net_revenue", raw=None),),
-        ),
-    )
+        )
 
 
-def _service() -> RetrievalService:
-    return RetrievalService(build_bm25_index(_documents(), dataset_fingerprint="f" * 64))
+class _ReversingReranker:
+    """Cho điểm ngược lại thứ tự đầu vào, để thấy rõ reranker có tác dụng."""
+
+    def __init__(self) -> None:
+        self.spec = RerankerSpec(
+            name="qwen3-reranker-4b",
+            model_id="Qwen/Qwen3-Reranker-4B",
+            revision="a" * 40,
+            batch_size=4,
+        )
+
+    def score(self, query, documents):  # type: ignore[no-untyped-def]
+        return np.asarray(range(len(documents)), dtype=np.float32)
 
 
-def test_retrieve_candidate_table_ids_narrows_by_parsed_company() -> None:
-    """A question naming ACB should retrieve only the ACB table, exactly as if
-    a hand-labeled RetrievalFilters(company_codes=("ACB",)) had been given --
-    but derived here purely from the raw question text."""
+def test_bm25_only_path_is_unchanged_when_no_reranker_is_supplied() -> None:
+    service = _FakeBm25Service(("a", "b", "c"))
+
+    table_ids = retrieve_candidate_table_ids(_QUESTION, service, k=2)
+
+    assert table_ids == (_table_id("a"), _table_id("b"))
+    assert service.last_k == 2
+
+
+def test_filters_are_derived_from_the_question_text() -> None:
+    service = _FakeBm25Service(("a",))
+
+    retrieve_candidate_table_ids(_QUESTION, service, k=1)
+
+    assert service.last_filters is not None
+    assert service.last_filters.company_codes == ("VCB",)
+
+
+def test_reranker_reorders_the_fused_top_and_truncates_to_k() -> None:
+    service = _FakeFusionService(("a", "b", "c"))
+
     table_ids = retrieve_candidate_table_ids(
-        "Doanh thu thuần của ACB năm 2023 là bao nhiêu?", _service(), k=10
+        _QUESTION, service, k=2, reranker=_ReversingReranker(), rerank_depth=3
     )
-    assert table_ids == (TABLE_ACB,)
+
+    assert table_ids == (_table_id("c"), _table_id("b"))
 
 
-def test_retrieve_candidate_table_ids_returns_empty_when_no_eligible_tables() -> None:
-    """A recognized company (ACB) with a period no table covers must return
-    empty, not fall back to ignoring the period filter."""
-    table_ids = retrieve_candidate_table_ids(
-        "Doanh thu thuần của ACB năm 2019 là bao nhiêu?", _service(), k=10
+def test_reranking_asks_the_retriever_for_the_full_rerank_depth_not_just_k() -> None:
+    service = _FakeFusionService(tuple("0123456789"))
+
+    retrieve_candidate_table_ids(
+        _QUESTION, service, k=2, reranker=_ReversingReranker(), rerank_depth=8
     )
-    assert table_ids == ()
+
+    assert service.last_k == 8
 
 
-def test_retrieve_candidate_table_ids_respects_k() -> None:
-    table_ids = retrieve_candidate_table_ids(
-        "Doanh thu thuần năm 2023 là bao nhiêu?", _service(), k=1
-    )
-    assert len(table_ids) <= 1
+def test_rerank_depth_below_k_is_rejected() -> None:
+    with pytest.raises(RerankInputError):
+        retrieve_candidate_table_ids(
+            _QUESTION, _FakeFusionService(("a",)), k=10,
+            reranker=_ReversingReranker(), rerank_depth=5,
+        )
