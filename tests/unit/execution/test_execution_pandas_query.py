@@ -598,3 +598,46 @@ def test_position_bound_predicate_keeps_the_semantic_row_label() -> None:
     assert 'row_label_raw == "Doanh thu thuần"' in query
     assert "row_idx == 4" in query
     assert f'table_id == "{table_id}"' in query
+
+
+def test_replay_accepts_col_idx_as_a_positional_column_clause() -> None:
+    """Masked-PAL lookups (spec 2026-08-24) pin the column by `col_idx`: one
+    row spans many cells, so without it two placeholders in one program would
+    both resolve to `.iloc[0]` of the same row. The clause must therefore be
+    accepted, and it must actually pick the named column."""
+    table_id = "tbl_" + "a" * 64
+
+    def _cell_row(col_idx: int, value: str) -> dict[str, object]:
+        row = _row(value=value, period=2023)
+        row["table_id"] = table_id
+        row["row_idx"] = 3
+        row["col_idx"] = col_idx
+        return row
+
+    frame = _frame([_cell_row(1, "4500"), _cell_row(2, "5310")])
+    condition = (
+        '(df1.row_label_canonical == "cash_and_cash_equivalents")'
+        f' & (df1.table_id == "{table_id}")'
+        " & (df1.row_idx == 3) & (df1.col_idx == 2)"
+    )
+    assert replay_pandas_query(f'df1[{condition}]["value"].iloc[0]', frame) == Decimal("5310")
+
+
+def test_replay_accepts_multiplication() -> None:
+    """`SCALE_SUFFIX["percent"]` appends `* 100`, and the masked-PAL program
+    grammar itself allows multiplication, so the replayer must accept Mult or
+    every percent-scaled answer fails C7."""
+    frame = _frame([_row(value="42", period=2023)])
+    query = '(df1[(df1.period == 2023)]["value"].iloc[0]) * 100'
+    assert replay_pandas_query(query, frame) == Decimal("4200")
+
+
+def test_replay_accepts_unary_minus_and_nothing_else() -> None:
+    """The program grammar allows `-NUM_i`, so its rendered query carries a
+    USub node. Only USub: any other unary operator stays outside the grammar,
+    deny-by-default like every other branch."""
+    frame = _frame([_row(value="7", period=2023)])
+    lookup = '(df1[(df1.period == 2023)]["value"].iloc[0])'
+    assert replay_pandas_query(f"-{lookup}", frame) == Decimal("-7")
+    with pytest.raises(ValueError, match="unsupported unary operator"):
+        replay_pandas_query(f"+{lookup}", frame)

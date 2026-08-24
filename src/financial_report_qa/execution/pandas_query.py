@@ -51,6 +51,9 @@ _ALLOWED_ATTRS = frozenset(
         # Spec 2026-08-21 §5.2: position breaks ties between same-label rows.
         "table_id",
         "row_idx",
+        # Masked-PAL lookups (spec 2026-08-24) also pin the column positionally:
+        # one row spans many cells, only `col_idx` tells them apart.
+        "col_idx",
     }
 )
 _ALLOWED_METHODS = frozenset({"isin", "sort_values", "mean", "sum"})
@@ -308,6 +311,13 @@ def _eval_node(node: ast.AST, frame: pd.DataFrame) -> Any:
         right = _eval_node(node.comparators[0], frame)
         return left == right
 
+    if isinstance(node, ast.UnaryOp):
+        # Masked-PAL programs allow unary minus, so its rendered query carries
+        # one. Everything else (UAdd/Invert/...) stays outside the grammar.
+        if not isinstance(node.op, ast.USub):
+            raise ValueError(f"unsupported unary operator: {type(node.op).__name__}")
+        return -_eval_node(node.operand, frame)
+
     if isinstance(node, ast.BinOp):
         left = _eval_node(node.left, frame)
         right = _eval_node(node.right, frame)
@@ -319,6 +329,10 @@ def _eval_node(node: ast.AST, frame: pd.DataFrame) -> Any:
             return left + right
         if isinstance(node.op, ast.Div):
             return left / right
+        # `SCALE_SUFFIX["percent"]` renders `... * 100`, and the program
+        # grammar itself allows multiplication between bound cells.
+        if isinstance(node.op, ast.Mult):
+            return left * right
         raise ValueError(f"unsupported operator: {type(node.op).__name__}")
 
     if isinstance(node, ast.Subscript):
