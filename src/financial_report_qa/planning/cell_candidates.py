@@ -67,7 +67,13 @@ def build_cell_candidates(
                 continue
             if len(candidates) >= max_candidates:
                 return tuple(candidates)
-            label_raw = str(row.row_label_raw)
+            label_raw = _optional_str(row.row_label_raw)
+            # A cell with no usable row label cannot produce a self-explaining
+            # candidate: emit nothing rather than fabricate "nan" (float("nan")
+            # is truthy, so a bare truthiness check would let NULL-derived NaNs
+            # through as the literal string "nan").
+            if label_raw is None:
+                continue
             candidates.append(
                 CellCandidate(
                     index=len(candidates),
@@ -80,7 +86,7 @@ def build_cell_candidates(
                     ),
                     row_label_raw=label_raw,
                     row_label_canonical=_optional_str(row.row_label_canonical),
-                    col_path=str(row.column_label or ""),
+                    col_path=_optional_str(row.column_label) or "",
                     period=period,
                     statement_type=_optional_str(getattr(row, "statement_type", None)),
                     unit=_optional_str(row.unit),

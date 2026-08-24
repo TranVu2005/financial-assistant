@@ -113,3 +113,28 @@ def test_a_row_candidate_with_no_cells_in_the_frame_is_skipped() -> None:
     candidates = build_cell_candidates(_frame(), (_row_candidate(99, 1, None),))
 
     assert candidates == ()
+
+
+def test_null_and_nan_column_labels_become_an_empty_col_path() -> None:
+    frame = _frame()
+    frame.loc[0, "column_label"] = None
+    frame.loc[1, "column_label"] = float("nan")
+
+    candidates = build_cell_candidates(frame, (_row_candidate(3, 1, None),))
+
+    assert [candidate.col_path for candidate in candidates] == ["", ""]
+    assert [candidate.index for candidate in candidates] == [0, 1]
+
+
+def test_a_cell_with_a_null_row_label_is_skipped() -> None:
+    frame = _frame()
+    frame.loc[0, "row_label_raw"] = None  # row_idx 3, col_idx 1
+    frame.loc[2, "row_label_raw"] = float("nan")  # row_idx 4, col_idx 1
+
+    candidates = build_cell_candidates(
+        frame, (_row_candidate(4, 1, None), _row_candidate(3, 2, None))
+    )
+
+    assert [candidate.index for candidate in candidates] == [0, 1]
+    assert [candidate.row_idx for candidate in candidates] == [4, 3]
+    assert [candidate.col_idx for candidate in candidates] == [2, 2]
