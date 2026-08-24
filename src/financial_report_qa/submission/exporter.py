@@ -253,16 +253,12 @@ def _run_one_question(
             None,
         )
 
-    # Row fusion feeds the single answering path its ranked row candidates.
-    # `k` must match `submission row-batches --rows-per-question`'s default
+    # Row fusion feeds the answering path its ranked row candidates. `k` must
+    # match `submission row-batches --rows-per-question`'s default
     # (DEFAULT_ROW_CANDIDATE_COUNT): a decision file produced by `row-batches`
-    # may reference `chosen` indices up to that count - 1, and if this
-    # candidate list were shorter, those indices would be out of range and
-    # silently fall back to rank 1.
-    #
-    # Scope narrowing runs before fusion on purpose (see
-    # `_scope_candidate_tables`): fusion must not spend the decision's single
-    # pick on a row the compiler is going to drop for its document's scope.
+    # may reference indices up to that count - 1, and if this candidate list
+    # were shorter, those indices would be out of range and silently fall back
+    # to rank 1.
     #
     # It is deliberately a SEPARATE name from `retrieved`. Retrieval is scored
     # on its own at 50% weight with a recall-favouring F2, and `relevant_docs`/
@@ -272,22 +268,28 @@ def _run_one_question(
     entities = parse_query_entities(question)
     answerable = _scope_candidate_tables(release_dir, retrieved, entities, execution_settings)
 
-    fusion_rows = (
-        row_fusion.retrieve_rows(
-            question, candidate_table_ids=answerable, k=DEFAULT_ROW_CANDIDATE_COUNT
-        ).results
-        if row_fusion is not None
-        else ()
-    )
-
     # Masked-PAL answering branch (spec 2026-08-24 §4.3), behind
     # --program-decisions. The numbered candidate list comes from exactly ONE
     # place -- `build_question_cell_candidates` -- which is also what
     # `submission row-batches --program` calls at payload-generation time:
     # `ProgramDecision.cells` are positions in this list, and a list that
-    # differs between payload generation and export shifts every index. It
-    # receives the FULL `retrieved` list, NOT the scope-narrowed `answerable`.
+    # differs between payload generation and export shifts every index.
+    #
+    # Row fusion therefore runs on the FULL `retrieved` list here, NOT on the
+    # scope-narrowed `answerable` -- that is what the batch generator does
+    # (`cli.py` row-batches passes raw `retrieved`). Fusing over the narrowed
+    # set at export time while payloads were generated over the full set is
+    # exactly the index-shifting divergence this helper exists to prevent:
+    # measured on gold, questions whose scope filter drops tables flipped
+    # between empty and non-empty candidate lists across the two paths.
     if program_decisions is not None:
+        fusion_rows = (
+            row_fusion.retrieve_rows(
+                question, candidate_table_ids=retrieved, k=DEFAULT_ROW_CANDIDATE_COUNT
+            ).results
+            if row_fusion is not None
+            else ()
+        )
         candidates = build_question_cell_candidates(release_dir, question, retrieved, fusion_rows)
         # Same deterministic frame the helper just built internally, rebuilt
         # here because `run_question` needs it as well and the shared
@@ -366,6 +368,17 @@ def _run_one_question(
     # qua đúng một đường `ground_question` -- quyết định offline của LLM (hoặc
     # mặc định hạng 1 khi không có) -> plan -> compile. Không tầng thứ hai chạy
     # ra cứu; hỏng ở đâu thì hỏng rõ ở đó với đúng một mã lỗi.
+    #
+    # Scope narrowing runs before fusion on purpose (see
+    # `_scope_candidate_tables`): fusion must not spend the decision's single
+    # pick on a row the compiler is going to drop for its document's scope.
+    fusion_rows = (
+        row_fusion.retrieve_rows(
+            question, candidate_table_ids=answerable, k=DEFAULT_ROW_CANDIDATE_COUNT
+        ).results
+        if row_fusion is not None
+        else ()
+    )
     grounding = ground_question(
         entities=entities,
         decision=(row_decisions or {}).get(raw_question.id),
