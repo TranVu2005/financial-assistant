@@ -7,7 +7,9 @@ intact while giving the planner ranked evidence instead of raw label lists.
 Two functions replace their unranked counterparts when row fusion is available:
 
 - ``evidence_row_labels``  replaces ``raw_metric_grounding.candidate_row_labels``
-- ``evidence_table_context`` replaces ``table_context_rendering.render_table_context``
+- ``evidence_table_context`` renders top-ranked row snippets directly, with no
+  whole-table renderer behind it (the Day 23 last-resort
+  ``render_table_context`` tier was removed -- spec 2026-08-24 §8.1).
 """
 
 from __future__ import annotations
