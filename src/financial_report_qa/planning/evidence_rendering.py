@@ -1,27 +1,21 @@
-"""Evidence-aware rendering: row fusion results → planner inputs.
+"""Evidence-aware rendering: row fusion results → ranked, deduplicated inputs.
 
-Pure module — receives pre-computed row fusion results, never calls retrieval
+Pure module -- receives pre-computed row fusion results, never calls retrieval
 or touches the filesystem. Keeps the retrieval ↔ planning module boundary
-intact while giving the planner ranked evidence instead of raw label lists.
+intact while giving consumers ranked evidence instead of raw label lists.
 
-Two functions replace their unranked counterparts when row fusion is available:
-
-- ``evidence_row_labels``  replaces ``raw_metric_grounding.candidate_row_labels``
-- ``evidence_table_context`` renders top-ranked row snippets directly, with no
-  whole-table renderer behind it (the Day 23 last-resort
-  ``render_table_context`` tier was removed -- spec 2026-08-24 §8.1).
+The plan-era grounding scorers (`plan_grounding_score`/`plan_grounding_rank`)
+were removed together with the operation-enum answering path they scored
+(spec 2026-08-24 §8.2); the row-label rendering helpers below remain the one
+ranked view of fusion results.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 from financial_report_qa.normalization._shared import sanitize_selector_text
 from financial_report_qa.retrieval.row_fusion_contracts import RowFusedCandidate
-
-if TYPE_CHECKING:
-    from financial_report_qa.planning.plan_contracts import FinancialQueryPlan
 
 
 def evidence_row_labels(
@@ -43,7 +37,7 @@ def evidence_row_labels(
         label = candidate.metadata.row_label_raw
         # `sanitize_selector_text`, not just `.strip()`: this menu is what
         # `choose_row_label`/`choose_row_label_with_context` pick from, and
-        # the choice becomes a `MetricSelector.raw_text`, which forbids
+        # the choice becomes a quoted raw label, which forbids
         # control characters outright -- a real corpus label formed by
         # joining two source lines can carry an embedded newline that
         # `.strip()` alone would leave in place.
@@ -119,56 +113,3 @@ def row_label_confidence(
     retrieval at all -- an exact alias hit needs no confidence number)."""
     candidate = _matching_candidate(label, fusion_results)
     return candidate.fused_score if candidate is not None else None
-
-
-def _plan_selectors(plan: FinancialQueryPlan) -> tuple[object, ...]:
-    return (
-        plan.metric,
-        plan.metric_a,
-        plan.metric_b,
-        plan.numerator_metric,
-        plan.denominator_metric,
-    )
-
-
-def plan_grounding_score(
-    plan: FinancialQueryPlan,
-    fusion_results: Sequence[RowFusedCandidate],
-) -> float | None:
-    """One confidence number (plan.md §9's `grounding_score`) for the whole
-    plan: the weakest-linked confidence among every row selector the plan
-    actually uses (`metric`, or the pair for a two-metric operation).
-    `None` when no selector matched a fusion-scored row -- the plan may
-    still be entirely correct (e.g. deterministic canonical lookup), it
-    just has no retrieval-confidence evidence attached."""
-    scores = [
-        score
-        for selector in _plan_selectors(plan)
-        if selector is not None
-        and (score := row_label_confidence(selector.raw_text, fusion_results)) is not None
-    ]
-    return min(scores) if scores else None
-
-
-def plan_grounding_rank(
-    plan: FinancialQueryPlan,
-    fusion_results: Sequence[RowFusedCandidate],
-) -> int | None:
-    """The worst (highest-numbered) fused rank among the plan's row
-    selectors that matched a fusion-scored row, or `None` when none did.
-
-    Rank, not raw `fused_score`, is what plan.md §15's confidence threshold
-    is checked against here: `fused_score` mixes branches weighted very
-    differently (an exact alias hit is weighted low but is near-certainly
-    correct; a rank-1 bm25 hit is weighted high but only means "best
-    keyword overlap"), so raw scores are not comparable across candidates
-    scored by different branch mixes. Rank *is* comparable -- it is each
-    candidate's position after all branches are already fused and sorted.
-    """
-    ranks = [
-        candidate.rank
-        for selector in _plan_selectors(plan)
-        if selector is not None
-        and (candidate := _matching_candidate(selector.raw_text, fusion_results)) is not None
-    ]
-    return max(ranks) if ranks else None

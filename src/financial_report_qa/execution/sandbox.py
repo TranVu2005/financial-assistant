@@ -23,11 +23,17 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Literal
 
 import pandas as pd
 
-from financial_report_qa.execution.contracts import ExecutionIssueCode
 from financial_report_qa.execution.pandas_query import replay_pandas_query
+
+# The sandbox's own denial codes. These used to be borrowed from the
+# compiler-era `ExecutionIssueCode` (spec 2026-08-24 §8.2 removed that
+# module); they describe replay denials, not compile failures, so they live
+# here now.
+SandboxErrorCode = Literal["query_rejected", "budget_exceeded"]
 
 
 @dataclass(frozen=True)
@@ -35,7 +41,7 @@ class SandboxResult:
     """Either a resolved scalar, or a typed reason replay was denied."""
 
     value: Decimal | None
-    error_code: ExecutionIssueCode | None
+    error_code: SandboxErrorCode | None
     error_message: str | None
     elapsed_seconds: float
 

@@ -1,44 +1,33 @@
-"""Day 18 `pandas_query` renderer + whitelist replayer (ADR 0007 decision F1).
+"""Pandas-query whitelist replayer (ADR 0007 decision F1).
 
-`render_pandas_query` turns a `FinancialQueryPlan` into the human-readable
-Pandas expression plan.md's submission contract requires. `replay_pandas_query`
-independently re-executes that exact string — never `eval`/`exec` — through a
-small AST whitelist interpreter, deny-by-default on any node or attribute it
-does not recognize. The compiler (task 18.9) is the one place that must call
-both and assert they agree; that agreement is the actual Definition-of-Done
-evidence, not the string by itself.
-
-**Scope boundary, stated explicitly rather than hidden:** the rendered
-expression reads the `value` column as-is, with no unit-conversion syntax —
-unit conversion is `operations.py`'s job (ADR 0007 decision E1), not this
-module's. The compiler therefore must replay against a frame whose `value`
-column has already been converted to the operation's answer unit (normally
-just the evidence cells themselves), not the raw multi-unit corpus. Measured
-on gold70 (Day 18 plan §1.3), evidence cells for a single compiled answer
-share one unit in every observed case (0/82 slots spanned >1 unit), so this
-is a documented boundary, not an active correctness gap.
+`replay_pandas_query` independently re-executes a packaged `pandas_query`
+string — never `eval`/`exec` — through a small AST whitelist interpreter,
+deny-by-default on any node or attribute it does not recognize. It is the
+replay half of the submission contract: whatever query string ships in
+`submission.json` must re-execute, inside this grammar, to the shipped
+answer (the masked-PAL path renders its queries via
+`program_binding.render_program_pandas`; the compiler-era renderer that used
+to live here was removed with the operation-enum path, spec 2026-08-24
+§8.1/§8.2).
 
 **String literals are escaped via `json.dumps`, not f-string interpolation**
 (ADR 0008 decision A2). Day 19 plan §1.1 found 1,988 real corpus row labels
-containing `"` (e.g. `Khấu hao tài sản cố định ("TSCĐ")`) that crashed
-`compile_plan` with an uncaught `SyntaxError` under naive interpolation, and
-§1.4 found that unescaped `|`/`&`/`)` in a company code could silently change
-the rendered expression's operator precedence with no exception raised at
-all. `_lit()` closes both: a JSON string literal is a valid Python string
-literal for every non-control character.
+containing `"` (e.g. `Khấu hao tài sản cố định ("TSCĐ")`) that crashed naive
+interpolation with an uncaught `SyntaxError`, and §1.4 found that unescaped
+`|`/`&`/`)` in a label could silently change the rendered expression's
+operator precedence with no exception raised at all. `_lit()` closes both: a
+JSON string literal is a valid Python string literal for every non-control
+character.
 """
 
 from __future__ import annotations
 
 import ast
 import json
-from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
 
 import pandas as pd
-
-from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
 
 _ALLOWED_ATTRS = frozenset(
     {
@@ -81,158 +70,6 @@ def _lit(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def _metric_column_and_value(selector: MetricSelector) -> tuple[str, str]:
-    if selector.canonical is not None:
-        return "row_label_canonical", selector.canonical
-    assert selector.raw_text is not None
-    return "row_label_raw", selector.raw_text
-
-
-def _position_clauses(selector: MetricSelector) -> list[str]:
-    """Spec 2026-08-21 §5.2: ngữ nghĩa mang ý nghĩa, vị trí chỉ phá thế hoà.
-
-    Phần `row_label_*` là thứ khiến truy vấn giải trình được -- nó nói rõ câu
-    trả lời lấy từ chỉ tiêu nào. `table_id`/`row_idx` đi kèm để phá thế hoà
-    giữa các dòng trùng nhãn (đo được 4.37% dòng trùng nhãn khác giá trị, do
-    OCR lặp dòng), chứ không thay thế phần ngữ nghĩa.
-
-    Bản trước đây bỏ hẳn nhãn và viện dẫn "plan.md §14"; §14 của `plan.md`
-    hiện tại là "Rủi ro lịch trình và phương án cắt giảm" -- tham chiếu treo.
-    """
-    assert selector.table_id is not None and selector.row_index is not None
-    column, value = _metric_column_and_value(selector)
-    clauses = [
-        f"(df1.{column} == {_lit(value)})",
-        f"(df1.table_id == {_lit(selector.table_id)})",
-        f"(df1.row_idx == {int(selector.row_index)})",
-    ]
-    if selector.column_text is not None:
-        clauses.append(f"(df1.column_label == {_lit(selector.column_text)})")
-    return clauses
-
-
-def _cell_expr(*, company: str | None, selector: MetricSelector, period: str) -> str:
-    if selector.is_position_bound:
-        clauses = _position_clauses(selector)
-        clauses.append(f"(df1.period == {int(period)})")
-        return f'df1.loc[{" & ".join(clauses)}, "value"].iloc[0]'
-    column, value = _metric_column_and_value(selector)
-    clauses = []
-    if company is not None:
-        clauses.append(f"(df1.company_code == {_lit(company)})")
-    clauses.append(f"(df1.{column} == {_lit(value)})")
-    if selector.column_text is not None:
-        clauses.append(f"(df1.column_label == {_lit(selector.column_text)})")
-    clauses.append(f"(df1.period == {int(period)})")
-    condition = " & ".join(clauses)
-    return f'df1[{condition}]["value"].iloc[0]'
-
-
-def _aggregate_expr(
-    *, company: str | None, selector: MetricSelector, periods: Sequence[str], method: str
-) -> str:
-    period_list = ", ".join(str(int(period)) for period in periods)
-    if selector.is_position_bound:
-        clauses = _position_clauses(selector)
-        clauses.append(f"(df1.period.isin([{period_list}]))")
-        return f'df1.loc[{" & ".join(clauses)}, "value"].{method}()'
-    column, value = _metric_column_and_value(selector)
-    clauses = []
-    if company is not None:
-        clauses.append(f"(df1.company_code == {_lit(company)})")
-    clauses.append(f"(df1.{column} == {_lit(value)})")
-    if selector.column_text is not None:
-        clauses.append(f"(df1.column_label == {_lit(selector.column_text)})")
-    clauses.append(f"(df1.period.isin([{period_list}]))")
-    condition = " & ".join(clauses)
-    return f'df1[{condition}]["value"].{method}()'
-
-
-def _aggregate_expr_over_companies(
-    *, companies: Sequence[str], selector: MetricSelector, period: str, method: str
-) -> str:
-    """Mirrors `_aggregate_expr`, but for the other arity `_validate_aggregate`
-    allows: >1 company, exactly 1 period (Day 23 plan Step 2)."""
-    column, value = _metric_column_and_value(selector)
-    companies_list = ", ".join(_lit(company) for company in companies)
-    clauses = [
-        f"(df1.company_code.isin([{companies_list}]))",
-        f"(df1.{column} == {_lit(value)})",
-    ]
-    if selector.column_text is not None:
-        clauses.append(f"(df1.column_label == {_lit(selector.column_text)})")
-    clauses.append(f"(df1.period == {int(period)})")
-    condition = " & ".join(clauses)
-    return f'df1[{condition}]["value"].{method}()'
-
-
-def render_pandas_query(plan: FinancialQueryPlan) -> str:
-    """Render a readable Pandas expression for one plan, per operation."""
-    period = plan.periods[0] if plan.periods else None
-
-    if plan.operation == "lookup":
-        assert plan.metric is not None
-        return _cell_expr(company=plan.companies[0], selector=plan.metric, period=period or "")
-
-    if plan.operation in ("difference", "growth_rate"):
-        assert plan.metric is not None
-        start, end = plan.periods[0], plan.periods[-1]
-        start_expr = _cell_expr(company=plan.companies[0], selector=plan.metric, period=start)
-        end_expr = _cell_expr(company=plan.companies[0], selector=plan.metric, period=end)
-        if plan.operation == "difference":
-            return f"{end_expr} - {start_expr}"
-        return f"({end_expr} - {start_expr}) / abs({start_expr})"
-
-    if plan.operation == "compare":
-        assert plan.metric_a is not None and plan.metric_b is not None
-        a_expr = _cell_expr(company=plan.companies[0], selector=plan.metric_a, period=period or "")
-        b_expr = _cell_expr(company=plan.companies[0], selector=plan.metric_b, period=period or "")
-        return f"{a_expr} - {b_expr}"
-
-    if plan.operation == "compare_companies":
-        assert plan.metric is not None
-        a_expr = _cell_expr(company=plan.companies[0], selector=plan.metric, period=period or "")
-        b_expr = _cell_expr(company=plan.companies[1], selector=plan.metric, period=period or "")
-        return f"{a_expr} - {b_expr}"
-
-    if plan.operation == "ratio":
-        assert plan.numerator_metric is not None and plan.denominator_metric is not None
-        numerator = _cell_expr(
-            company=plan.companies[0], selector=plan.numerator_metric, period=period or ""
-        )
-        denominator = _cell_expr(
-            company=plan.companies[0], selector=plan.denominator_metric, period=period or ""
-        )
-        return f"{numerator} / {denominator}"
-
-    if plan.operation in ("average", "sum"):
-        assert plan.metric is not None
-        method = "mean" if plan.operation == "average" else "sum"
-        if len(plan.companies) > 1:
-            return _aggregate_expr_over_companies(
-                companies=plan.companies,
-                selector=plan.metric,
-                period=period or "",
-                method=method,
-            )
-        return _aggregate_expr(
-            company=plan.companies[0], selector=plan.metric, periods=plan.periods, method=method
-        )
-
-    if plan.operation == "rank":
-        assert plan.metric is not None and plan.top_k is not None
-        column, value = _metric_column_and_value(plan.metric)
-        companies_list = ", ".join(_lit(company) for company in plan.companies)
-        condition = f"(df1.company_code.isin([{companies_list}])) & (df1.{column} == {_lit(value)})"
-        if plan.metric.column_text is not None:
-            condition += f" & (df1.column_label == {_lit(plan.metric.column_text)})"
-        condition += f" & (df1.period == {int(period or '0')})"
-        index = plan.top_k - 1
-        return f'df1[{condition}].sort_values("value", ascending=False)["value"].iloc[{index}]'
-
-    raise ValueError(f"unsupported operation for pandas_query rendering: {plan.operation}")
-
-
 def _ast_depth(node: ast.AST) -> int:
     """Iterative (non-recursive) depth walk so a maliciously deep tree cannot
     raise RecursionError while we are trying to reject it."""
@@ -247,11 +84,11 @@ def _ast_depth(node: ast.AST) -> int:
 
 
 def replay_pandas_query(query: str, frame: pd.DataFrame) -> Decimal:
-    """Execute a rendered `pandas_query` string through a whitelist AST
+    """Execute a packaged `pandas_query` string through a whitelist AST
     interpreter and return its scalar result. Raises ValueError on anything
-    outside the grammar `render_pandas_query` produces or outside the
-    structural budgets in ADR 0008 decision D3 (query length, AST node count,
-    AST depth) — deny by default, never eval/exec.
+    outside the whitelisted grammar or outside the structural budgets in
+    ADR 0008 decision D3 (query length, AST node count, AST depth) — deny by
+    default, never eval/exec.
     """
     if len(query) > _MAX_QUERY_LENGTH:
         raise ValueError(f"query exceeds max length {_MAX_QUERY_LENGTH}: {len(query)} chars")

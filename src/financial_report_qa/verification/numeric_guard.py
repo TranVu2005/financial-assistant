@@ -1,13 +1,14 @@
-"""Day 20 numeric guard (ADR 0009 decision F1).
+"""Numeric guard (ADR 0009 decision F1).
 
-Gate for the *optional* LLM paraphrase path (`templates.py` is the default,
-LLM-free path and needs none of this). Day 20 plan Sec 1.8 measured that
-every numeric token across all 70 gold70 questions is a year, so a
-whitelist of {locked answer, plan periods, plan.top_k, evidence values} is
-sufficient to separate legitimate numbers from ones an LLM invented.
-Anything outside the whitelist is a reject-and-fall-back-to-template
-signal, not a warning -- the same deny-by-default posture as the Day 19
-sandbox.
+Day 20 plan Sec 1.8 measured that every numeric token across all 70 gold70
+questions is a year, so a whitelist of numbers is sufficient to separate
+legitimate numbers from ones an LLM invented. Anything outside the
+whitelist is a reject signal, not a warning -- the same deny-by-default
+posture as the Day 19 sandbox.
+
+The masked-PAL path builds its whitelist from the executed program via
+`program_number_whitelist` (Task 7); the plan-era `build_number_whitelist`
+was removed with the operation-enum answering path (spec 2026-08-24 §8.2).
 """
 
 from __future__ import annotations
@@ -15,9 +16,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-
-from financial_report_qa.execution.contracts import CompiledQuery
-from financial_report_qa.planning.plan_contracts import FinancialQueryPlan
 
 # Day 20 plan Sec 1.8: the naive pattern `\d[\d.,]*` captures trailing
 # sentence punctuation ('2023.'); this pattern stops before a trailing `.`
@@ -36,20 +34,6 @@ def _parse_number(token: str) -> Decimal | None:
         return Decimal(cleaned)
     except InvalidOperation:
         return None
-
-
-def build_number_whitelist(plan: FinancialQueryPlan, compiled: CompiledQuery) -> frozenset[Decimal]:
-    """Every number an LLM paraphrase is allowed to mention."""
-    whitelist: set[Decimal] = set()
-    if compiled.answer is not None:
-        whitelist.add(compiled.answer)
-    for period in plan.periods:
-        whitelist.add(Decimal(period))
-    if plan.top_k is not None:
-        whitelist.add(Decimal(plan.top_k))
-    for cell in compiled.evidence:
-        whitelist.add(cell.value)
-    return frozenset(whitelist)
 
 
 @dataclass(frozen=True)

@@ -162,10 +162,10 @@ def _quarter_value(quarter_token: str, year_token: str | None) -> str | None:
 def _years_from_dates(question: str) -> tuple[str, ...]:
     """Năm tài chính suy ra từ mọi cách viết ngày trong câu, giữ thứ tự xuất hiện.
 
-    `FinancialQueryPlan.periods` chỉ nhận `^\\d{4}$`; câu hỏi thì viết
-    "vào ngày 31/12/2015". Với báo cáo tài chính, ngày kết thúc kỳ *là* năm
-    tài chính, nên đây là chuẩn hoá chứ không phải suy đoán. Đo được 97/1012
-    câu chết ở `period_grammar_unsupported` chỉ vì cách viết này.
+    Câu hỏi thì viết "vào ngày 31/12/2015". Với báo cáo tài chính, ngày kết
+    thúc kỳ *là* năm tài chính, nên đây là chuẩn hoá chứ không phải suy đoán.
+    Đo được 97/1012 câu chết ở `period_grammar_unsupported` chỉ vì cách viết
+    này.
     """
     years: list[str] = []
     for pattern in _DATE_PERIOD_PATTERNS:
@@ -258,10 +258,11 @@ def _parse_period(
 # (ADR 0004 §1.6 / Day 16 §1.6-1.7): `normalization.metrics.METRIC_ALIASES` is
 # baked into `cells.row_label_canonical` at build time, so adding entries there
 # would change `dataset_fingerprint` and invalidate every pinned baseline. These
-# names are therefore NOT in `plan_contracts.CANONICAL_METRICS` — a rule planner
-# must locate them via `MetricSelector.raw_text`, never `.canonical` (ADR 0004
-# Option C). Keeping them out of `METRIC_ALIASES` also keeps them out of the
-# `validate_aliases` collision check that table enforces at import time.
+# names were therefore deliberately kept out of the plan-era canonical metric
+# dictionary: a planner had to cite them verbatim from the raw label text,
+# never via a canonical key (ADR 0004 Option C). Keeping them out of
+# `METRIC_ALIASES` also keeps them out of the `validate_aliases` collision
+# check that table enforces at import time.
 _EXTRA_METRIC_ALIASES: dict[str, str] = {
     "cho vay khách hàng": "loans_to_customers",
     "chứng khoán đầu tư": "investment_securities",
@@ -404,7 +405,6 @@ def _parse_statement_scope(
         )
         return "consolidated", (span,)
     return None, ()
-
 
 
 _RATIO_KEYWORDS = ("tỷ lệ", "tỷ trọng", "tỷ số", "phần trăm", "%")
@@ -630,8 +630,6 @@ def parse_query_entities(question: str) -> QueryEntities:
         ambiguity=ambiguity,
         spans=spans,
     )
-
-
 
 
 def ordered_metric_canonicals(entities: QueryEntities) -> tuple[str, ...]:

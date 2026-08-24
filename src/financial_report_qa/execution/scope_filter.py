@@ -14,7 +14,7 @@ from pathlib import Path
 
 import duckdb
 
-from financial_report_qa.planning.plan_contracts import StatementScope
+from financial_report_qa.planning.entity_contracts import StatementScope
 
 
 def resolve_statement_scope(
@@ -24,10 +24,9 @@ def resolve_statement_scope(
 ) -> tuple[StatementScope | None, bool]:
     """Return `(effective_scope, was_inferred)`.
 
-    `was_inferred` is True only when the plan left `statement_scope` unset
-    and `default_scope` filled it in -- ADR 0010 decision B1's signal for
-    `CompiledQuery.scope_inferred`, which verification uses to block an
-    answer from being presented as certain.
+    `was_inferred` is True only when `plan_scope` was unset and
+    `default_scope` filled it in -- ADR 0010 decision B1's signal that the
+    candidate frame, not the question, chose the statement scope.
     """
     if plan_scope is not None:
         return plan_scope, False

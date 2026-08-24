@@ -92,7 +92,7 @@ def test_load_execution_settings_merges_layered_yaml_files(tmp_path: Path) -> No
     )
     overlay = tmp_path / "local.yaml"
     overlay.write_text(
-        "execution:\n  max_rows: 50000\n  allow_operations:\n    - lookup\n    - difference\n",
+        "execution:\n  max_rows: 50000\n  default_statement_scope: consolidated\n",
         encoding="utf-8",
     )
 
@@ -100,16 +100,14 @@ def test_load_execution_settings_merges_layered_yaml_files(tmp_path: Path) -> No
 
     assert settings.timeout_seconds == 5
     assert settings.max_rows == 50000
-    assert settings.allow_operations == ("lookup", "difference")
+    assert settings.default_statement_scope == "consolidated"
 
 
 def test_execution_settings_default_statement_scope_defaults_to_none() -> None:
     """Day 21 plan §1.5/ADR 0010 decision B1: pre-Day-21 config files never
     set this key and must keep validating -- the field is additive, and no
     scope filtering happens unless a config opts in."""
-    settings = ExecutionSettings.model_validate(
-        {"timeout_seconds": 5, "max_rows": 100000, "allow_operations": ["lookup"]}
-    )
+    settings = ExecutionSettings.model_validate({"timeout_seconds": 5, "max_rows": 100000})
     assert settings.default_statement_scope is None
 
 
@@ -119,7 +117,6 @@ def test_load_execution_settings_reads_default_statement_scope(tmp_path: Path) -
         "execution:\n"
         "  timeout_seconds: 5\n"
         "  max_rows: 100000\n"
-        "  allow_operations:\n    - lookup\n"
         "  default_statement_scope: consolidated\n",
         encoding="utf-8",
     )
@@ -128,10 +125,10 @@ def test_load_execution_settings_reads_default_statement_scope(tmp_path: Path) -
 
 
 def test_load_execution_settings_rejects_missing_required_field(tmp_path: Path) -> None:
-    """A config missing `allow_operations` must fail loudly rather than silently
-    allow every operation, which would defeat the whitelist's purpose."""
+    """A config missing a required field must fail loudly rather than run
+    with a silently degraded budget."""
     base = tmp_path / "base.yaml"
-    base.write_text("execution:\n  timeout_seconds: 5\n  max_rows: 100000\n", encoding="utf-8")
+    base.write_text("execution:\n  timeout_seconds: 5\n", encoding="utf-8")
 
     with pytest.raises(ValidationError):
         load_execution_settings((base,))
@@ -144,18 +141,8 @@ def test_execution_settings_rejects_unknown_field() -> None:
             {
                 "timeout_seconds": 5,
                 "max_rows": 100000,
-                "allow_operations": ["lookup"],
                 "unexpected_field": "oops",
             }
-        )
-
-
-def test_execution_settings_rejects_empty_allow_operations() -> None:
-    """An empty whitelist would make every plan unexecutable; that is a config
-    error, not a valid degenerate state."""
-    with pytest.raises(ValidationError):
-        ExecutionSettings.model_validate(
-            {"timeout_seconds": 5, "max_rows": 100000, "allow_operations": []}
         )
 
 

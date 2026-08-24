@@ -2,8 +2,8 @@
 
 Deliberately thin: this module only knows how to POST one
 `/chat/completions` request with bounded retry and turn the response into a
-content string. It has no idea what a `FinancialQueryPlan` is — parsing,
-repair, and abstain decisions belong to `llm_planner.py`.
+content string. It has no idea what any downstream artifact looks like —
+parsing, repair, and abstain decisions belong to the callers.
 
 Retry policy: connection failures, timeouts, and 5xx responses are retried up
 to `max_retries` additional times (temperature 0 makes a retried call

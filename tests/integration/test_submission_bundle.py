@@ -43,17 +43,6 @@ _QUESTIONS_PATH = _REPO_ROOT / "data" / "raw" / "ViFinQA" / "questions" / "quest
 _ALLOW_ALL = ExecutionSettings(
     timeout_seconds=5,
     max_rows=200000,
-    allow_operations=(
-        "lookup",
-        "compare",
-        "compare_companies",
-        "difference",
-        "growth_rate",
-        "ratio",
-        "average",
-        "sum",
-        "rank",
-    ),
 )
 
 
@@ -87,6 +76,7 @@ def test_export_and_validate_a_handful_of_real_questions(tmp_path: Path) -> None
         execution_settings=_ALLOW_ALL,
         dataset_fingerprint=release.dataset_fingerprint,
         k=10,
+        program_decisions={},
     )
     assert report.question_count == 3
 

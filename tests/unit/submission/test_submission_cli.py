@@ -163,7 +163,7 @@ def _write_bm25_index(index_dir: Path) -> None:
 
 def _write_execution_config(path: Path) -> None:
     path.write_text(
-        "execution:\n  timeout_seconds: 5\n  max_rows: 100000\n  allow_operations:\n    - lookup\n",
+        "execution:\n  timeout_seconds: 5\n  max_rows: 100000\n",
         encoding="utf-8",
     )
 
@@ -173,6 +173,16 @@ def _write_questions(path: Path) -> None:
         '{"id": 1, "question": "Tổng tài sản của DBC năm 2023 là bao nhiêu?"}\n',
         encoding="utf-8",
     )
+
+
+def _write_program_decisions(path: Path) -> Path:
+    """One valid masked-PAL decision for question 1 (its rank-1 cell)."""
+    payload = json.dumps(
+        {"question_id": 1, "cells": [0], "program": "[NUM_0]", "scale": "none"},
+        ensure_ascii=False,
+    )
+    path.write_text(payload + "\n", encoding="utf-8")
+    return path
 
 
 def _write_row_index(release_dir: Path, index_dir: Path) -> None:
@@ -209,6 +219,7 @@ def test_export_then_validate_roundtrip(tmp_path: Path, monkeypatch: MonkeyPatch
     _write_execution_config(config_path)
     questions_path = tmp_path / "questions.jsonl"
     _write_questions(questions_path)
+    decisions_path = _write_program_decisions(tmp_path / "decisions.jsonl")
     output_zip = tmp_path / "submission.zip"
     report_dir = tmp_path / "report"
 
@@ -227,6 +238,8 @@ def test_export_then_validate_roundtrip(tmp_path: Path, monkeypatch: MonkeyPatch
             str(output_zip),
             "--report-dir",
             str(report_dir),
+            "--program-decisions",
+            str(decisions_path),
         ]
     )
     assert exit_code == 0
@@ -253,10 +266,12 @@ def test_export_fails_build_when_bundle_has_violations(
     _patch_release_resolver(monkeypatch, release)
     index_dir = tmp_path / "index"
     _write_bm25_index(index_dir)
+    _write_row_index(release.release_dir, index_dir)
     config_path = tmp_path / "execution.yaml"
     _write_execution_config(config_path)
     questions_path = tmp_path / "questions.jsonl"
     _write_questions(questions_path)
+    decisions_path = _write_program_decisions(tmp_path / "decisions.jsonl")
     output_zip = tmp_path / "submission.zip"
     report_dir = tmp_path / "report"
 
@@ -283,6 +298,8 @@ def test_export_fails_build_when_bundle_has_violations(
             str(output_zip),
             "--report-dir",
             str(report_dir),
+            "--program-decisions",
+            str(decisions_path),
         ]
     )
 
@@ -342,6 +359,8 @@ def test_export_rejects_mismatched_index_fingerprint(
             str(tmp_path / "out.zip"),
             "--report-dir",
             str(tmp_path / "report"),
+            "--program-decisions",
+            str(tmp_path / "decisions.jsonl"),
         ]
     )
     assert exit_code == 2
@@ -370,6 +389,7 @@ def test_validate_expects_every_question_id_not_only_answered_ones(
     )
     output_zip = tmp_path / "submission.zip"
     report_dir = tmp_path / "report"
+    decisions_path = _write_program_decisions(tmp_path / "decisions.jsonl")
 
     assert (
         main(
@@ -387,6 +407,8 @@ def test_validate_expects_every_question_id_not_only_answered_ones(
                 str(output_zip),
                 "--report-dir",
                 str(report_dir),
+                "--program-decisions",
+                str(decisions_path),
             ]
         )
         == 0
@@ -413,41 +435,56 @@ def test_export_help_renders_without_format_error() -> None:
     assert excinfo.value.code == 0
 
 
-def test_export_accepts_a_row_choice_decisions_path() -> None:
+def test_export_requires_a_program_decisions_path() -> None:
+    """The masked-PAL decision file is the only answering input: without it
+    the export command is not even expressible."""
+    from financial_report_qa.submission import cli as submission_cli
+
+    parser = submission_cli._parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "export",
+                "--release-lock",
+                "a.json",
+                "--bm25-index",
+                "b",
+                "--questions-path",
+                "c.jsonl",
+                "--execution-config",
+                "d.yaml",
+                "--output-zip",
+                "e.zip",
+                "--report-dir",
+                "f",
+            ]
+        )
+
+
+def test_export_accepts_a_program_decisions_path() -> None:
     from financial_report_qa.submission import cli as submission_cli
 
     parser = submission_cli._parser()
     args = parser.parse_args(
         [
             "export",
-            "--release-lock", "a.json",
-            "--bm25-index", "b",
-            "--questions-path", "c.jsonl",
-            "--execution-config", "d.yaml",
-            "--output-zip", "e.zip",
-            "--report-dir", "f",
-            "--row-choice-decisions", "g.jsonl",
+            "--release-lock",
+            "a.json",
+            "--bm25-index",
+            "b",
+            "--questions-path",
+            "c.jsonl",
+            "--execution-config",
+            "d.yaml",
+            "--output-zip",
+            "e.zip",
+            "--report-dir",
+            "f",
+            "--program-decisions",
+            "g.jsonl",
         ]
     )
-    assert args.row_choice_decisions == Path("g.jsonl")
-
-
-def test_export_defaults_row_choice_decisions_to_none() -> None:
-    from financial_report_qa.submission import cli as submission_cli
-
-    parser = submission_cli._parser()
-    args = parser.parse_args(
-        [
-            "export",
-            "--release-lock", "a.json",
-            "--bm25-index", "b",
-            "--questions-path", "c.jsonl",
-            "--execution-config", "d.yaml",
-            "--output-zip", "e.zip",
-            "--report-dir", "f",
-        ]
-    )
-    assert args.row_choice_decisions is None
+    assert args.program_decisions == Path("g.jsonl")
 
 
 def _export_argv(tmp_path: Path, index_dir: Path, *extra: str) -> list[str]:
@@ -469,6 +506,8 @@ def _export_argv(tmp_path: Path, index_dir: Path, *extra: str) -> list[str]:
         str(tmp_path / "out.zip"),
         "--report-dir",
         str(tmp_path / "report"),
+        "--program-decisions",
+        str(tmp_path / "decisions.jsonl"),
         *extra,
     ]
 

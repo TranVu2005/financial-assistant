@@ -154,7 +154,7 @@ GROUP BY table_id, row_idx
 def _statutory_code_connection(cells_path: str) -> duckdb.DuckDBPyConnection:
     """One connection per release holding the statutory-code lookup in memory.
 
-    `compile_plan` builds a frame per question, so expressing the code join as
+    A frame is built per question, so expressing the code join as
     a second `read_parquet` meant scanning the same 520 MB `cells.parquet`
     twice per question. The code table is small -- 172,966 rows on the locked
     release, against 2.58M numeric cells -- so it is the half worth holding in

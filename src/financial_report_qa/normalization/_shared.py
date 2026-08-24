@@ -23,14 +23,14 @@ def normalized_key(value: str) -> str:
 def sanitize_selector_text(value: str) -> str:
     """NFKC-normalize and collapse whitespace, without changing case.
 
-    Meant for text that has to survive as a literal value -- a
-    `MetricSelector.raw_text`/`column_text` -- not just a comparison key
-    like `normalized_key` produces. Real corpus column headers can
-    concatenate two source lines with an embedded newline
-    (`cell_frame.py`'s own docstring: extraction joins a header with the row
-    above and its unit row), and `plan_contracts.RawMetricText` forbids
-    control characters outright -- a `MetricSelector` built directly from
-    such text raises a `ValidationError` instead of naming the row it means.
+    Meant for text that has to survive as a literal value -- a row or
+    column label quoted back into a query or a citation -- not just a
+    comparison key like `normalized_key` produces. Real corpus column
+    headers can concatenate two source lines with an embedded newline
+    (`cell_frame.py`'s own docstring: extraction joins a header with the
+    row above and its unit row), and label fields forbid control
+    characters outright -- such text raises a `ValidationError` instead of
+    naming the row it means.
     `.split()`/`" ".join(...)` collapses any whitespace run (space, tab,
     newline) to a single space rather than stripping it, so
     "31/12/2019\nVND" survives as the still-readable "31/12/2019 VND"

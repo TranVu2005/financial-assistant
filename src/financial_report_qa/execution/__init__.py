@@ -1,1 +1,1 @@
-"""Deterministic query compilation, execution, and result verification."""
+"""Execution layer: cell frames, masked-PAL programs, sandboxed replay."""

@@ -3,7 +3,7 @@ packaged ZIP fresh -- never the exporter's in-memory objects -- so a bug in
 `exporter.py` cannot mark its own bundle valid. Guards path traversal/symlink
 entries before reading anything, validates `SubmissionItem` schema, checks
 the id set, and replays every `pandas_query` from the packaged CSV through
-the same AST whitelist interpreter `execution/compiler.py` uses (Day 19
+the same AST whitelist interpreter the exporter used (Day 19
 hardening), never `eval`/`exec`.
 """
 

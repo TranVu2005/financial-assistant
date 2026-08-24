@@ -14,13 +14,3 @@ retrieval:
 execution:
   timeout_seconds: 5
   max_rows: 20000
-  allow_operations:
-    - lookup
-    - compare
-    - compare_companies
-    - difference
-    - growth_rate
-    - ratio
-    - average
-    - sum
-    - rank

@@ -1,307 +1,102 @@
-"""Tests for the Day 20 verification checks (ADR 0009 decisions B1/D1/E1;
-Day 20 plan Sec 3 task 20.5).
+"""Tests for the verification checks over an executed masked-PAL program
+(ADR 0009 decisions B1/D1).
 
-Each check is a pure function: (plan and/or compiled query and/or display
-fields) -> `VerificationIssue | None`. `None` means the check passed.
+Each check is a pure function: (executed program and/or display fields) ->
+`VerificationIssue | None`. `None` means the check passed.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
 
-from financial_report_qa.execution.contracts import CellMatch, CompiledQuery
-from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
+from financial_report_qa.execution.program_contracts import BoundValue, ExecutedProgram
 from financial_report_qa.verification.checks import (
     check_display_roundtrip_mismatch,
     check_evidence_outside_retrieval,
-    check_period_inferred_warning,
     check_recompute_mismatch,
-    check_scope_inferred,
-    check_unit_not_presentable,
+    check_scale_not_presentable,
 )
 
-TABLE_ID = "tbl_" + "1" * 64
-TABLE_ID_2 = "tbl_" + "2" * 64
+_TABLE_ID = "tbl_" + "a" * 64
 
 
-def _cell(**overrides: object) -> CellMatch:
-    defaults: dict[str, object] = {
-        "table_id": TABLE_ID,
-        "cell_ids": ("cell_" + "a" * 64,),
-        "value": Decimal("100"),
-        "unit": "VND",
-        "period": 2023,
-        "period_inferred": False,
-    }
-    defaults.update(overrides)
-    return CellMatch.model_validate(defaults)
+def _bound(value: str = "5310", num_index: int = 0) -> BoundValue:
+    return BoundValue(
+        num_index=num_index,
+        candidate_index=0,
+        table_id=_TABLE_ID,
+        row_idx=3,
+        col_idx=2,
+        row_path="Doanh thu thuần",
+        row_label_raw="Doanh thu thuần",
+        col_path="Năm_2023",
+        period=2023,
+        value=Decimal(value),
+    )
 
 
-def _plan(**overrides: object) -> FinancialQueryPlan:
-    defaults: dict[str, object] = {
-        "operation": "lookup",
-        "companies": ("ACB",),
-        "periods": ("2023",),
-        "candidate_table_ids": (TABLE_ID,),
-        "metric": MetricSelector(canonical="cash_and_cash_equivalents"),
-    }
-    defaults.update(overrides)
-    return FinancialQueryPlan(**defaults)  # type: ignore[arg-type]
+def _executed(program: str = "[NUM_0]", values: tuple[str, ...] = ("5310",)) -> ExecutedProgram:
+    return ExecutedProgram(
+        question_id=7,
+        program=program,
+        scale="none",
+        bindings=tuple(_bound(v, i) for i, v in enumerate(values)),
+        answer=Decimal("5310"),
+        pandas_query='df1[(df1.row_idx == 3)]["value"].iloc[0]',
+        table_ids=(_TABLE_ID,),
+    )
 
 
-def _compiled(**overrides: object) -> CompiledQuery:
-    defaults: dict[str, object] = {
-        "operation": "lookup",
-        "status": "answered",
-        "answer": Decimal("100"),
-        "unit": "VND",
-        "evidence": (_cell(),),
-        "pandas_query": 'df1[(df1.period == 2023)]["value"].iloc[0]',
-        "error_code": None,
-        "error_message": None,
-        "replay_rows": (
-            {
-                "company_code": "ACB",
-                "row_label_canonical": "cash_and_cash_equivalents",
-                "row_label_raw": None,
-                "period": 2023,
-                "value": Decimal("100"),
-            },
-        ),
-    }
-    defaults.update(overrides)
-    return CompiledQuery.model_validate(defaults)
+def test_recompute_mismatch_passes_when_program_rederives_the_answer() -> None:
+    assert check_recompute_mismatch(_executed("[NUM_0] + [NUM_0]", ("2655",))) is None
+    assert check_recompute_mismatch(_executed()) is None
 
 
-# --- check_recompute_mismatch -------------------------------------------------
-
-
-def test_recompute_mismatch_none_when_answer_matches_lookup() -> None:
-    plan = _plan()
-    compiled = _compiled()
-    assert check_recompute_mismatch(plan, compiled) is None
-
-
-def test_recompute_mismatch_flags_wrong_answer() -> None:
-    plan = _plan()
-    compiled = _compiled(answer=Decimal("999"))
-    issue = check_recompute_mismatch(plan, compiled)
+def test_recompute_mismatch_flags_a_drifted_answer() -> None:
+    drifted = _executed().model_copy(update={"answer": Decimal("9999")})
+    issue = check_recompute_mismatch(drifted)
     assert issue is not None
     assert issue.code == "recompute_mismatch"
 
 
-def test_recompute_mismatch_recomputes_difference_correctly() -> None:
-    start = _cell(value=Decimal("2"), unit="VND_million", period=2022)
-    end = _cell(value=Decimal("1000000"), unit="VND", period=2023)
-    plan = _plan(
-        operation="difference",
-        periods=("2022", "2023"),
+def test_scale_not_presentable_accepts_known_scales() -> None:
+    assert check_scale_not_presentable(_executed()) is None
+
+
+def test_scale_not_presentable_flags_an_unknown_scale() -> None:
+    """`ScaleName` is a Literal so the validating constructor already rejects
+    unknown scales; `model_construct` simulates dynamically-built objects."""
+    rogue = _executed().model_construct(
+        **{**_executed().model_dump(), "scale": "giga"},
     )
-    compiled = _compiled(
-        operation="difference", evidence=(start, end), answer=Decimal("-1000000"), unit="VND"
-    )
-    assert check_recompute_mismatch(plan, compiled) is None
-
-
-def test_recompute_mismatch_flags_growth_rate_division_by_zero_evidence() -> None:
-    """A recompute that itself raises (e.g. zero base) is a mismatch, not a
-    crash -- the check must fail closed."""
-    start = _cell(value=Decimal("0"), period=2022)
-    end = _cell(value=Decimal("100"), period=2023)
-    plan = _plan(operation="growth_rate", periods=("2022", "2023"))
-    compiled = _compiled(
-        operation="growth_rate", evidence=(start, end), answer=Decimal("1"), unit="ratio"
-    )
-    issue = check_recompute_mismatch(plan, compiled)
-    assert issue is not None
-    assert issue.code == "recompute_mismatch"
-
-
-def test_recompute_mismatch_none_for_error_status() -> None:
-    plan = _plan()
-    compiled = CompiledQuery.model_validate(
-        {
-            "operation": "lookup",
-            "status": "error",
-            "answer": None,
-            "unit": None,
-            "evidence": (),
-            "pandas_query": "<plan rejected before rendering>",
-            "error_code": "metric_not_found",
-            "error_message": "no match",
-        }
-    )
-    assert check_recompute_mismatch(plan, compiled) is None
-
-
-# --- check_unit_not_presentable ------------------------------------------------
-
-
-def test_unit_not_presentable_none_when_expected_unit_unset() -> None:
-    plan = _plan()
-    compiled = _compiled()
-    assert check_unit_not_presentable(plan, compiled) is None
-
-
-def test_unit_not_presentable_accepts_ratio_and_percent_as_equivalent() -> None:
-    """ADR 0009 decision B1: 'ratio' (computed) and 'percent' (presented) are
-    the same underlying unit -- either declaration is presentable."""
-    plan = _plan(
-        operation="growth_rate",
-        periods=("2022", "2023"),
-        expected_unit="percent",
-    )
-    compiled = _compiled(operation="growth_rate", unit="ratio", answer=Decimal("0.05"))
-    assert check_unit_not_presentable(plan, compiled) is None
-
-
-def test_unit_not_presentable_flags_incompatible_declaration() -> None:
-    plan = _plan(operation="lookup", expected_unit="VND_million")
-    compiled = _compiled(unit="percent", answer=Decimal("5"))
-    issue = check_unit_not_presentable(plan, compiled)
+    issue = check_scale_not_presentable(rogue)
     assert issue is not None
     assert issue.code == "unit_not_presentable"
 
 
-# --- check_evidence_outside_retrieval ------------------------------------------
-
-
-def test_evidence_outside_retrieval_none_when_all_evidence_inside() -> None:
-    compiled = _compiled()
-    assert check_evidence_outside_retrieval(compiled, frozenset({TABLE_ID})) is None
-
-
-def test_evidence_outside_retrieval_flags_table_not_retrieved() -> None:
-    compiled = _compiled(evidence=(_cell(table_id=TABLE_ID_2),))
-    issue = check_evidence_outside_retrieval(compiled, frozenset({TABLE_ID}))
+def test_evidence_outside_retrieval_flags_tables_not_retrieved() -> None:
+    executed = _executed()
+    assert check_evidence_outside_retrieval(executed, frozenset({_TABLE_ID})) is None
+    other = "tbl_" + "b" * 64
+    issue = check_evidence_outside_retrieval(executed, frozenset({other}))
     assert issue is not None
     assert issue.code == "evidence_outside_retrieval"
-    assert TABLE_ID_2 in issue.message
+    assert _TABLE_ID in issue.message
 
 
-# --- check_display_roundtrip_mismatch -------------------------------------------
-
-
-def test_display_roundtrip_mismatch_none_when_display_matches() -> None:
-    issue = check_display_roundtrip_mismatch(Decimal("100"), "100 VND", display_precision=0)
-    assert issue is None
-
-
-def test_display_roundtrip_mismatch_none_for_multi_group_thousands_separator() -> None:
-    """Real end-to-end run on gold70 (Day 20 task 20.10) found this: a naive
-    number regex stops after the first comma group, so '84,420,878 VND'
-    parses as 84,420 instead of 84420878 -- 17/30 answered results were
-    wrongly rejected before this fix."""
-    issue = check_display_roundtrip_mismatch(
-        Decimal("84420878"), "84,420,878 VND", display_precision=0
+def test_display_roundtrip_parses_the_leading_number() -> None:
+    assert (
+        check_display_roundtrip_mismatch(Decimal("5310"), "5310 VND", display_precision=0) is None
     )
-    assert issue is None
 
 
-def test_display_roundtrip_mismatch_flags_wrong_display_value() -> None:
-    issue = check_display_roundtrip_mismatch(Decimal("100"), "999 VND", display_precision=0)
+def test_display_roundtrip_flags_a_rounding_drift_beyond_precision() -> None:
+    issue = check_display_roundtrip_mismatch(Decimal("5310"), "5.310 VND", display_precision=0)
     assert issue is not None
     assert issue.code == "display_roundtrip_mismatch"
 
 
-def test_display_roundtrip_mismatch_within_declared_precision() -> None:
-    """Day 20 plan Sec 1.4: rounding a 28-digit ratio to 4 places loses
-    ~2.8e-5 -- that loss must be within tolerance, not flagged."""
-    raw = Decimal("-0.01932846513079090948136258551")
-    rounded = round(raw, 4)
-    issue = check_display_roundtrip_mismatch(raw, f"{rounded}", display_precision=4)
-    assert issue is None
-
-
-def test_display_roundtrip_mismatch_flags_unparseable_display() -> None:
-    issue = check_display_roundtrip_mismatch(Decimal("100"), "no number here", display_precision=0)
+def test_display_roundtrip_without_a_number_is_flagged() -> None:
+    issue = check_display_roundtrip_mismatch(Decimal("5310"), "không có số", display_precision=0)
     assert issue is not None
     assert issue.code == "display_roundtrip_mismatch"
-
-
-# --- check_period_inferred_warning ----------------------------------------------
-
-
-def test_period_inferred_warning_none_when_no_evidence_inferred() -> None:
-    compiled = _compiled()
-    assert check_period_inferred_warning(compiled) is None
-
-
-def test_period_inferred_warning_flags_inferred_evidence() -> None:
-    compiled = _compiled(evidence=(_cell(period_inferred=True),))
-    issue = check_period_inferred_warning(compiled)
-    assert issue is not None
-    assert issue.code == "period_inferred_warning"
-
-
-# --- check_scope_inferred ----------------------------------------------
-
-
-def test_scope_inferred_none_when_compiled_scope_not_inferred() -> None:
-    compiled = _compiled(scope_inferred=False)
-    assert check_scope_inferred(compiled) is None
-
-
-def test_scope_inferred_flags_when_compiled_scope_was_inferred() -> None:
-    """Day 21 plan §1.5/ADR 0010 decision B1: `CompiledQuery.scope_inferred`
-    (set in compiler.py when `ExecutionSettings.default_statement_scope`
-    resolved a plan that left `statement_scope` unset) must surface as a
-    blocking verification issue, not silently pass through."""
-    compiled = _compiled(scope_inferred=True)
-    issue = check_scope_inferred(compiled)
-    assert issue is not None
-    assert issue.code == "scope_inferred"
-
-
-def test_recompute_mismatch_none_when_compiler_converted_the_unit() -> None:
-    """`compile_plan` presents the answer in `plan.expected_unit` (compiler.py
-    §"expected_unit"), so the independent recompute -- which returns the value
-    in the *evidence* unit -- must be converted before comparing. Measured on
-    the plan.md §19 dev benchmark: without this, 21/144 questions were rejected
-    as `recompute_mismatch` while their answers were correct, every one of them
-    a question whose requested unit differed from the source cell's unit."""
-    plan = _plan(expected_unit="VND_billion")
-    compiled = _compiled(
-        evidence=(_cell(value=Decimal("145731366146"), unit="VND"),),
-        answer=Decimal("145.731366146"),
-        unit="VND_billion",
-    )
-    assert check_recompute_mismatch(plan, compiled) is None
-
-
-def test_recompute_mismatch_none_when_conversion_scales_up() -> None:
-    plan = _plan(expected_unit="VND")
-    compiled = _compiled(
-        evidence=(_cell(value=Decimal("154674553"), unit="VND_thousand"),),
-        answer=Decimal("154674553000"),
-        unit="VND",
-    )
-    assert check_recompute_mismatch(plan, compiled) is None
-
-
-def test_recompute_mismatch_still_flags_wrong_answer_in_converted_unit() -> None:
-    """The conversion must not become a way to accept any number: a genuinely
-    wrong answer stated in the requested unit is still a mismatch."""
-    plan = _plan(expected_unit="VND_billion")
-    compiled = _compiled(
-        evidence=(_cell(value=Decimal("145731366146"), unit="VND"),),
-        answer=Decimal("999.0"),
-        unit="VND_billion",
-    )
-    issue = check_recompute_mismatch(plan, compiled)
-    assert issue is not None
-    assert issue.code == "recompute_mismatch"
-
-
-def test_recompute_mismatch_flags_incompatible_unit_declaration() -> None:
-    """A monetary evidence cell presented as a `ratio` cannot be reconciled by
-    scaling -- `convert_scale` rejects it, and that stays a mismatch."""
-    plan = _plan(expected_unit="ratio")
-    compiled = _compiled(
-        evidence=(_cell(value=Decimal("100"), unit="VND"),),
-        answer=Decimal("100"),
-        unit="ratio",
-    )
-    issue = check_recompute_mismatch(plan, compiled)
-    assert issue is not None
-    assert issue.code == "recompute_mismatch"

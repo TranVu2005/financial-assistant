@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal, Self
 
 import yaml  # type: ignore[import-untyped]
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,27 +57,10 @@ class ExecutionSettings(BaseModel):
 
     timeout_seconds: float
     max_rows: int
-    allow_operations: tuple[str, ...]
-    # Day 21 plan §1.5/ADR 0010 decision B1: applied only when a plan's own
-    # `statement_scope` is unset. Measured: no single policy clears the gate
-    # (default `consolidated` triples coverage but raises the overconfident-
-    # wrong rate to 40%) so this stays config-controlled, not hardcoded, and
-    # `None` (the default) disables scope filtering entirely.
+    # Day 21 plan §1.5/ADR 0010 decision B1: applied only when the question's
+    # own statement scope is unset. `None` (the default) disables scope
+    # filtering entirely.
     default_statement_scope: Literal["separate", "consolidated"] | None = None
-    # Design 2026-08-22 §6: turn on deterministic tie-break at `locate()`'s
-    # three abstain points (`period_unresolved`, `cell_ambiguous`,
-    # `unit_missing`) instead of leaving the cell blank. Answer Accuracy is
-    # correct/TOTAL, so an abstention and a wrong answer score the same
-    # zero -- the same argument already applied to `default_statement_scope`
-    # in `configs/submission_maximize_correct.yaml`. Off by default so
-    # internal quality measurement keeps an honest precision signal.
-    resolve_ambiguity_by_priority: bool = False
-
-    @model_validator(mode="after")
-    def validate_allow_operations_non_empty(self) -> Self:
-        if not self.allow_operations:
-            raise ValueError("allow_operations must not be empty")
-        return self
 
 
 def load_execution_settings(paths: Sequence[str | Path]) -> ExecutionSettings:

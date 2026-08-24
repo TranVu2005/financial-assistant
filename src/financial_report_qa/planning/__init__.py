@@ -1,1 +1,1 @@
-"""Question parsing and constrained financial query planning."""
+"""Question parsing, entity extraction, and offline decision contracts."""

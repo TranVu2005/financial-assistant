@@ -33,7 +33,7 @@ DOC_ID = "doc_" + "a" * 64
 
 @pytest.fixture
 def execution_settings() -> ExecutionSettings:
-    return ExecutionSettings(timeout_seconds=5, max_rows=20000, allow_operations=("lookup",))
+    return ExecutionSettings(timeout_seconds=5, max_rows=20000)
 
 
 @pytest.fixture

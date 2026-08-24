@@ -34,7 +34,7 @@ TABLE_ID = "tbl_" + "1" * 64
 DOC_ID = "doc_" + "a" * 64
 CELL_ID = "cell_" + "a" * 64
 
-_ALLOW_LOOKUP = ExecutionSettings(timeout_seconds=5, max_rows=20000, allow_operations=("lookup",))
+_ALLOW_LOOKUP = ExecutionSettings(timeout_seconds=5, max_rows=20000)
 
 
 def _write_release(tmp_path: Path) -> Path:
@@ -159,6 +159,7 @@ def _build_zip(tmp_path: Path) -> tuple[Path, Path]:
         execution_settings=_ALLOW_LOOKUP,
         dataset_fingerprint="0" * 64,
         k=10,
+        program_decisions={},
     )
     zip_path = tmp_path / "submission.zip"
     write_submission_zip(items, csv_rows, zip_path)

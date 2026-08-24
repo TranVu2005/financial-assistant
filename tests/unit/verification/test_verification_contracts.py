@@ -1,9 +1,8 @@
-"""Tests for the Day 20 answer-package contracts (ADR 0009 decision E1).
+"""Tests for the answer-package contracts (ADR 0009 decision E1).
 
 `AnswerPackage` must be self-contained: it carries `retrieved_table_ids`
-alongside `evidence` so a caller can verify evidence <= retrieved tables
-without needing the original plan (Day 20 plan Sec 1.7 -- `CompiledQuery`
-cannot do this on its own).
+alongside its verification result so a caller can re-check one answer
+without the pipeline that produced it.
 """
 
 from __future__ import annotations
@@ -88,14 +87,31 @@ def test_answer_package_constructs_with_valid_fields() -> None:
     assert package.answer_text == "Tiền mặt của ACB năm 2023 là 100 VND."
 
 
-def test_answer_package_rejects_empty_evidence() -> None:
-    with pytest.raises(ValidationError):
-        _package(evidence=())
+def test_answer_package_allows_empty_evidence() -> None:
+    """Citations were a compile-era artifact: an `ExecutedProgram`-built
+    package has no cell-id provenance to cite, so `evidence` defaults to
+    empty instead of demanding fabricated citations."""
+    package = _package(evidence=())
+    assert package.evidence == ()
+    assert package.retrieved_table_ids == (TABLE_ID,)
 
 
-def test_answer_package_rejects_empty_retrieved_table_ids() -> None:
-    with pytest.raises(ValidationError):
-        _package(retrieved_table_ids=())
+def test_answer_package_defaults_carry_masked_program_fields() -> None:
+    """Spec 2026-08-24 §4.3: the three masked-PAL fields default so older
+    constructors keep working, then carry the program and its confidence."""
+    package = _package()
+    assert package.program == ""
+    assert package.regenerated is False
+    assert package.low_confidence is False
+    assert package.inferred_scope_accepted is False
+
+
+def test_answer_package_allows_empty_retrieved_table_ids() -> None:
+    """The evidence-outside-retrieval check (not the contract) decides what
+    an empty retrieved set means: `builder` marks such a package rejected,
+    so the model itself need not raise."""
+    package = _package(retrieved_table_ids=())
+    assert package.retrieved_table_ids == ()
 
 
 def test_answer_package_rejects_negative_display_precision() -> None:

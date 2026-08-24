@@ -29,11 +29,7 @@ from financial_report_qa.core.errors import (
 )
 from financial_report_qa.planning.entity_parser import parse_query_entities
 from financial_report_qa.planning.program_decisions import load_program_decisions
-from financial_report_qa.planning.question_plan import load_decisions
-from financial_report_qa.planning.row_choice_batch import (
-    build_batch_payload,
-    build_program_batch_payload,
-)
+from financial_report_qa.planning.row_choice_batch import build_program_batch_payload
 from financial_report_qa.retrieval.cli import _build_table_retriever
 from financial_report_qa.retrieval.index import load_bm25_index
 from financial_report_qa.retrieval.live_query import (
@@ -119,36 +115,13 @@ def _parser() -> argparse.ArgumentParser:
         "raising this above 0.",
     )
     export.add_argument(
-        "--allow-inferred-scope",
-        action="store_true",
-        help=(
-            "Ship answers whose statement_scope came from "
-            "`execution.default_statement_scope` rather than the question itself "
-            "(ADR 0010 B1 normally blocks these). The organizers score "
-            "correct/TOTAL questions, so such an answer costs exactly what an "
-            "abstention costs while retaining a chance of being right. The "
-            "`scope_inferred` issue is still recorded on every affected "
-            "AnswerPackage. Off by default: for internal quality measurement a "
-            "scope-guessed answer really is untrustworthy."
-        ),
-    )
-    export.add_argument(
-        "--row-choice-decisions",
-        type=Path,
-        default=None,
-        help=(
-            "File JSONL {question_id, operation, chosen, top_k} do Qwen3-8B sinh "
-            "offline (xem subcommand `row-batches`); đọc bằng "
-            "`question_plan.load_decisions`. Bỏ qua để dùng ứng viên hạng 1."
-        ),
-    )
-    export.add_argument(
         "--program-decisions",
         type=Path,
-        default=None,
+        required=True,
         help=(
-            "File JSONL quyết định masked-PAL (spec 2026-08-24 §4.3). Bỏ qua "
-            "thì chạy đường cũ. Thay --row-choice-decisions khi có mặt."
+            "File JSONL quyết định masked-PAL (spec 2026-08-24 §4.3) sinh "
+            "offline bởi `submission row-batches --program`. Bắt buộc: đây là "
+            "đường answering duy nhất."
         ),
     )
     export.add_argument(
@@ -179,40 +152,33 @@ def _parser() -> argparse.ArgumentParser:
     batches = commands.add_parser(
         "row-batches",
         help=(
-            "Chạy retrieval + row fusion cho mọi câu hỏi và ghi ứng viên ra JSONL "
-            "để LLM chọn dòng offline (thiết kế 2026-08-22 §5.2)."
+            "Chạy retrieval + row fusion cho mọi câu hỏi và ghi payload ứng "
+            "viên Ô ra JSONL để LLM sinh chương trình masked offline (spec "
+            "2026-08-24 §4.3)."
         ),
     )
     batches.add_argument("--release-lock", type=Path, required=True)
     batches.add_argument("--bm25-index", type=Path, required=True)
     batches.add_argument("--questions-path", type=Path, required=True)
     batches.add_argument("--output-dir", type=Path, required=True)
+    batches.add_argument(
+        "--release-dir",
+        type=Path,
+        required=True,
+        help="Thư mục release Parquet, để dựng cell frame cho ứng viên Ô.",
+    )
     batches.add_argument("--k", type=int, default=10, help="Số bảng ứng viên mỗi câu.")
     batches.add_argument(
         "--rows-per-question",
         type=int,
         # Must match `export`'s row-fusion `k` (DEFAULT_ROW_CANDIDATE_COUNT):
-        # LLM decision files built from these batches carry `chosen_index`
-        # values up to this count - 1, and `export` must retrieve at least
-        # as many row candidates or those indices will look out of range.
+        # decision files built from these batches reference candidate indices
+        # up to this count - 1, and `export` must retrieve at least as many
+        # row candidates or those indices will look out of range.
         default=DEFAULT_ROW_CANDIDATE_COUNT,
         help="Số dòng ứng viên mỗi câu.",
     )
     batches.add_argument("--batch-size", type=int, default=64, help="Số câu mỗi file batch.")
-    batches.add_argument(
-        "--program",
-        action="store_true",
-        help=(
-            "Sinh payload ứng viên Ô cho masked PAL (spec 2026-08-24 §4.3) "
-            "thay vì ứng viên dòng. Cần --release-dir."
-        ),
-    )
-    batches.add_argument(
-        "--release-dir",
-        type=Path,
-        default=None,
-        help="Thư mục release Parquet, để dựng cell frame khi bật --program.",
-    )
 
     validate = commands.add_parser("validate")
     validate.add_argument("--zip-path", type=Path, required=True)
@@ -371,18 +337,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             # Load row BM25 index and initialize row fusion if available
             row_fusion = _build_row_fusion(args, release)
-            row_decisions = (
-                load_decisions(args.row_choice_decisions)
-                if args.row_choice_decisions is not None
-                else None
-            )
-            # Masked-PAL quyết định (spec 2026-08-24 §4.3): chỉ nạp khi cờ có
-            # mặt -- không truyền thì đường cũ chạy nguyên vẹn như trước.
-            program_decisions = (
-                load_program_decisions(args.program_decisions)
-                if args.program_decisions is not None
-                else None
-            )
+            # Masked-PAL quyết định (spec 2026-08-24 §4.3): bắt buộc -- đây
+            # là đường answering duy nhất còn lại.
+            program_decisions = load_program_decisions(args.program_decisions)
 
             report, items, csv_rows = export_submission(
                 questions,
@@ -393,8 +350,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 k=args.k,
                 reranker=reranker,
                 row_fusion=row_fusion,
-                row_decisions=row_decisions,
-                allow_inferred_scope=args.allow_inferred_scope,
                 program_decisions=program_decisions,
             )
             # Write the per-question coverage report BEFORE the compliance gate
@@ -473,24 +428,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                         candidate_table_ids=retrieved,
                         k=args.rows_per_question,
                     ).results
-                    if args.program:
-                        if args.release_dir is None:
-                            raise SubmissionError("--program cần --release-dir")
-                        payload = build_program_batch_payload(
-                            raw_question.id,
-                            raw_question.question,
-                            parse_query_entities(raw_question.question),
-                            build_question_cell_candidates(
-                                args.release_dir, raw_question.question, retrieved, fused
-                            ),
-                        )
-                    else:
-                        payload = build_batch_payload(
-                            raw_question.id,
-                            raw_question.question,
-                            parse_query_entities(raw_question.question),
-                            fused,
-                        )
+                    # Đường duy nhất (spec 2026-08-24 §4.3): payload ứng viên
+                    # Ô qua cùng helper dựng danh sách đánh số với lúc export.
+                    payload = build_program_batch_payload(
+                        raw_question.id,
+                        raw_question.question,
+                        parse_query_entities(raw_question.question),
+                        build_question_cell_candidates(
+                            args.release_dir, raw_question.question, retrieved, fused
+                        ),
+                    )
                     lines.append(json.dumps(payload, ensure_ascii=False))
                     written += 1
                 target = args.output_dir / f"batch_{batch_number:03d}.jsonl"

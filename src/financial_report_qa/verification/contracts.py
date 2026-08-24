@@ -1,32 +1,29 @@
 """Day 20 answer-package contracts (ADR 0009 decision E1).
 
 `AnswerPackage` is deliberately self-contained: it carries
-`retrieved_table_ids` alongside `evidence`, unlike `CompiledQuery` (Day 18)
-which does not carry `candidate_table_ids` at all. Day 20 plan Sec 1.7
-measured that the "evidence <= retrieved tables" invariant held on gold70
-by construction (`build_cell_frame` filters by table_ids) but had no
-assertion guarding it and no way to check it from `CompiledQuery` alone --
-a caller would have to keep the original plan around. `AnswerPackage` fixes
-that: everything needed to independently re-verify one answer travels with
-the package.
+`retrieved_table_ids` alongside its evidence so everything needed to
+independently re-verify one answer travels with the package.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, StringConstraints, model_validator
 
-from financial_report_qa.execution.contracts import CellId
 from financial_report_qa.normalization.units import CanonicalUnit
-from financial_report_qa.planning.plan_contracts import PlanOperation
 from financial_report_qa.retrieval.contracts import (
     NonEmptyString,
     QuestionId,
     TableId,
     _FrozenModel,
 )
+
+# Cell-id provenance used to live in the compiler-era
+# `execution/contracts.py` (spec 2026-08-24 §8.2 removed it); the pattern is
+# kept here because `Citation` still cites by cell id.
+CellId = Annotated[str, StringConstraints(pattern=r"^cell_[0-9a-f]{64}$")]
 
 VerificationIssueCode = Literal[
     "recompute_mismatch",
@@ -58,8 +55,8 @@ _BLOCKING_ISSUE_CODES = frozenset(
         "display_roundtrip_mismatch",
         "scope_inferred",
         # plan.md §15: a fact that cannot be independently re-confirmed is
-        # exactly the failure mode the recovery ladder (cell_grounding.py)
-        # exists to avoid presenting as certain.
+        # exactly the failure mode the answering path must never present as
+        # certain.
         "fact_not_found",
         "fact_value_mismatch",
     }
@@ -100,16 +97,23 @@ class AnswerPackage(_FrozenModel):
 
     question_id: QuestionId
     question: NonEmptyString
-    operation: PlanOperation
+    # The plan-era `PlanOperation` enum died with the operation-enum path;
+    # a package built from an `ExecutedProgram` describes its computation by
+    # the masked program string itself (`program`), so this is now a free
+    # descriptive label.
+    operation: NonEmptyString = ""
     answer: Decimal
-    unit: CanonicalUnit
+    # The compiler-era canonical-unit declaration died with the operation
+    # enum; an `ExecutedProgram`-built package leaves this unset unless a
+    # caller knows the answer's canonical unit.
+    unit: CanonicalUnit | None = None
     display: NonEmptyString
     display_precision: int = Field(ge=0)
     answer_text: NonEmptyString
-    evidence: tuple[Citation, ...]
+    evidence: tuple[Citation, ...] = ()
     retrieved_table_ids: tuple[TableId, ...]
     pandas_query: NonEmptyString
-    period_inferred: bool
+    period_inferred: bool = False
     verification_status: Literal["verified", "rejected"]
     verification_issues: tuple[VerificationIssue, ...]
     # Day 24: records that this package was built under a policy that
@@ -118,13 +122,14 @@ class AnswerPackage(_FrozenModel):
     # rather than silently dropping the `scope_inferred` issue -- a reader
     # must always be able to tell that the scope was guessed.
     inferred_scope_accepted: bool = False
+    # Spec 2026-08-24 §4.3: the masked-PAL program the package was built
+    # from, plus the pipeline's own confidence flags on that execution.
+    program: str = ""
+    regenerated: bool = False
+    low_confidence: bool = False
 
     @model_validator(mode="after")
     def validate_structure(self) -> Self:
-        if not self.evidence:
-            raise ValueError("evidence must not be empty")
-        if not self.retrieved_table_ids:
-            raise ValueError("retrieved_table_ids must not be empty")
         waived = {"scope_inferred"} if self.inferred_scope_accepted else set()
         blocking = tuple(
             issue

@@ -1,15 +1,12 @@
-"""Unit tests for evidence_rendering — pure row-fusion-to-planner transforms."""
+"""Unit tests for evidence_rendering — pure row-fusion rendering transforms."""
 
 from __future__ import annotations
 
 from financial_report_qa.planning.evidence_rendering import (
     evidence_row_labels,
     evidence_table_context,
-    plan_grounding_rank,
-    plan_grounding_score,
     row_label_confidence,
 )
-from financial_report_qa.planning.plan_contracts import FinancialQueryPlan, MetricSelector
 from financial_report_qa.retrieval.row_documents import RowMetadata
 from financial_report_qa.retrieval.row_fusion_contracts import RowFusedCandidate
 
@@ -129,12 +126,11 @@ def test_evidence_row_labels_skips_none_labels() -> None:
 
 
 def test_evidence_row_labels_collapses_an_embedded_newline() -> None:
-    """A live full-export run crashed constructing a MetricSelector from a
-    row label `choose_row_label` picked out of this exact menu: a real
-    corpus label formed by joining two source lines carried a literal
-    embedded newline, and plan_contracts.RawMetricText forbids control
-    characters outright. This menu must already be safe to hand straight to
-    a MetricSelector."""
+    """A live full-export run crashed constructing a raw-label field from a
+    row label picked out of this exact menu: a real corpus label formed by
+    joining two source lines carried a literal embedded newline, and label
+    fields forbid control characters outright. This menu must already be
+    safe to hand straight to any consumer of raw labels."""
     candidates = (_candidate(row_idx=0, rank=1, row_label_raw="Doanh thu\nthuần"),)
     assert evidence_row_labels(candidates) == ("Doanh thu thuần",)
 
@@ -207,17 +203,6 @@ def test_evidence_table_context_empty() -> None:
     assert evidence_table_context(()) == ""
 
 
-def _plan(**metric_kwargs: object) -> FinancialQueryPlan:
-    defaults: dict[str, object] = {
-        "operation": "lookup",
-        "companies": ("VCB",),
-        "periods": ("2020",),
-        "candidate_table_ids": (TABLE_A,),
-    }
-    defaults.update(metric_kwargs)
-    return FinancialQueryPlan(**defaults)
-
-
 def test_row_label_confidence_matches_exact_label() -> None:
     candidates = (
         _candidate(row_idx=0, fused_score=0.42, row_label_raw="Doanh thu"),
@@ -239,73 +224,3 @@ def test_row_label_confidence_none_or_empty_label_returns_none() -> None:
 
     assert row_label_confidence(None, candidates) is None
     assert row_label_confidence("", candidates) is None
-
-
-def test_plan_grounding_score_single_metric() -> None:
-    plan = _plan(metric=MetricSelector(raw_text="Doanh thu"))
-    candidates = (_candidate(row_idx=0, fused_score=0.77, row_label_raw="Doanh thu"),)
-
-    assert plan_grounding_score(plan, candidates) == 0.77
-
-
-def test_plan_grounding_score_takes_weakest_link_across_selectors() -> None:
-    plan = _plan(
-        operation="difference",
-        metric_a=MetricSelector(raw_text="Doanh thu"),
-        metric_b=MetricSelector(raw_text="Chi phí"),
-    )
-    candidates = (
-        _candidate(row_idx=0, fused_score=0.9, row_label_raw="Doanh thu"),
-        _candidate(row_idx=1, fused_score=0.3, row_label_raw="Chi phí"),
-    )
-
-    assert plan_grounding_score(plan, candidates) == 0.3
-
-
-def test_plan_grounding_score_canonical_match_is_none() -> None:
-    # A canonical-dictionary metric never went through row fusion at all.
-    plan = _plan(metric=MetricSelector(canonical="revenue"))
-    candidates = (_candidate(row_idx=0, fused_score=0.9, row_label_raw="Doanh thu"),)
-
-    assert plan_grounding_score(plan, candidates) is None
-
-
-def test_plan_grounding_score_no_fusion_rows_is_none() -> None:
-    plan = _plan(metric=MetricSelector(raw_text="Doanh thu"))
-
-    assert plan_grounding_score(plan, ()) is None
-
-
-def test_plan_grounding_rank_single_metric() -> None:
-    plan = _plan(metric=MetricSelector(raw_text="Doanh thu"))
-    candidates = (_candidate(row_idx=0, rank=4, row_label_raw="Doanh thu"),)
-
-    assert plan_grounding_rank(plan, candidates) == 4
-
-
-def test_plan_grounding_rank_takes_worst_rank_across_selectors() -> None:
-    plan = _plan(
-        operation="difference",
-        metric_a=MetricSelector(raw_text="Doanh thu"),
-        metric_b=MetricSelector(raw_text="Chi phí"),
-    )
-    candidates = (
-        _candidate(row_idx=0, rank=1, row_label_raw="Doanh thu"),
-        _candidate(row_idx=1, rank=7, row_label_raw="Chi phí"),
-    )
-
-    # Worst (highest-numbered) rank wins, not the best one.
-    assert plan_grounding_rank(plan, candidates) == 7
-
-
-def test_plan_grounding_rank_canonical_match_is_none() -> None:
-    plan = _plan(metric=MetricSelector(canonical="revenue"))
-    candidates = (_candidate(row_idx=0, rank=1, row_label_raw="Doanh thu"),)
-
-    assert plan_grounding_rank(plan, candidates) is None
-
-
-def test_plan_grounding_rank_no_fusion_rows_is_none() -> None:
-    plan = _plan(metric=MetricSelector(raw_text="Doanh thu"))
-
-    assert plan_grounding_rank(plan, ()) is None

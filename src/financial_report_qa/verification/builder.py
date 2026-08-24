@@ -1,142 +1,86 @@
-"""Day 20 `build_answer_package` orchestrator (ADR 0009).
+"""`build_answer_package` orchestrator (ADR 0009).
 
-Ties `checks.py` + `templates.py` together the way `execution/compiler.py`
-ties `locator`/`operations`/`pandas_query` together for Day 18: one function,
-never a guessed or half-verified package. Every evidence cell must resolve
-to a citation through `citation_lookup` (Day 20 plan Sec 1.6 measured 100%
-of evidence cells on gold70 have complete provenance in the release) -- a
-missing entry is a hard error, not a placeholder.
+One function, never a guessed or half-verified package: every answer that
+ships must pass the four verification checks in `checks.py`. The plan-era
+inputs from the plan/compiler era died with the operation-enum
+answering path (spec 2026-08-24 §8.2); a package is now built from the one
+finished `ExecutedProgram` the masked-PAL pipeline produced.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from pathlib import Path
+from decimal import Decimal
 from typing import Literal
 
-from financial_report_qa.execution.contracts import CompiledQuery
-from financial_report_qa.planning.fact_grounding import grounded_facts
-from financial_report_qa.planning.plan_contracts import FinancialQueryPlan
+from financial_report_qa.execution.program_contracts import ExecutedProgram
 from financial_report_qa.verification import checks
-from financial_report_qa.verification.contracts import AnswerPackage, Citation, is_blocking_issue
-from financial_report_qa.verification.fact_checks import verify_facts
-from financial_report_qa.verification.templates import render_answer, render_sentence
+from financial_report_qa.verification.contracts import AnswerPackage, is_blocking_issue
 
 
-def _build_citations(
-    compiled: CompiledQuery, citation_lookup: Mapping[str, Mapping[str, object]]
-) -> tuple[Citation, ...]:
-    citations: list[Citation] = []
-    for cell in compiled.evidence:
-        for cell_id in cell.cell_ids:
-            provenance = citation_lookup.get(cell_id)
-            if provenance is None:
-                raise ValueError(f"no citation provenance supplied for cell_id {cell_id!r}")
-            citations.append(
-                Citation.model_validate(
-                    {
-                        "cell_id": cell_id,
-                        "table_id": cell.table_id,
-                        "doc_relative_path": provenance["doc_relative_path"],
-                        "source_line_start": provenance["source_line_start"],
-                        "source_line_end": provenance["source_line_end"],
-                        "table_title": provenance["table_title"],
-                        "value": cell.value,
-                        "unit": cell.unit,
-                    }
-                )
-            )
-    return tuple(citations)
+def _default_display(answer: Decimal) -> tuple[str, int]:
+    """Render the answer plainly and derive the precision actually printed.
+
+    The plan-era display templates (`templates.py`) were removed together
+    with the operation enum; until a masked-PAL-specific renderer exists the
+    package ships the exact Decimal in plain positional notation, and the
+    declared precision is the exponent that notation used.
+    """
+    exponent = answer.as_tuple().exponent
+    precision = -exponent if isinstance(exponent, int) and exponent < 0 else 0
+    return format(answer, "f"), precision
 
 
 def build_answer_package(
     *,
     question_id: str,
     question: str,
-    plan: FinancialQueryPlan,
-    compiled: CompiledQuery,
+    executed: ExecutedProgram,
     retrieved_table_ids: frozenset[str],
-    citation_lookup: Mapping[str, Mapping[str, object]] | None = None,
-    allow_inferred_scope: bool = False,
-    release_dir: Path | None = None,
 ) -> AnswerPackage:
-    """Compile a verified `AnswerPackage` from one answered `CompiledQuery`.
+    """Build a verified `AnswerPackage` from one executed masked-PAL program.
 
-    `allow_inferred_scope=True` downgrades the `scope_inferred` block (ADR
-    0010 decision B1) to a recorded-but-non-blocking issue. Off by default,
-    because for internal quality measurement an answer whose statement scope
-    was guessed really is untrustworthy (92.8% of two-scope groups disagree
-    in value). A submission run may opt in: the organizers score
-    correct / TOTAL questions, so a scope-guessed answer costs exactly what
-    an abstention costs (0) while retaining a chance of being right. Scoped
-    to `scope_inferred` alone -- every genuine correctness block still
-    rejects.
-
-    `release_dir=...` (plan.md §15) additionally re-locates every fact
-    behind the answer independently of the compile that produced it -- see
-    `fact_checks.verify_fact`. Omitted by default so a caller with no
-    release on hand (e.g. most of this module's own unit tests) sees no
-    behavior change; harmless even when given, since a `CompiledQuery`
-    built without position-bound evidence (no `row_index`) simply yields no
-    facts to check.
-
-    Raises `ValueError` if `compiled.status != "answered"` -- there is
-    nothing to verify or cite for an error result (it is already a typed
-    `CompiledQuery` error, handled upstream).
+    Raises `ValueError` if the execution carries no answer -- there is
+    nothing to verify for an error result (it is already a typed failure,
+    handled upstream).
     """
-    if compiled.status != "answered":
-        raise ValueError("cannot build an AnswerPackage from a non-answered CompiledQuery")
-    assert compiled.answer is not None and compiled.unit is not None
-    citation_lookup = citation_lookup if citation_lookup is not None else {}
-
-    display, display_precision = render_answer(plan, compiled)
-    answer_text = render_sentence(plan, compiled, display)
+    answer = executed.answer
+    display, display_precision = _default_display(answer)
 
     issues = [
         issue
         for issue in (
-            checks.check_recompute_mismatch(plan, compiled),
-            checks.check_unit_not_presentable(plan, compiled),
-            checks.check_evidence_outside_retrieval(compiled, retrieved_table_ids),
+            checks.check_recompute_mismatch(executed),
+            checks.check_scale_not_presentable(executed),
+            checks.check_evidence_outside_retrieval(executed, retrieved_table_ids),
             checks.check_display_roundtrip_mismatch(
-                compiled.answer, display, display_precision=display_precision
+                answer, display, display_precision=display_precision
             ),
-            checks.check_period_inferred_warning(compiled),
-            checks.check_scope_inferred(compiled),
         )
         if issue is not None
     ]
-    if release_dir is not None:
-        # plan.md §15: verify row/column/unit per fact, before the answer is
-        # trusted on the strength of `check_recompute_mismatch` alone.
-        issues.extend(verify_facts(grounded_facts(compiled, grounding_score=None), release_dir))
     status: Literal["verified", "rejected"] = (
-        "rejected"
-        if any(
-            is_blocking_issue(issue.code)
-            and not (allow_inferred_scope and issue.code == "scope_inferred")
-            for issue in issues
-        )
-        else "verified"
+        "rejected" if any(is_blocking_issue(issue.code) for issue in issues) else "verified"
     )
 
     return AnswerPackage.model_validate(
         {
             "question_id": question_id,
             "question": question,
-            "operation": compiled.operation,
-            "answer": compiled.answer,
-            "unit": compiled.unit,
+            "answer": answer,
+            # The compiler-era canonical-unit declaration died with the
+            # operation enum; the masked program declares its magnitude via
+            # `executed.scale`, which verification covers through
+            # `check_scale_not_presentable`.
+            "unit": None,
             "display": display,
             "display_precision": display_precision,
-            "answer_text": answer_text,
-            "evidence": _build_citations(compiled, citation_lookup),
+            "answer_text": display,
             "retrieved_table_ids": tuple(sorted(retrieved_table_ids)),
-            "pandas_query": compiled.pandas_query,
-            "period_inferred": any(cell.period_inferred for cell in compiled.evidence),
+            "pandas_query": executed.pandas_query,
             "verification_status": status,
             "verification_issues": tuple(issues),
-            "inferred_scope_accepted": allow_inferred_scope
-            and any(issue.code == "scope_inferred" for issue in issues),
+            "program": executed.program,
+            "regenerated": executed.regenerated,
+            "low_confidence": executed.low_confidence,
         }
     )

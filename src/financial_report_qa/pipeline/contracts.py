@@ -106,7 +106,7 @@ class ScopePolicyResult(_FrozenModel):
     21 plan §1.5/ADR 0010 decision G1: no single policy clears the gate, so
     the report must show the tradeoff, not one number).
 
-    `answered_count` is measured at `compile_plan`'s raw `status ==
+    `answered_count` was measured at the compile-era raw `status ==
     "answered"` -- deliberately BEFORE the `scope_inferred` verification
     block (task 21.6). That block always rejects an inferred-scope answer by
     design, so measuring post-verification would make every non-`none`
