@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Any, Literal, Protocol
 
 import numpy as np
 
@@ -64,7 +64,31 @@ class DenseEncoder(Protocol):
 
 
 class SentenceTransformerDenseEncoder:
-    def __init__(self, spec: DenseEncoderSpec, *, local_files_only: bool = False) -> None:
+    """Wrapper around ``SentenceTransformer`` with compute-only tuning knobs.
+
+    ``model_dtype`` and ``encode_batch_size`` are deliberately NOT part of
+    :class:`DenseEncoderSpec` (hence absent from ``encoder_spec_sha256`` and the
+    index manifests pinning it): target-architecture plan §5.4 sanctions fp16
+    COMPUTE so Qwen3-Embedding-4B fits a Colab T4 (~8GB fp16 weights instead of
+    ~16GB fp32 -> CUDA OOM), while constraint N5 ("không quantize") governs what
+    is STORED — this wrapper still casts every output to np.float32, so shards
+    and indexes stay float32 on disk. An fp16-encoded index paired with
+    fp32-encoded queries (or vice versa) differs only within fp16 rounding, and
+    retrieval consumes ranks (RRF), never absolute scores, so artifact identity
+    is unaffected by these knobs.
+    """
+
+    def __init__(
+        self,
+        spec: DenseEncoderSpec,
+        *,
+        local_files_only: bool = False,
+        model_dtype: Literal["float32", "float16"] | None = None,
+        encode_batch_size: int | None = None,
+    ) -> None:
+        # Compute-only knobs; intentionally excluded from spec identity (§5.4 vs N5).
+        self._model_dtype = model_dtype
+        self._encode_batch_size = encode_batch_size
         try:
             import torch
             from sentence_transformers import SentenceTransformer
@@ -84,6 +108,9 @@ class SentenceTransformerDenseEncoder:
                 trust_remote_code=False,
                 local_files_only=local_files_only,
             )
+            if self._model_dtype == "float16":
+                # Halve weights after load: compute runs fp16, storage stays float32.
+                self._model.half()
         except Exception as exc:
             raise DenseModelError(
                 f"Pinned dense model is unavailable: {spec.model_id}@{spec.revision}"
@@ -92,11 +119,17 @@ class SentenceTransformerDenseEncoder:
         self._model.max_seq_length = spec.max_sequence_length
 
     def _encode(self, texts: Sequence[str]) -> np.ndarray:
+        extra_kwargs: dict[str, Any] = {}
+        if self._encode_batch_size is not None:
+            # Forwarded so ST's internal chunking is tunable from outside; when the
+            # knob is unset the call below stays byte-identical to the legacy one.
+            extra_kwargs["batch_size"] = self._encode_batch_size
         values = self._model.encode(
             list(texts),
             convert_to_numpy=True,
             normalize_embeddings=True,
             show_progress_bar=False,
+            **extra_kwargs,
         )
         return np.asarray(values, dtype=np.float32)
 
