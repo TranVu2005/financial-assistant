@@ -2720,68 +2720,118 @@ Ghi lại Answer Accuracy và số câu không trả lời được. Đây là c
 
 - [ ] **Step 3: Sinh file quyết định masked-PAL cho tập gold**
 
-Trước hết ghi file payload — bước này thuần tất định, không LLM. Tạo
-`scripts/build_program_batch.py`:
+Không viết script mới: subcommand `submission row-batches` **đã** chạy đúng
+chuỗi retrieval → row fusion → payload cho mọi câu hỏi
+([cli.py:404](src/financial_report_qa/submission/cli.py:404)). Thêm chế độ ô
+vào nó, đừng dựng đường thứ hai.
+
+Trong `_parser()`, thêm vào parser `batches`:
 
 ```python
-"""Ghi payload batch masked-PAL cho một tập câu hỏi. Không gọi LLM."""
-
-from __future__ import annotations
-
-import argparse
-import json
-from pathlib import Path
-
-from financial_report_qa.execution.cell_frame import build_cell_frame
-from financial_report_qa.planning.cell_candidates import build_cell_candidates
-from financial_report_qa.planning.entity_parser import parse_query_entities
-from financial_report_qa.planning.row_choice_batch import build_program_batch_payload
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--release-dir", type=Path, required=True)
-    parser.add_argument("--questions", type=Path, required=True)
-    parser.add_argument("--retrieved", type=Path, required=True,
-                        help="JSONL: {question_id, table_ids, row_candidates}")
-    parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
-
-    questions = {
-        int(json.loads(line)["id"]): json.loads(line)["question"]
-        for line in args.questions.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    }
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("w", encoding="utf-8") as stream:
-        for line in args.retrieved.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            record = json.loads(line)
-            question_id = int(record["question_id"])
-            question = questions[question_id]
-            entities = parse_query_entities(question)
-            frame = build_cell_frame(args.release_dir, record["table_ids"])
-            candidates = build_cell_candidates(
-                frame, record["row_candidates"], periods=entities.periods
-            )
-            payload = build_program_batch_payload(
-                question_id, question, entities, candidates
-            )
-            stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    batches.add_argument(
+        "--program",
+        action="store_true",
+        help=(
+            "Sinh payload ứng viên Ô cho masked PAL (spec 2026-08-24 §4.3) "
+            "thay vì ứng viên dòng. Cần --release-dir."
+        ),
+    )
+    batches.add_argument(
+        "--release-dir",
+        type=Path,
+        default=None,
+        help="Thư mục release Parquet, để dựng cell frame khi bật --program.",
+    )
 ```
 
-Chạy nó, gọi LLM offline theo batch trên file payload sinh ra, rồi ghi kết quả
-thành JSONL đúng schema `ProgramDecision`. File quyết định phải **không chứa
-một giá trị số nào** ngoài `question_id`, `cells`, `num`, và chuỗi
-`program`/`uses`/`scale` — `extra="forbid"` của contract là chốt chặn cho
-điều đó.
+Trong nhánh `if args.command == "row-batches":`, thay lời gọi
+`build_batch_payload(...)` bằng:
+
+```python
+                    if args.program:
+                        if args.release_dir is None:
+                            raise SubmissionError("--program cần --release-dir")
+                        payload = build_program_batch_payload(
+                            raw_question.id,
+                            raw_question.question,
+                            parse_query_entities(raw_question.question),
+                            build_question_cell_candidates(
+                                args.release_dir, raw_question.question, retrieved, fused
+                            ),
+                        )
+                    else:
+                        payload = build_batch_payload(
+                            raw_question.id,
+                            raw_question.question,
+```
+
+- [ ] **Step 3a: Một hàm duy nhất dựng danh sách ứng viên**
+
+**Đây là ràng buộc quan trọng nhất của cả plan.** `ProgramDecision.cells` là
+vị trí trong danh sách ứng viên. Nếu danh sách lúc sinh payload khác danh sách
+lúc export dù chỉ một phần tử, **mọi chỉ số lệch đi** — và lệch theo cách
+Verify B bắt được nhưng chỉ sau khi đã hỏng cả tập.
+
+Hai đường hiện tại **không** giống nhau: `export` thu hẹp theo scope trước khi
+gọi row fusion (`_scope_candidate_tables`,
+[exporter.py:242](src/financial_report_qa/submission/exporter.py:242)), còn
+`row-batches` gọi thẳng trên `retrieved` chưa thu hẹp
+([cli.py:432](src/financial_report_qa/submission/cli.py:432)). Chênh lệch này
+đã tồn tại sẵn cho chỉ số **dòng** của đường cũ; với đường mới nó là lỗi chết
+người.
+
+Thêm vào `submission/exporter.py` một hàm dùng chung, và bắt **cả hai** đường
+gọi đúng nó:
+
+```python
+def build_question_cell_candidates(
+    release_dir: Path,
+    question: str,
+    retrieved: Sequence[str],
+    fusion_rows: Sequence[RowFusedCandidate],
+) -> tuple[CellCandidate, ...]:
+    """Dựng danh sách ô đánh số cho một câu, một cách duy nhất.
+
+    `ProgramDecision.cells` là vị trí trong danh sách này, nên lúc sinh payload
+    và lúc export phải cho ra danh sách y hệt. Đó là lý do hàm này tồn tại
+    thay vì hai lời gọi `build_cell_candidates` song song ở hai file.
+    """
+    entities = parse_query_entities(question)
+    frame = build_cell_frame(release_dir, list(retrieved))
+    return build_cell_candidates(frame, fusion_rows, periods=entities.periods)
+```
+
+Trong `_run_one_question`, đường `--program-decisions` phải gọi **chính hàm
+này** với **chính `retrieved`** (không phải `answerable`), rồi mới thu hẹp
+scope ở bước sau nếu cần. Ghi một test ghim:
+
+```python
+def test_batch_time_and_export_time_candidate_lists_are_identical() -> None:
+    frame = _frame()
+    rows = (_row_candidate(4, 1, None), _row_candidate(3, 2, "Doanh thu"))
+
+    first = build_cell_candidates(frame, rows, periods=("2023",))
+    second = build_cell_candidates(frame, rows, periods=("2023",))
+
+    assert [c.index for c in first] == [c.index for c in second]
+    assert [(c.table_id, c.row_idx, c.col_idx) for c in first] == [
+        (c.table_id, c.row_idx, c.col_idx) for c in second
+    ]
+```
+
+- [ ] **Step 3b: Chạy sinh payload**
+
+```bash
+PYTHONIOENCODING=utf-8 uv run financial-report-qa submission row-batches --program --release-lock data/qa/week1_pilot_422df141c935/dataset-pilot-v1.json --release-dir data/processed/release_v2_422df141c935 --bm25-index data/indexes/bm25-v4/422df141c935d46bfd14302abec50f32380e6e4c012159f8ad0ae5560c8a446a --questions-path data/qa/answer-gold-v1.jsonl --output-dir artifacts/batches/program-gold
+```
+
+Expected: một file batch mỗi 64 câu, mỗi dòng có `candidates` với `index` chạy
+từ 0 và **không trường nào tên `value`**.
+
+Gọi LLM offline theo batch trên các file này, rồi ghi kết quả thành JSONL đúng
+schema `ProgramDecision`. File quyết định phải **không chứa một giá trị số
+nào** ngoài `question_id`, `cells`, `num`, và chuỗi `program`/`uses`/`scale` —
+`extra="forbid"` của contract là chốt chặn cho điều đó.
 
 Kiểm nhanh trước khi dùng:
 
