@@ -78,6 +78,15 @@ def test_a_wrong_row_label_is_caught() -> None:
     assert result.matched is False
 
 
+def test_a_punctuation_only_row_claim_fails_closed() -> None:
+    # "--" chuẩn hoá thành chuỗi rỗng; không được tự khớp mọi dòng.
+    result = check_use_bindings((UseClaim(num=0, row="--", col="2023"),), (_bound(0, 2023),))
+
+    assert result.matched is False
+    assert len(result.mismatches) == 1
+    assert "[NUM_0]" in result.mismatches[0]
+
+
 def test_a_wrong_year_is_caught() -> None:
     result = check_use_bindings(
         (UseClaim(num=0, row="Doanh thu thuần", col="Năm 2021"),), (_bound(0, 2023),)

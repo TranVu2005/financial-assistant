@@ -40,6 +40,9 @@ def _year_of(text: str) -> int | None:
 
 def _row_matches(claim: str, bound: BoundValue) -> bool:
     claimed = _normalize(claim)
+    if not claimed:
+        # Chuỗi rỗng sau chuẩn hoá sẽ tự khớp mọi dòng qua endswith(""); fail closed.
+        return False
     if claimed == _normalize(bound.row_label_raw):
         return True
     if claimed == _normalize(bound.row_path):
