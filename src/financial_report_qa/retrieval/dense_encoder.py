@@ -157,7 +157,19 @@ class SentenceTransformerDenseEncoder:
             show_progress_bar=False,
             **extra_kwargs,
         )
-        return np.asarray(values, dtype=np.float32)
+        values = np.asarray(values, dtype=np.float32)
+        if self.spec.normalize_embeddings:
+            # fp16/bf16 COMPUTE leaves ~1e-3 L2 drift: ST normalizes inside
+            # the compute dtype, so half-precision runs miss downstream
+            # validators (QueryEmbeddingCache._validate demands atol=1e-5 and
+            # rejected the first query encode live on a Kaggle T4). A float32
+            # renormalization restores the exact unit contract at negligible
+            # cost and leaves every direction unchanged; zero-norm rows keep
+            # failing loudly via the downstream isfinite check.
+            values = np.asarray(
+                values / np.linalg.norm(values, axis=1, keepdims=True), dtype=np.float32
+            )
+        return values
 
     def encode_documents(self, texts: Sequence[str]) -> np.ndarray:
         return self._encode(tuple(f"{self.spec.document_prefix}{text}" for text in texts))

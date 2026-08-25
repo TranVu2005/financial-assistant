@@ -4,7 +4,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, Literal, cast
 
 import numpy as np
 import pytest
@@ -70,7 +70,12 @@ class _StubSentenceTransformerRecorder:
 
 
 class _StubSentenceTransformer:
-    """Fake SentenceTransformer: records calls, emits fp16 like a dtype-cast model."""
+    """Fake SentenceTransformer: records calls, emits fp16 like a dtype-cast model.
+
+    Rows carry deliberately off-unit norms (magnitudes 2..3, distinct
+    directions): real ST normalizes INSIDE the compute dtype, so fp16/bf16
+    models hand back vectors whose L2 drifts ~1e-3 -- exactly what broke
+    ``QueryEmbeddingCache._validate`` live on Kaggle."""
 
     def __init__(
         self,
@@ -88,7 +93,10 @@ class _StubSentenceTransformer:
 
     def encode(self, texts: Any, **kwargs: Any) -> np.ndarray:
         self._recorder.encode_kwargs.append(dict(kwargs))
-        return np.zeros((len(texts), 4), dtype=np.float16)
+        rows = len(texts)
+        base = np.arange(1, 4 * rows + 1, dtype=np.float64).reshape(rows, 4)
+        magnitudes = 2.0 + (np.arange(rows) % 2)  # 2.0, 3.0, 2.0, ...
+        return (base * magnitudes[:, None]).astype(np.float16)
 
 
 def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> _StubSentenceTransformerRecorder:
@@ -244,3 +252,44 @@ def test_fp16_compute_output_is_still_cast_to_float32(
     # Stub emits float16 exactly like an fp16-cast model would.
     assert documents.dtype == np.float32
     assert query.dtype == np.float32
+
+
+def _expected_unit_rows(row_count: int) -> np.ndarray:
+    """Mirror the stub's raw output, renormalized independently in float64."""
+    base = np.arange(1, 4 * row_count + 1, dtype=np.float64).reshape(row_count, 4)
+    magnitudes = 2.0 + (np.arange(row_count) % 2)
+    raw = (base * magnitudes[:, None]).astype(np.float16).astype(np.float32)
+    return np.asarray(raw / np.linalg.norm(raw, axis=1, keepdims=True), dtype=np.float32)
+
+
+@pytest.mark.parametrize("model_dtype", [None, "float16"])
+def test_embeddings_are_renormalized_in_float32_to_exact_unit_norm(
+    monkeypatch: pytest.MonkeyPatch, model_dtype: str | None
+) -> None:
+    """ST normalizes INSIDE the compute dtype, so fp16/bf16 models hand back
+    vectors whose L2 sits ~1e-3 off unit -- QueryEmbeddingCache._validate
+    (atol=1e-5) rejected the first query encode live on Kaggle T4. After the
+    float32 cast the wrapper must renormalize rows in float32 through BOTH
+    default-fp32 and model_dtype="float16" paths, keeping row order and
+    direction (unit vectors match an independent recomputation). Stored
+    float32 rounds each norm by ~6e-8, so 1e-6 here is still 16x inside the
+    downstream atol=1e-5 contract."""
+    _install_stub_modules(monkeypatch)
+
+    encoder = SentenceTransformerDenseEncoder(
+        approved_encoder_spec("multilingual-e5-small"),
+        model_dtype=cast(Literal["float32", "float16"] | None, model_dtype),
+    )
+    documents = encoder.encode_documents(["hang mot", "hang hai", "hang ba"])
+    query = encoder.encode_query("doanh thu")
+
+    assert documents.dtype == np.float32
+    assert query.dtype == np.float32
+    norms = np.linalg.norm(documents, axis=1)
+    np.testing.assert_allclose(norms, 1.0, rtol=0.0, atol=1e-6)
+    assert abs(float(np.linalg.norm(query)) - 1.0) <= 1e-6
+    # Direction AND order preserved: each row equals the independently
+    # renormalized stub vector at the same position.
+    expected = _expected_unit_rows(3)
+    np.testing.assert_allclose(documents, expected, rtol=0.0, atol=1e-6)
+    np.testing.assert_allclose(query, expected[0], rtol=0.0, atol=1e-6)
