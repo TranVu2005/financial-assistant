@@ -87,9 +87,10 @@ class CachedReranker:
                     "normalization_version": "v1",
                     "query": normalize_rerank_query(query),
                     "reranker_spec_sha256": self._spec_hash,
-                    # v2: scoring semantics changed under an unchanged model pin, so every
-                    # pre-fix cached score (random classification head) must be unreachable.
-                    "scorer": "qwen3-causal-yesno-v2",
+                    # v3: scoring semantics changed twice under an unchanged model pin --
+                    # random classification head, then judge-template + left-padding
+                    # fixes -- so every earlier cached score must be unreachable.
+                    "scorer": "qwen3-causal-yesno-v3",
                 }
             )
         ).hexdigest()

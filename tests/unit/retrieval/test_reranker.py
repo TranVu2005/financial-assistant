@@ -155,14 +155,17 @@ def test_approved_spec_is_pinned() -> None:
 
 _JUDGE_SYSTEM_LINE = (
     "Judge whether the Document meets the requirements based on the Query and "
-    "the Instruct below. Note that the answer need not be explicitly stated "
-    "in the Document."
+    'the Instruct provided. Note that the answer can only be "yes" or "no".'
 )
 _INSTRUCTION = "Given a financial question, retrieve the table content that answers it"
 
 _STUB_YES_ID = 5
 _STUB_NO_ID = 2
 _STUB_VOCAB = 8
+# Sentinel mass parked on every non-final position (pads included): reading it
+# at logits[:, -1, :] yields this wrong diff instead of the crafted one, so any
+# padding-side regression is visible in the emitted scores.
+_PAD_SENTINEL_YES_DIFF = -60.0
 
 
 class _StubTensor:
@@ -192,15 +195,30 @@ class _StubTensor:
 
 
 class _StubEncoding:
-    """Batch encoding whose ``.to`` mimics BatchEncoding's device move."""
+    """Batch encoding with PER-ROW lengths whose ``.to`` mimics BatchEncoding.
 
-    def __init__(self, batch: int) -> None:
-        self._batch = batch
+    Rows get distinct lengths and PAD positions sit according to the
+    tokenizer's ``padding_side``, so reading column -1 is correct for every
+    row only under LEFT padding -- the exact production invariant.
+    """
+
+    def __init__(self, texts: list[str], padding_side: str) -> None:
+        self.padding_side = padding_side
+        self.lengths = [2 + (j % 3) for j in range(len(texts))]
+        self.max_len = max(self.lengths, default=1)
 
     def to(self, device: Any) -> dict[str, _StubTensor]:
+        input_ids = np.zeros((len(self.lengths), self.max_len), dtype=np.int64)
+        attention_mask = np.zeros_like(input_ids)
+        for row, length in enumerate(self.lengths):
+            real = slice(self.max_len - length, None)
+            if self.padding_side == "right":
+                real = slice(None, length)
+            input_ids[row, real] = 1
+            attention_mask[row, real] = 1
         return {
-            "input_ids": _StubTensor(np.zeros((self._batch, 3), dtype=np.int64)),
-            "attention_mask": _StubTensor(np.ones((self._batch, 3), dtype=np.int64)),
+            "input_ids": _StubTensor(input_ids),
+            "attention_mask": _StubTensor(attention_mask),
         }
 
 
@@ -210,6 +228,7 @@ class _StubRerankRecorder:
 
     dtype_kwargs_seen: list[dict[str, Any]] = field(default_factory=list)
     model_load_kwargs: dict[str, Any] = field(default_factory=dict)
+    tokenizer_load_kwargs: dict[str, Any] = field(default_factory=dict)
     tokenizer_calls: list[dict[str, Any]] = field(default_factory=list)
     device_moves: list[Any] = field(default_factory=list)
     next_row: int = 0
@@ -219,6 +238,7 @@ class _StubTokenizer:
     """Fake AutoTokenizer: fixed yes/no ids, records every tokenization call."""
 
     unk_token_id: int | None = None
+    padding_side: str = "right"  # transformers' own default when not configured
 
     def __init__(
         self,
@@ -239,12 +259,18 @@ class _StubTokenizer:
         return list(self._fallback_encode_ids)
 
     def __call__(self, texts: Any, **kwargs: Any) -> _StubEncoding:
-        self._recorder.tokenizer_calls.append({"texts": list(texts), "kwargs": kwargs})
-        return _StubEncoding(len(texts))
+        texts = list(texts)
+        self._recorder.tokenizer_calls.append({"texts": texts, "kwargs": kwargs})
+        return _StubEncoding(texts, self.padding_side)
 
 
 class _StubCausalLM:
-    """Fake Qwen3ForCausalLM: last-position logits with known yes/no mass."""
+    """Fake Qwen3ForCausalLM: yes/no mass sits ONLY at each row's last real token.
+
+    Every other position -- pads included -- carries sentinel mass whose yes-no
+    diff is ``_PAD_SENTINEL_YES_DIFF``, so reading ``logits[:, -1, :]`` yields
+    the crafted per-document diffs iff the batch was LEFT padded.
+    """
 
     def __init__(self, recorder: _StubRerankRecorder) -> None:
         self._recorder = recorder
@@ -257,14 +283,18 @@ class _StubCausalLM:
         return self
 
     def __call__(self, **inputs: Any) -> SimpleNamespace:
-        batch = int(inputs["input_ids"].array.shape[0])
-        logits = np.zeros((batch, 1, _STUB_VOCAB), dtype=np.float32)
+        attention = inputs["attention_mask"].array
+        batch, seq = attention.shape
+        logits = np.zeros((batch, seq, _STUB_VOCAB), dtype=np.float32)
+        logits[..., _STUB_YES_ID] = _PAD_SENTINEL_YES_DIFF / 2.0  # -30
+        logits[..., _STUB_NO_ID] = -_PAD_SENTINEL_YES_DIFF / 2.0  # +30
         for row in range(batch):
             position = self._recorder.next_row
             self._recorder.next_row += 1
+            last_real = int(np.flatnonzero(attention[row])[-1])
             # Distinct per-document masses so yes-no diffs are order-sensitive.
-            logits[row, 0, _STUB_YES_ID] = 10.0 + float(position)
-            logits[row, 0, _STUB_NO_ID] = 0.5 * float(position)
+            logits[row, last_real, _STUB_YES_ID] = 10.0 + float(position)
+            logits[row, last_real, _STUB_NO_ID] = 0.5 * float(position)
         return SimpleNamespace(logits=_StubTensor(logits))
 
 
@@ -273,10 +303,24 @@ def _install_stub_modules(
     *,
     reject_dtype_kwarg: bool = False,
     tokenizer: _StubTokenizer | None = None,
+    drop_padding_side: bool = False,
 ) -> _StubRerankRecorder:
-    """Inject fake torch / transformers; the constructor imports both lazily."""
+    """Inject fake torch / transformers; the constructor imports both lazily.
+
+    ``drop_padding_side`` simulates a loader that silently ignores the
+    ``padding_side`` kwarg (tokenizer keeps its "right" default) while still
+    recording what the production code passed.
+    """
     recorder = _StubRerankRecorder()
     tokenizer = tokenizer or _StubTokenizer(recorder)
+
+    def tokenizer_from_pretrained(*args: Any, **kwargs: Any) -> _StubTokenizer:
+        recorder.tokenizer_load_kwargs.update(kwargs)
+        applied = dict(kwargs)
+        if drop_padding_side:
+            applied.pop("padding_side", None)
+        tokenizer.padding_side = str(applied.get("padding_side", "right"))
+        return tokenizer
 
     def causal_from_pretrained(*args: Any, **kwargs: Any) -> _StubCausalLM:
         recorder.dtype_kwargs_seen.append(
@@ -292,7 +336,7 @@ def _install_stub_modules(
         from_pretrained=causal_from_pretrained
     )
     transformers_stub.AutoTokenizer = SimpleNamespace(  # type: ignore[attr-defined]
-        from_pretrained=lambda *args, **kwargs: tokenizer
+        from_pretrained=tokenizer_from_pretrained
     )
 
     torch_stub = ModuleType("torch")
@@ -311,9 +355,10 @@ def _install_stub_modules(
     return recorder
 
 
-def test_score_builds_the_official_judge_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
-    """One single-string judge prompt per (query, document): system line,
-    Instruct/Query/Document sections, generation prompt at the end."""
+def test_score_builds_the_pinned_card_judge_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One single-string judge prompt per (query, document), byte-exact against
+    the PINNED revision's model card: judge system line, <Instruct>/<Query>/
+    <Document> body, forced empty think block after ``assistant``."""
     recorder = _install_stub_modules(monkeypatch)
     reranker = Qwen3CrossEncoderReranker(approved_reranker_spec("qwen3-reranker-4b"))
 
@@ -321,13 +366,16 @@ def test_score_builds_the_official_judge_prompt(monkeypatch: pytest.MonkeyPatch)
     reranker.score(query, [document])
 
     call = recorder.tokenizer_calls[0]
-    prompt = call["texts"][0]
-    assert len(call["texts"]) == 1
-    assert prompt.startswith(f"<|im_start|>system\n{_JUDGE_SYSTEM_LINE}<|im_end|>\n")
-    assert f"# Instruct\n{_INSTRUCTION}\n" in prompt
-    assert f"# Query\n{query}\n" in prompt
-    assert f"# Document\n{document}<|im_end|>\n" in prompt
-    assert prompt.endswith("<|im_start|>assistant\n\n")
+    expected_prompt = (
+        "<|im_start|>system\n"
+        f"{_JUDGE_SYSTEM_LINE}<|im_end|>\n"
+        "<|im_start|>user\n"
+        f"<Instruct>: {_INSTRUCTION}\n"
+        f"<Query>: {query}\n"
+        f"<Document>: {document}<|im_end|>\n"
+        "<|im_start|>assistant\n\n\n"
+    )
+    assert call["texts"] == [expected_prompt]
     # Tokenization follows the model-card recipe exactly.
     assert call["kwargs"] == {
         "padding": True,
@@ -336,6 +384,38 @@ def test_score_builds_the_official_judge_prompt(monkeypatch: pytest.MonkeyPatch)
         "return_tensors": "pt",
     }
     assert recorder.device_moves == ["cpu"]
+
+
+def test_tokenizer_loads_left_padded_and_without_a_dtype_kwarg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LEFT padding is what makes logits[:, -1, :] hit each row's true final
+    token; the compute-dtype shim belongs to the model load only."""
+    recorder = _install_stub_modules(monkeypatch)
+    Qwen3CrossEncoderReranker(approved_reranker_spec("qwen3-reranker-4b"))
+
+    assert recorder.tokenizer_load_kwargs["padding_side"] == "left"
+    assert "dtype" not in recorder.tokenizer_load_kwargs
+    assert "torch_dtype" not in recorder.tokenizer_load_kwargs
+
+
+def test_right_padding_would_read_pad_positions_and_corrupt_scores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression guard on the stub itself: when padding_side is dropped and
+    the tokenizer keeps its right default, column -1 is a PAD for shorter rows
+    and the sentinel diff leaks into every score -- proving the production
+    ``padding_side="left"`` is load-bearing for score correctness."""
+    recorder = _install_stub_modules(monkeypatch, drop_padding_side=True)
+    reranker = Qwen3CrossEncoderReranker(approved_reranker_spec("qwen3-reranker-4b"))
+
+    scores = reranker.score("q", tuple(f"doc {i}" for i in range(6)))
+
+    expected = [(10.0 + p) - 0.5 * p for p in range(6)]
+    assert recorder.tokenizer_load_kwargs["padding_side"] == "left"  # code asked for left
+    assert not np.allclose(scores, expected, atol=1e-6)
+    # The longest row of each batch still lands on its real final token.
+    assert scores.tolist()[2] == pytest.approx(expected[2], abs=1e-6)
 
 
 def test_two_batches_split_respects_spec_batch_size(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -348,8 +428,8 @@ def test_two_batches_split_respects_spec_batch_size(monkeypatch: pytest.MonkeyPa
 
     assert [len(call["texts"]) for call in recorder.tokenizer_calls] == [4, 2]
     # Remainder batch keeps judge-prompt order; the generation suffix follows.
-    assert "# Document\nvan ban 4<|im_end|>\n" in recorder.tokenizer_calls[1]["texts"][0]
-    assert "# Document\nvan ban 5<|im_end|>\n" in recorder.tokenizer_calls[1]["texts"][1]
+    assert "<Document>: van ban 4<|im_end|>\n" in recorder.tokenizer_calls[1]["texts"][0]
+    assert "<Document>: van ban 5<|im_end|>\n" in recorder.tokenizer_calls[1]["texts"][1]
 
 
 def test_scores_are_yes_minus_no_diffs_in_document_order(

@@ -40,40 +40,36 @@ _SPECS: dict[str, RerankerSpec] = {
     ),
 }
 
-#: Default judge instruction when a caller does not supply one; mirrors the
-#: Qwen3-Reranker model card's retrieval-style instruction for this domain.
+#: Domain judge instruction baked into every judge prompt (there is no caller
+#: override); mirrors the pinned Qwen3-Reranker model card's retrieval-style
+#: instruction for this project.
 _DEFAULT_RERANK_INSTRUCTION = (
     "Given a financial question, retrieve the table content that answers it"
 )
 
 _JUDGE_SYSTEM_LINE = (
     "Judge whether the Document meets the requirements based on the Query and "
-    "the Instruct below. Note that the answer need not be explicitly stated "
-    "in the Document."
+    'the Instruct provided. Note that the answer can only be "yes" or "no".'
 )
 
 
 def _judge_prompt(query: str, document: str) -> str:
-    """Official Qwen3-Reranker judge prompt for one (query, document) pair.
+    """Judge prompt for one (query, document) pair, verbatim from the model card
+    of the PINNED revision (Qwen/Qwen3-Reranker-4B@22e683669bc0f0bd69640a1354a6d0aebcfeede5).
 
     The checkpoint is a plain causal LM: relevance is read off the final
     position as ``logit("yes") - logit("no")``, so the pair must be rendered
-    through the exact chat template the reranker was trained on.
+    through this exact template, including the forced empty think block after
+    ``assistant``.
     """
     return (
         "<|im_start|>system\n"
         f"{_JUDGE_SYSTEM_LINE}<|im_end|>\n"
         "<|im_start|>user\n"
-        "# Instruct\n"
-        f"{_DEFAULT_RERANK_INSTRUCTION}\n"
-        "\n"
-        "# Query\n"
-        f"{query}\n"
-        "\n"
-        "# Document\n"
-        f"{document}<|im_end|>\n"
-        "<|im_start|>assistant\n"
-        "\n"
+        f"<Instruct>: {_DEFAULT_RERANK_INSTRUCTION}\n"
+        f"<Query>: {query}\n"
+        f"<Document>: {document}<|im_end|>\n"
+        "<|im_start|>assistant\n\n\n"
     )
 
 
@@ -215,7 +211,12 @@ class Qwen3CrossEncoderReranker:
             }
             self._tokenizer = AutoTokenizer.from_pretrained(
                 spec.model_id,
-                torch_dtype=target,
+                # LEFT padding is load-bearing: score() reads logits[:, -1, :],
+                # which lands on each row's TRUE final token only when shorter
+                # sequences are padded on the left. Right padding would score
+                # PAD positions, making every score depend on batch composition
+                # (matches the pinned model card's recipe).
+                padding_side="left",
                 **load_kwargs,
             )
             # The pinned revision is a Qwen3ForCausalLM checkpoint; loading it
@@ -258,6 +259,10 @@ class Qwen3CrossEncoderReranker:
             encoded = self._tokenizer(
                 prompts,
                 padding=True,
+                # Plain truncation=True chops the TAIL first; the official recipe
+                # instead reserves room for the prefix/suffix wrappers. Acceptable
+                # here: pipeline snippets are capped at ~500 chars
+                # (dense_service.py:80), far below spec.max_sequence_length.
                 truncation=True,
                 max_length=self.spec.max_sequence_length,
                 return_tensors="pt",
