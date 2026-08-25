@@ -74,16 +74,22 @@ class SentenceTransformerDenseEncoder:
     ``model_dtype="float16"`` remains an opt-in knob for constrained-VRAM
     COMPUTE (T4), per plan §5.4.
 
-    Both ``model_dtype`` and ``encode_batch_size`` are deliberately NOT part of
-    :class:`DenseEncoderSpec` (hence absent from ``encoder_spec_sha256`` and the
-    index manifests pinning it): §5.4 sanctions fp16 COMPUTE so
-    Qwen3-Embedding-4B fits a Colab T4 (~8GB fp16 weights instead of ~16GB
-    fp32 -> CUDA OOM), while constraint N5 ("không quantize") governs what is
-    STORED — this wrapper still casts every output to np.float32, so shards and
-    indexes stay float32 on disk. An fp16-encoded index paired with fp32-encoded
-    queries (or vice versa) differs only within fp16 rounding, and retrieval
-    consumes ranks (RRF), never absolute scores, so artifact identity is
-    unaffected by these knobs.
+    ``device`` is a PLACEMENT-only knob (same precedent as ``model_dtype``):
+    it moves the model to ``"cpu"``/``"cuda"``/``"cuda:0"``/``"cuda:1"``
+    regardless of ``spec.device``, e.g. to share a 2-GPU box between the
+    encoder and the reranker. It is deliberately NOT part of
+    :class:`DenseEncoderSpec` either.
+
+    All of ``model_dtype``, ``encode_batch_size`` and ``device`` are
+    deliberately NOT part of :class:`DenseEncoderSpec` (hence absent from
+    ``encoder_spec_sha256`` and the index manifests pinning it): §5.4
+    sanctions fp16 COMPUTE so Qwen3-Embedding-4B fits a Colab T4 (~8GB fp16
+    weights instead of ~16GB fp32 -> CUDA OOM), while constraint N5 ("không
+    quantize") governs what is STORED — this wrapper still casts every output
+    to np.float32, so shards and indexes stay float32 on disk. An fp16-encoded
+    index paired with fp32-encoded queries (or vice versa) differs only within
+    fp16 rounding, and retrieval consumes ranks (RRF), never absolute scores,
+    so artifact identity is unaffected by these knobs.
     """
 
     def __init__(
@@ -93,18 +99,21 @@ class SentenceTransformerDenseEncoder:
         local_files_only: bool = False,
         model_dtype: Literal["float32", "float16"] | None = None,
         encode_batch_size: int | None = None,
+        device: str | None = None,
     ) -> None:
-        # Compute-only knobs; intentionally excluded from spec identity (§5.4 vs N5).
+        # Compute/placement-only knobs; excluded from spec identity (§5.4 vs N5).
         self._model_dtype = model_dtype
         self._encode_batch_size = encode_batch_size
+        effective_device = device or spec.device
         try:
             import torch
             from sentence_transformers import SentenceTransformer
 
-            if spec.device == "cuda":
+            if effective_device.startswith("cuda"):
                 # Same-process, same-GPU determinism so A/B replay builds hash identically;
                 # cuBLAS workspace must also be pinned via CUBLAS_WORKSPACE_CONFIG before
-                # this process starts, which torch cannot set retroactively.
+                # this process starts, which torch cannot set retroactively. Fires for any
+                # effective cuda placement -- spec-pinned or runtime-overridden alike.
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
                 torch.use_deterministic_algorithms(True)
@@ -112,7 +121,7 @@ class SentenceTransformerDenseEncoder:
             self._model = SentenceTransformer(
                 spec.model_id,
                 revision=spec.revision,
-                device=spec.device,
+                device=effective_device,
                 trust_remote_code=False,
                 local_files_only=local_files_only,
             )
@@ -125,6 +134,9 @@ class SentenceTransformerDenseEncoder:
             knob = model_dtype or spec.dtype  # Literal["float32", "float16"]
             torch_dtype = getattr(torch, knob)  # only float32/float16 possible
             self._model.to(torch_dtype)
+            # Placement last: the model ends up exactly where the caller asked,
+            # whether that is spec.device or the runtime override.
+            self._model.to(effective_device)
         except Exception as exc:
             raise DenseModelError(
                 f"Pinned dense model is unavailable: {spec.model_id}@{spec.revision}"

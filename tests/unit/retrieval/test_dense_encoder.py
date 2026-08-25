@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import sys
 from dataclasses import dataclass, field
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -66,6 +66,7 @@ class _StubSentenceTransformerRecorder:
     init_kwargs: dict[str, Any] = field(default_factory=dict)
     to_calls: list[Any] = field(default_factory=list)
     encode_kwargs: list[dict[str, Any]] = field(default_factory=list)
+    deterministic_flags: list[bool] = field(default_factory=list)
 
 
 class _StubSentenceTransformer:
@@ -108,6 +109,17 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> _StubSentenceTrans
     torch_stub = ModuleType("torch")
     torch_stub.float32 = "torch.float32"  # type: ignore[attr-defined]
     torch_stub.float16 = "torch.float16"  # type: ignore[attr-defined]
+    # CUDA-determinism surface: the constructor flips these globals only when
+    # the EFFECTIVE device starts with "cuda", so the recorder can observe
+    # exactly when that setup fires.
+    torch_stub.backends = SimpleNamespace(  # type: ignore[attr-defined]
+        cudnn=SimpleNamespace(deterministic=False, benchmark=False)
+    )
+
+    def use_deterministic_algorithms(flag: bool) -> None:
+        recorder.deterministic_flags.append(bool(flag))
+
+    torch_stub.use_deterministic_algorithms = use_deterministic_algorithms  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "torch", torch_stub)
     monkeypatch.setitem(sys.modules, "sentence_transformers", sentence_transformers)
     return recorder
@@ -129,7 +141,8 @@ def test_default_construction_enforces_float32_compute_dtype(
     encoder = SentenceTransformerDenseEncoder(approved_encoder_spec("multilingual-e5-small"))
     encoder.encode_documents(["bang can doi"])
 
-    assert recorder.to_calls == ["torch.float32"]
+    # Dtype cast first, then the (no-op on the stub) placement .to(spec.device).
+    assert recorder.to_calls == ["torch.float32", "cpu"]
     assert len(recorder.encode_kwargs) == 1
     assert "batch_size" not in recorder.encode_kwargs[0]
 
@@ -146,7 +159,55 @@ def test_model_dtype_float16_casts_the_model_exactly_once(
     )
     encoder.encode_documents(["bang can doi"])
 
-    assert recorder.to_calls == ["torch.float16"]
+    assert recorder.to_calls == ["torch.float16", "cpu"]
+
+
+def test_device_override_places_the_model_on_the_requested_gpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Placement-only knob (same precedent as ``model_dtype``): ``device=
+    "cuda:1"`` constructs SentenceTransformer on cuda:1 and the final
+    ``.to`` lands the model there, while ``spec`` itself stays untouched --
+    so ``encoder_spec_sha256`` and cache keys are identical across devices."""
+    recorder = _install_stub_modules(monkeypatch)
+
+    encoder = SentenceTransformerDenseEncoder(
+        approved_encoder_spec("multilingual-e5-small"),
+        device="cuda:1",
+    )
+    encoder.encode_documents(["bang can doi"])
+
+    assert recorder.init_kwargs["device"] == "cuda:1"
+    # Dtype cast first (spec default fp32 -- placement does not change compute),
+    # then the model ends up exactly where the caller asked.
+    assert recorder.to_calls == ["torch.float32", "cuda:1"]
+    assert encoder.spec.device == "cpu"
+
+
+def test_cuda_placement_fires_determinism_setup_for_overridden_devices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CUDA-determinism globals trigger on the EFFECTIVE device: a runtime
+    override onto any cuda* device must pin them exactly like a spec-pinned
+    "cuda" would, and a cpu run must never touch them."""
+    recorder_override = _install_stub_modules(monkeypatch)
+    SentenceTransformerDenseEncoder(
+        approved_encoder_spec("multilingual-e5-small"), device="cuda:0"
+    )
+    assert recorder_override.deterministic_flags == [True]
+
+    recorder_spec = _install_stub_modules(monkeypatch)
+    cuda_spec = approved_encoder_spec("multilingual-e5-small").model_copy(
+        update={"device": "cuda"}
+    )
+    encoder = SentenceTransformerDenseEncoder(cuda_spec)
+    assert recorder_spec.deterministic_flags == [True]
+    assert recorder_spec.init_kwargs["device"] == "cuda"
+    assert encoder.spec.device == "cuda"
+
+    recorder_cpu = _install_stub_modules(monkeypatch)
+    SentenceTransformerDenseEncoder(approved_encoder_spec("multilingual-e5-small"))
+    assert recorder_cpu.deterministic_flags == []
 
 
 def test_encode_batch_size_is_forwarded_to_sentence_transformer(

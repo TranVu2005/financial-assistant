@@ -181,6 +181,24 @@ def _parser() -> argparse.ArgumentParser:
         help="Compute-only: nạp reranker ở fp16/bf16 để giảm VRAM cho T4; điểm số "
         "vẫn float32 theo spec.",
     )
+    export.add_argument(
+        "--table-encoder-device",
+        default="cpu",
+        help="Compute-only: đặt encoder dense tầng bảng lên cpu/cuda/cuda:0/cuda:1 "
+        "(không thuộc spec).",
+    )
+    export.add_argument(
+        "--table-encoder-model-dtype",
+        choices=("float32", "float16"),
+        default=None,
+        help="Compute-only dtype của encoder dense tầng bảng; bỏ trống thì float16 "
+        "khi --table-encoder-device là cuda*, ngược lại float32.",
+    )
+    export.add_argument(
+        "--rerank-device",
+        default="cpu",
+        help="Compute-only: đặt cross-encoder lên cpu/cuda/cuda:0/cuda:1 (không thuộc spec).",
+    )
 
     batches = commands.add_parser(
         "row-batches",
@@ -251,6 +269,26 @@ def _parser() -> argparse.ArgumentParser:
         default="float32",
         help="Compute-only: nạp reranker ở fp16/bf16 để giảm VRAM cho T4; điểm "
         "số vẫn float32 theo spec. Phải trùng `export`.",
+    )
+    batches.add_argument(
+        "--table-encoder-device",
+        default="cpu",
+        help="Compute-only: đặt encoder dense tầng bảng lên cpu/cuda/cuda:0/"
+        "cuda:1 (không thuộc spec). Phải trùng `export`.",
+    )
+    batches.add_argument(
+        "--table-encoder-model-dtype",
+        choices=("float32", "float16"),
+        default=None,
+        help="Compute-only dtype của encoder dense tầng bảng; bỏ trống thì "
+        "float16 khi --table-encoder-device là cuda*, ngược lại float32. "
+        "Phải trùng `export`.",
+    )
+    batches.add_argument(
+        "--rerank-device",
+        default="cpu",
+        help="Compute-only: đặt cross-encoder lên cpu/cuda/cuda:0/cuda:1 "
+        "(không thuộc spec). Phải trùng `export`.",
     )
 
     validate = commands.add_parser("validate")

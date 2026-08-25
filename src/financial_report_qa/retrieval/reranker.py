@@ -181,6 +181,11 @@ class Qwen3CrossEncoderReranker:
     difference through ``.float()``, so emitted scores remain float32 no matter
     what the forward pass computes in.
 
+    ``device`` is a PLACEMENT-only knob with the same exclusion from
+    :class:`RerankerSpec` ("cpu"/"cuda"/"cuda:0"/"cuda:1"): it decides where
+    the model and every tokenized batch live, never what is scored, so spec
+    hashes and cache keys are identical across placements.
+
     ``None`` (the default) keeps the historical fp32 load. ``"float16"`` or
     ``"bfloat16"`` lowers compute precision so the ~8GB bf16 checkpoint fits
     a 15GB T4 instead of OOMing at ~16GB fp32 -- at the honest cost that
@@ -195,15 +200,19 @@ class Qwen3CrossEncoderReranker:
         *,
         local_files_only: bool = False,
         model_dtype: Literal["float32", "float16", "bfloat16"] | None = None,
+        device: str | None = None,
     ) -> None:
         try:
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
 
             self._torch = torch
-            # Compute-only knob: ``None`` keeps the fp32 spec contract; any
-            # explicit value only lowers forward-pass precision (see class doc).
+            # Compute/placement-only knobs: ``None`` keeps the fp32 spec
+            # contract and spec.device placement respectively; any explicit
+            # value only lowers forward-pass precision or moves the model
+            # (see class doc).
             target = getattr(torch, model_dtype) if model_dtype is not None else torch.float32
+            effective_device = device or spec.device
             load_kwargs: dict[str, Any] = {
                 "revision": spec.revision,
                 "trust_remote_code": False,
@@ -243,7 +252,10 @@ class Qwen3CrossEncoderReranker:
         # Qwen3ForCausalLM inherits eval/to without annotations in the shipped
         # transformers types; the calls themselves are trivially safe.
         self._model.eval()  # type: ignore[no-untyped-call]
-        self._model.to(spec.device)  # type: ignore[arg-type]
+        self._model.to(effective_device)  # type: ignore[arg-type]
+        # Batches must follow the model, not the spec: score() tokenizes on
+        # CPU and moves tensors to this same effective device.
+        self._device = effective_device
         self.spec = spec
         # Judge vocabulary ids are fixed once at load; they must resolve to a
         # single id each or every downstream score would be meaningless.
@@ -266,7 +278,7 @@ class Qwen3CrossEncoderReranker:
                 truncation=True,
                 max_length=self.spec.max_sequence_length,
                 return_tensors="pt",
-            ).to(self.spec.device)
+            ).to(self._device)
             with self._torch.no_grad():
                 logits = self._model(**encoded).logits
             last_logits = logits[:, -1, :]

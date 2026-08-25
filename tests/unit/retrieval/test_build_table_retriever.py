@@ -86,10 +86,44 @@ class _RecordingQwen3Reranker:
         *,
         local_files_only: bool = False,
         model_dtype: str | None = None,
+        device: str | None = None,
     ) -> None:
         self.spec = spec
         type(self).init_calls.append(
-            {"local_files_only": local_files_only, "model_dtype": model_dtype}
+            {
+                "local_files_only": local_files_only,
+                "model_dtype": model_dtype,
+                "device": device,
+            }
+        )
+
+
+class _RecordingDenseEncoder:
+    """`SentenceTransformerDenseEncoder` stand-in that only records init kwargs.
+
+    The real class downloads weights inside ``__init__``; monkeypatching it
+    over the module attribute exposes exactly which placement (`device`) and
+    compute dtype kwargs production threads in for a given manifest spec."""
+
+    init_calls: ClassVar[list[dict[str, object]]] = []
+
+    def __init__(
+        self,
+        spec: object,
+        *,
+        local_files_only: bool = False,
+        model_dtype: str | None = None,
+        encode_batch_size: int | None = None,
+        device: str | None = None,
+    ) -> None:
+        self.spec = spec
+        type(self).init_calls.append(
+            {
+                "local_files_only": local_files_only,
+                "model_dtype": model_dtype,
+                "encode_batch_size": encode_batch_size,
+                "device": device,
+            }
         )
 
 
@@ -166,6 +200,11 @@ def _args(**overrides: object) -> argparse.Namespace:
         "dense_index": None,
         "table_dense_weight": 1.0,
         "rerank": False,
+        # Compute/placement knobs (device-placement feature): parser defaults
+        # for every subcommand that owns --dense-index.
+        "table_encoder_device": "cpu",
+        "table_encoder_model_dtype": None,
+        "rerank_device": "cpu",
     }
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
@@ -369,7 +408,7 @@ def test_rerank_dtype_bfloat16_reaches_the_pinned_reranker_factory(
     assert isinstance(retriever, FusionService)
     assert isinstance(reranker, _EagerCachedReranker)
     assert _RecordingQwen3Reranker.init_calls == [
-        {"local_files_only": False, "model_dtype": "bfloat16"}
+        {"local_files_only": False, "model_dtype": "bfloat16", "device": "cpu"}
     ]
 
 
@@ -461,3 +500,206 @@ def test_all_three_rerank_subcommands_expose_the_compute_dtype_flag() -> None:
 
         defaults = submission_parser().parse_args(argv[: argv.index("--rerank-dtype")])
         assert defaults.rerank_dtype == "float32"
+
+
+def test_device_flags_thread_through_to_both_pinned_models(
+    tmp_path: Path,
+    _redirect_table_query_cache: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--table-encoder-device` / `--table-encoder-model-dtype` /
+    `--rerank-device` phải tới đúng kwargs khởi tạo của cả hai model pinned
+    qua `_build_table_retriever` -- placement knob, spec không đổi."""
+    _, index_dir = _write_dense_artifacts(tmp_path)
+    monkeypatch.setattr(
+        retrieval_cli, "SentenceTransformerDenseEncoder", _RecordingDenseEncoder
+    )
+    monkeypatch.setattr(retrieval_cli, "Qwen3CrossEncoderReranker", _RecordingQwen3Reranker)
+    monkeypatch.setattr(retrieval_cli, "CachedReranker", _EagerCachedReranker)
+    _RecordingDenseEncoder.init_calls.clear()
+    _RecordingQwen3Reranker.init_calls.clear()
+
+    retriever, reranker = retrieval_cli._build_table_retriever(
+        _args(
+            dense_index=index_dir,
+            rerank=True,
+            table_encoder_device="cuda:1",
+            table_encoder_model_dtype="float16",
+            rerank_device="cuda:0",
+        ),
+        _release(),
+        _bm25_index(),
+    )
+
+    assert isinstance(retriever, FusionService)
+    assert isinstance(reranker, _EagerCachedReranker)
+    # Encoder: placement cuda:1 with the explicitly requested fp16 compute.
+    assert _RecordingDenseEncoder.init_calls == [
+        {
+            "local_files_only": False,
+            "model_dtype": "float16",
+            "encode_batch_size": None,
+            "device": "cuda:1",
+        }
+    ]
+    # Reranker: factory lambda captures --rerank-device for the lazy load.
+    assert _RecordingQwen3Reranker.init_calls == [
+        {"local_files_only": False, "model_dtype": None, "device": "cuda:0"}
+    ]
+
+
+def test_cuda_encoder_device_infers_float16_unless_dtype_is_explicit(
+    tmp_path: Path,
+    _redirect_table_query_cache: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """fp32 4B cannot fit one T4: bỏ trống --table-encoder-model-dtype khi
+    device là cuda* thì suy ra float16; ghi đè tường minh thì thắng."""
+    _, index_dir = _write_dense_artifacts(tmp_path)
+    monkeypatch.setattr(
+        retrieval_cli, "SentenceTransformerDenseEncoder", _RecordingDenseEncoder
+    )
+
+    def build(**overrides: object) -> list[dict[str, object]]:
+        del _RecordingDenseEncoder.init_calls[:]
+        retrieval_cli._build_table_retriever(
+            _args(dense_index=index_dir, **overrides), _release(), _bm25_index()
+        )
+        return list(_RecordingDenseEncoder.init_calls)
+
+    inferred = build(table_encoder_device="cuda:1")
+    assert inferred[0]["model_dtype"] == "float16"
+    assert inferred[0]["device"] == "cuda:1"
+
+    explicit = build(table_encoder_device="cuda:0", table_encoder_model_dtype="float32")
+    assert explicit[0]["model_dtype"] == "float32"
+    assert explicit[0]["device"] == "cuda:0"
+
+    bare = build()
+    assert bare[0]["model_dtype"] == "float32"
+    assert bare[0]["device"] == "cpu"
+
+
+@pytest.mark.parametrize("overrides", [{}, {"rerank": True}])
+def test_placement_defaults_keep_todays_behavior_exactly(
+    tmp_path: Path,
+    _redirect_table_query_cache: None,
+    monkeypatch: pytest.MonkeyPatch,
+    overrides: dict[str, object],
+) -> None:
+    """Mặc định (cờ vắng mặt): encoder cpu + fp32 và reranker cpu -- đúng
+    hành vi trước feature, chỉ là bây giờ truyền tường minh thay vì dựa vào
+    default bên trong lớp model."""
+    _, index_dir = _write_dense_artifacts(tmp_path)
+    monkeypatch.setattr(
+        retrieval_cli, "SentenceTransformerDenseEncoder", _RecordingDenseEncoder
+    )
+    monkeypatch.setattr(retrieval_cli, "Qwen3CrossEncoderReranker", _RecordingQwen3Reranker)
+    monkeypatch.setattr(retrieval_cli, "CachedReranker", _EagerCachedReranker)
+    _RecordingDenseEncoder.init_calls.clear()
+    _RecordingQwen3Reranker.init_calls.clear()
+
+    retriever, reranker = retrieval_cli._build_table_retriever(
+        _args(dense_index=index_dir, **overrides),
+        _release(),
+        _bm25_index(),
+    )
+
+    assert isinstance(retriever, FusionService)
+    assert _RecordingDenseEncoder.init_calls == [
+        {
+            "local_files_only": False,
+            "model_dtype": "float32",
+            "encode_batch_size": None,
+            "device": "cpu",
+        }
+    ]
+    if overrides.get("rerank"):
+        assert isinstance(reranker, _EagerCachedReranker)
+        assert _RecordingQwen3Reranker.init_calls == [
+            {"local_files_only": False, "model_dtype": None, "device": "cpu"}
+        ]
+    else:
+        assert reranker is None
+
+
+def test_all_three_subcommands_expose_the_placement_flags() -> None:
+    """Cả ba subcommand có `--dense-index` đều nhận ba cờ placement/dtype,
+    mặc định cpu / None / cpu."""
+    sweep = retrieval_cli._parser().parse_args(
+        [
+            "sweep-k",
+            "--release-lock",
+            "lock.json",
+            "--bm25-index",
+            "idx",
+            "--gold",
+            "gold.jsonl",
+            "--output-stem",
+            "out/sweep",
+            "--dense-index",
+            "dense-dir",
+            "--table-encoder-device",
+            "cuda:1",
+            "--table-encoder-model-dtype",
+            "float16",
+            "--rerank-device",
+            "cuda:0",
+        ]
+    )
+    assert sweep.table_encoder_device == "cuda:1"
+    assert sweep.table_encoder_model_dtype == "float16"
+    assert sweep.rerank_device == "cuda:0"
+
+    from financial_report_qa.submission.cli import _parser as submission_parser
+
+    export_argv = [
+        "export",
+        "--release-lock",
+        "lock.json",
+        "--bm25-index",
+        "idx",
+        "--questions-path",
+        "q.jsonl",
+        "--execution-config",
+        "cfg.yaml",
+        "--output-zip",
+        "out.zip",
+        "--report-dir",
+        "reports",
+        "--program-decisions",
+        "decisions.jsonl",
+    ]
+    row_batches_argv = [
+        "row-batches",
+        "--release-lock",
+        "lock.json",
+        "--bm25-index",
+        "idx",
+        "--questions-path",
+        "q.jsonl",
+        "--output-dir",
+        "batches",
+        "--release-dir",
+        "release",
+    ]
+    for argv in (export_argv, row_batches_argv):
+        placed = submission_parser().parse_args(
+            argv
+            + [
+                "--table-encoder-device",
+                "cuda:1",
+                "--table-encoder-model-dtype",
+                "float16",
+                "--rerank-device",
+                "cuda:0",
+            ]
+        )
+        assert placed.table_encoder_device == "cuda:1"
+        assert placed.table_encoder_model_dtype == "float16"
+        assert placed.rerank_device == "cuda:0"
+
+        defaults = submission_parser().parse_args(argv)
+        assert defaults.table_encoder_device == "cpu"
+        assert defaults.table_encoder_model_dtype is None
+        assert defaults.rerank_device == "cpu"

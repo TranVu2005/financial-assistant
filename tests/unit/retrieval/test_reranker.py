@@ -202,12 +202,21 @@ class _StubEncoding:
     row only under LEFT padding -- the exact production invariant.
     """
 
-    def __init__(self, texts: list[str], padding_side: str) -> None:
+    def __init__(
+        self,
+        texts: list[str],
+        padding_side: str,
+        moves: list[Any] | None = None,
+    ) -> None:
         self.padding_side = padding_side
         self.lengths = [2 + (j % 3) for j in range(len(texts))]
         self.max_len = max(self.lengths, default=1)
+        self._moves = moves if moves is not None else []
 
     def to(self, device: Any) -> dict[str, _StubTensor]:
+        # Record where the batch was sent: score() must move tensors to the
+        # SAME effective device the model was placed on.
+        self._moves.append(device)
         input_ids = np.zeros((len(self.lengths), self.max_len), dtype=np.int64)
         attention_mask = np.zeros_like(input_ids)
         for row, length in enumerate(self.lengths):
@@ -231,6 +240,7 @@ class _StubRerankRecorder:
     tokenizer_load_kwargs: dict[str, Any] = field(default_factory=dict)
     tokenizer_calls: list[dict[str, Any]] = field(default_factory=list)
     device_moves: list[Any] = field(default_factory=list)
+    encoding_device_moves: list[Any] = field(default_factory=list)
     next_row: int = 0
 
 
@@ -261,7 +271,7 @@ class _StubTokenizer:
     def __call__(self, texts: Any, **kwargs: Any) -> _StubEncoding:
         texts = list(texts)
         self._recorder.tokenizer_calls.append({"texts": texts, "kwargs": kwargs})
-        return _StubEncoding(texts, self.padding_side)
+        return _StubEncoding(texts, self.padding_side, self._recorder.encoding_device_moves)
 
 
 class _StubCausalLM:
@@ -481,6 +491,29 @@ def test_dtype_kwarg_falls_back_to_torch_dtype_on_type_error(
     assert recorder.model_load_kwargs.get("revision", "").startswith("22e6836")
     assert recorder.model_load_kwargs["trust_remote_code"] is False
     assert recorder.model_load_kwargs["local_files_only"] is False
+
+
+def test_device_override_moves_model_and_batches_onto_cuda_0(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``device="cuda:0"`` is a placement-only knob (same precedent as
+    ``model_dtype``): the loaded model moves there exactly ONCE, right after
+    load alongside the dtype cast, and every tokenized batch rides to the
+    SAME effective device -- never back to spec.device ("cpu"). Spec hashes
+    and cache keys are untouched because ``spec`` itself never changes."""
+    recorder = _install_stub_modules(monkeypatch)
+    spec = approved_reranker_spec("qwen3-reranker-4b")
+
+    reranker = Qwen3CrossEncoderReranker(spec, model_dtype="float16", device="cuda:0")
+    scores = reranker.score("q", tuple(f"doc {i}" for i in range(6)))
+
+    # Load still carries the compute dtype; placement happens once, post-load.
+    assert recorder.dtype_kwargs_seen == [{"dtype": "torch.float16"}]
+    assert recorder.device_moves == ["cuda:0"]
+    # Six docs at batch_size=4 -> two batches, both moved to cuda:0.
+    assert recorder.encoding_device_moves == ["cuda:0", "cuda:0"]
+    assert scores.shape == (6,)
+    assert scores.dtype == np.float32
 
 
 def test_unresolvable_judge_tokens_fail_loudly_at_construction(

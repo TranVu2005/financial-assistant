@@ -258,6 +258,23 @@ def _parser() -> argparse.ArgumentParser:
         help="Compute-only: nạp reranker ở fp16/bf16 để giảm VRAM cho T4; điểm số "
         "vẫn float32 theo spec.",
     )
+    sweep.add_argument(
+        "--table-encoder-device",
+        default="cpu",
+        help="Compute-only: đặt encoder dense lên cpu/cuda/cuda:0/cuda:1 (không thuộc spec).",
+    )
+    sweep.add_argument(
+        "--table-encoder-model-dtype",
+        choices=("float32", "float16"),
+        default=None,
+        help="Compute-only dtype của encoder dense; bỏ trống thì float16 khi "
+        "--table-encoder-device là cuda*, ngược lại float32.",
+    )
+    sweep.add_argument(
+        "--rerank-device",
+        default="cpu",
+        help="Compute-only: đặt cross-encoder lên cpu/cuda/cuda:0/cuda:1 (không thuộc spec).",
+    )
     return parser
 
 
@@ -411,6 +428,11 @@ def _build_table_retriever(
     model cùng nằm trong RAM (~16GB + ~16GB fp32, xem help của `--rerank`).
     `--rerank-dtype` hạ precision TÍNH TOÁN của reranker (fp16/bf16, không thuộc
     spec) để model 4B vừa VRAM T4; điểm trả ra vẫn float32.
+
+    Đặt model lên GPU (--table-encoder-device / --rerank-device, cùng
+    --table-encoder-model-dtype) là knob compute-only giống hệt `model_dtype`:
+    không đụng spec hash lẫn cache key, chỉ quyết định model sống ở đâu --
+    vd. T4 x2 đặt encoder ở cuda:1 và reranker ở cuda:0 để hai GPU cùng chạy.
     Rerank tuần tự *sau* fusion trong mỗi câu, nhưng đó là thứ tự thực thi --
     không phải là hai model thay phiên nhau chiếm chỗ.
     """
@@ -440,8 +462,25 @@ def _build_table_retriever(
     manifest = DenseIndexManifest.model_validate(
         json.loads((dense_index_dir / "manifest.json").read_text(encoding="utf-8"))
     )
+    # Placement/compute-only knobs (cùng tiền lệ với `model_dtype`): không thuộc
+    # DenseEncoderSpec nên spec hash ghi trong manifest lẫn cache key query
+    # embedding không đổi. Dtype bỏ trống suy ra theo device: fp32 4B không thể
+    # vừa một T4, nên cuda* mặc định float16; cpu giữ đúng hành vi fp32 cũ.
+    table_encoder_device: str = getattr(args, "table_encoder_device", "cpu")
+    raw_encoder_dtype = getattr(args, "table_encoder_model_dtype", None)
+    encoder_model_dtype: Literal["float32", "float16"]
+    if raw_encoder_dtype is not None:
+        encoder_model_dtype = cast(Literal["float32", "float16"], raw_encoder_dtype)
+    else:
+        encoder_model_dtype = (
+            "float16" if table_encoder_device.startswith("cuda") else "float32"
+        )
     if encoder is None:
-        encoder = SentenceTransformerDenseEncoder(manifest.encoder)
+        encoder = SentenceTransformerDenseEncoder(
+            manifest.encoder,
+            model_dtype=encoder_model_dtype,
+            device=table_encoder_device,
+        )
     loaded_dense_index = load_dense_index(
         dense_index_dir,
         corpus,
@@ -471,10 +510,15 @@ def _build_table_retriever(
                 if rerank_dtype in (None, "float32")
                 else cast(Literal["float16", "bfloat16"], rerank_dtype)
             )
+            # Placement-only device: phải được lambda bắt lại để model, khi
+            # cache miss nạp thật, sống đúng GPU caller chỉ (--rerank-device).
+            rerank_device: str = getattr(args, "rerank_device", "cpu")
             reranker = CachedReranker(
                 cache_dir,
                 spec,
-                factory=lambda: Qwen3CrossEncoderReranker(spec, model_dtype=model_dtype),
+                factory=lambda: Qwen3CrossEncoderReranker(
+                    spec, model_dtype=model_dtype, device=rerank_device
+                ),
             )
     else:
         reranker = None
