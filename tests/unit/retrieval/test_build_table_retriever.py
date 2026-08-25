@@ -10,8 +10,9 @@ real sentence-transformers or cross-encoder model."""
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -67,6 +68,50 @@ class _FakeReranker:
 
     def score(self, query: str, documents: Sequence[str]) -> np.ndarray:
         self.calls.append((query, len(documents)))
+        return np.zeros(len(documents), dtype=np.float32)
+
+
+class _RecordingQwen3Reranker:
+    """`Qwen3CrossEncoderReranker` stand-in that only records init kwargs.
+
+    The real class imports torch/transformers inside ``__init__``; unit tests
+    must never construct it, so the CLI wiring is observed through this fake
+    monkeypatched over the module attribute the factory lambda resolves."""
+
+    init_calls: ClassVar[list[dict[str, object]]] = []
+
+    def __init__(
+        self,
+        spec: object,
+        *,
+        local_files_only: bool = False,
+        model_dtype: str | None = None,
+    ) -> None:
+        self.spec = spec
+        type(self).init_calls.append(
+            {"local_files_only": local_files_only, "model_dtype": model_dtype}
+        )
+
+
+class _EagerCachedReranker:
+    """`CachedReranker` stand-in that builds the factory eagerly.
+
+    The real class defers model construction until a cache miss, which would
+    hide the factory's kwargs from a test; building immediately exposes them.
+    Never touches disk."""
+
+    def __init__(
+        self,
+        cache_dir: Path,
+        spec: object,
+        *,
+        factory: Callable[[], object],
+    ) -> None:
+        self.cache_dir = cache_dir
+        self.spec = spec
+        self.inner = factory()
+
+    def score(self, query: str, documents: Sequence[str]) -> np.ndarray:
         return np.zeros(len(documents), dtype=np.float32)
 
 
@@ -299,3 +344,120 @@ def test_sweep_k_parser_accepts_the_three_stack_flags() -> None:
     assert defaults.dense_index is None
     assert defaults.table_dense_weight == pytest.approx(1.0)
     assert defaults.rerank is False
+    assert defaults.rerank_dtype == "float32"
+
+
+def test_rerank_dtype_bfloat16_reaches_the_pinned_reranker_factory(
+    tmp_path: Path,
+    _redirect_table_query_cache: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--rerank-dtype bfloat16` phải tới đúng kwargs của reranker pinned qua
+    factory trong `CachedReranker` -- compute-only knob, spec không đổi."""
+    _, index_dir = _write_dense_artifacts(tmp_path)
+    monkeypatch.setattr(retrieval_cli, "Qwen3CrossEncoderReranker", _RecordingQwen3Reranker)
+    monkeypatch.setattr(retrieval_cli, "CachedReranker", _EagerCachedReranker)
+    _RecordingQwen3Reranker.init_calls.clear()
+
+    retriever, reranker = retrieval_cli._build_table_retriever(
+        _args(dense_index=index_dir, rerank=True, rerank_dtype="bfloat16"),
+        _release(),
+        _bm25_index(),
+        encoder=_mock_e5_encoder(),
+    )
+
+    assert isinstance(retriever, FusionService)
+    assert isinstance(reranker, _EagerCachedReranker)
+    assert _RecordingQwen3Reranker.init_calls == [
+        {"local_files_only": False, "model_dtype": "bfloat16"}
+    ]
+
+
+@pytest.mark.parametrize("overrides", [{}, {"rerank_dtype": "float32"}])
+def test_rerank_dtype_default_keeps_the_fp32_spec_contract(
+    tmp_path: Path,
+    _redirect_table_query_cache: None,
+    monkeypatch: pytest.MonkeyPatch,
+    overrides: dict[str, object],
+) -> None:
+    """Mặc định (cờ vắng mặt trên Namespace lẫn giá trị parser "float32") map
+    về ``model_dtype=None`` -- class thật hiểu None là torch.float32, đúng hợp
+    đồng fp32 của `RerankerSpec`; knob chỉ tính toán, không đụng spec."""
+    _, index_dir = _write_dense_artifacts(tmp_path)
+    monkeypatch.setattr(retrieval_cli, "Qwen3CrossEncoderReranker", _RecordingQwen3Reranker)
+    monkeypatch.setattr(retrieval_cli, "CachedReranker", _EagerCachedReranker)
+    _RecordingQwen3Reranker.init_calls.clear()
+
+    retrieval_cli._build_table_retriever(
+        _args(dense_index=index_dir, rerank=True, **overrides),
+        _release(),
+        _bm25_index(),
+        encoder=_mock_e5_encoder(),
+    )
+
+    assert len(_RecordingQwen3Reranker.init_calls) == 1
+    assert _RecordingQwen3Reranker.init_calls[0]["model_dtype"] is None
+
+
+def test_all_three_rerank_subcommands_expose_the_compute_dtype_flag() -> None:
+    """Cả ba subcommand có `--rerank` (`retrieval sweep-k`, `submission export`,
+    `submission row-batches`) đều nhận `--rerank-dtype`, mặc định float32."""
+    sweep = retrieval_cli._parser().parse_args(
+        [
+            "sweep-k",
+            "--release-lock",
+            "lock.json",
+            "--bm25-index",
+            "idx",
+            "--gold",
+            "gold.jsonl",
+            "--output-stem",
+            "out/sweep",
+            "--rerank-dtype",
+            "bfloat16",
+        ]
+    )
+    assert sweep.rerank_dtype == "bfloat16"
+
+    from financial_report_qa.submission.cli import _parser as submission_parser
+
+    export_argv = [
+        "export",
+        "--release-lock",
+        "lock.json",
+        "--bm25-index",
+        "idx",
+        "--questions-path",
+        "q.jsonl",
+        "--execution-config",
+        "cfg.yaml",
+        "--output-zip",
+        "out.zip",
+        "--report-dir",
+        "reports",
+        "--program-decisions",
+        "decisions.jsonl",
+        "--rerank-dtype",
+        "bfloat16",
+    ]
+    row_batches_argv = [
+        "row-batches",
+        "--release-lock",
+        "lock.json",
+        "--bm25-index",
+        "idx",
+        "--questions-path",
+        "q.jsonl",
+        "--output-dir",
+        "batches",
+        "--release-dir",
+        "release",
+        "--rerank-dtype",
+        "bfloat16",
+    ]
+    for argv in (export_argv, row_batches_argv):
+        parsed = submission_parser().parse_args(argv)
+        assert parsed.rerank_dtype == "bfloat16"
+
+        defaults = submission_parser().parse_args(argv[: argv.index("--rerank-dtype")])
+        assert defaults.rerank_dtype == "float32"

@@ -174,6 +174,13 @@ def _parser() -> argparse.ArgumentParser:
         "khi reranker nạp thêm ~16GB); Colab là nơi chạy phù hợp cho phép đo "
         "fused+rerank.",
     )
+    export.add_argument(
+        "--rerank-dtype",
+        choices=("float32", "float16", "bfloat16"),
+        default="float32",
+        help="Compute-only: nạp reranker ở fp16/bf16 để giảm VRAM cho T4; điểm số "
+        "vẫn float32 theo spec.",
+    )
 
     batches = commands.add_parser(
         "row-batches",
@@ -237,6 +244,13 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Xếp lại top-50 của RRF bằng Qwen3-Reranker-4B. Cần "
         "--dense-index. Phải trùng `export`.",
+    )
+    batches.add_argument(
+        "--rerank-dtype",
+        choices=("float32", "float16", "bfloat16"),
+        default="float32",
+        help="Compute-only: nạp reranker ở fp16/bf16 để giảm VRAM cho T4; điểm "
+        "số vẫn float32 theo spec. Phải trùng `export`.",
     )
 
     validate = commands.add_parser("validate")

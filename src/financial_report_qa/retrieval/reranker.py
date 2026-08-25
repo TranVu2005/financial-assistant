@@ -15,7 +15,7 @@ never contend for the same VRAM.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Literal, Protocol
 
 import numpy as np
 
@@ -116,24 +116,51 @@ def rerank_candidates(
 
 
 class Qwen3CrossEncoderReranker:
-    """Real Qwen3 cross-encoder, loaded from a pinned revision."""
+    """Real Qwen3 cross-encoder, loaded from a pinned revision.
 
-    def __init__(self, spec: RerankerSpec, *, local_files_only: bool = False) -> None:
+    ``model_dtype`` is a COMPUTE-only knob (same precedent as
+    ``SentenceTransformerDenseEncoder.model_dtype``): it is deliberately NOT
+    part of :class:`RerankerSpec`, so ``reranker_spec_sha256``, the index-free
+    score cache keys and every artifact identity stay unchanged across dtypes.
+    N5 still governs what is STORED: the SCORE/CONTRACT dtype stays
+    ``spec.dtype`` (always ``"float32"``) and :meth:`score` casts every logit
+    through ``.float()``, so emitted scores remain float32 no matter what the
+    forward pass computes in.
+
+    ``None`` (the default) keeps the historical fp32 load. ``"float16"`` or
+    ``"bfloat16"`` lowers compute precision so the ~8GB bf16 checkpoint fits
+    a 15GB T4 instead of OOMing at ~16GB fp32 -- at the honest cost that
+    near-tie ranks may shift under fp16/bf16 rounding: validate against an
+    fp32 run on a sample of questions before trusting a measurement taken at
+    reduced precision.
+    """
+
+    def __init__(
+        self,
+        spec: RerankerSpec,
+        *,
+        local_files_only: bool = False,
+        model_dtype: Literal["float32", "float16", "bfloat16"] | None = None,
+    ) -> None:
         try:
             import torch
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
             self._torch = torch
+            # Compute-only knob: ``None`` keeps the fp32 spec contract; any
+            # explicit value only lowers forward-pass precision (see class doc).
+            target = getattr(torch, model_dtype) if model_dtype is not None else torch.float32
             self._tokenizer = AutoTokenizer.from_pretrained(
                 spec.model_id,
                 revision=spec.revision,
+                torch_dtype=target,
                 trust_remote_code=False,
                 local_files_only=local_files_only,
             )
             self._model = AutoModelForSequenceClassification.from_pretrained(
                 spec.model_id,
                 revision=spec.revision,
-                torch_dtype=torch.float32,  # N5: never quantize a ranking score
+                torch_dtype=target,  # COMPUTE precision; N5 governs stored scores
                 trust_remote_code=False,
                 local_files_only=local_files_only,
             )

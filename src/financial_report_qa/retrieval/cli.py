@@ -251,6 +251,13 @@ def _parser() -> argparse.ArgumentParser:
         "và ~32GB RAM (encoder dense ~16GB fp32 vẫn thường trú khi reranker nạp thêm "
         "~16GB); Colab là nơi chạy phù hợp cho phép đo fused+rerank.",
     )
+    sweep.add_argument(
+        "--rerank-dtype",
+        choices=("float32", "float16", "bfloat16"),
+        default="float32",
+        help="Compute-only: nạp reranker ở fp16/bf16 để giảm VRAM cho T4; điểm số "
+        "vẫn float32 theo spec.",
+    )
     return parser
 
 
@@ -402,6 +409,8 @@ def _build_table_retriever(
     Về bộ nhớ: chỉ việc embed *corpus* là offline. Encoder dense vẫn phải
     thường trú lúc chạy để embed từng câu hỏi, nên khi bật `--rerank` cả hai
     model cùng nằm trong RAM (~16GB + ~16GB fp32, xem help của `--rerank`).
+    `--rerank-dtype` hạ precision TÍNH TOÁN của reranker (fp16/bf16, không thuộc
+    spec) để model 4B vừa VRAM T4; điểm trả ra vẫn float32.
     Rerank tuần tự *sau* fusion trong mỗi câu, nhưng đó là thứ tự thực thi --
     không phải là hai model thay phiên nhau chiếm chỗ.
     """
@@ -453,10 +462,19 @@ def _build_table_retriever(
             cache_dir: Path = (
                 getattr(args, "rerank_cache_dir", None) or _RERANK_CACHE_DEFAULT
             )
+            # Compute-only dtype (giống SentenceTransformerDenseEncoder.model_dtype):
+            # không thuộc RerankerSpec nên spec hash lẫn cache key không đổi;
+            # "float32"/vắng mặt -> None giữ đúng hợp đồng fp32 của spec.
+            rerank_dtype: str | None = getattr(args, "rerank_dtype", None)
+            model_dtype: Literal["float16", "bfloat16"] | None = (
+                None
+                if rerank_dtype in (None, "float32")
+                else cast(Literal["float16", "bfloat16"], rerank_dtype)
+            )
             reranker = CachedReranker(
                 cache_dir,
                 spec,
-                factory=lambda: Qwen3CrossEncoderReranker(spec),
+                factory=lambda: Qwen3CrossEncoderReranker(spec, model_dtype=model_dtype),
             )
     else:
         reranker = None
