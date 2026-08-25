@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 from json import JSONDecodeError
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
@@ -33,12 +33,10 @@ from financial_report_qa.planning.row_choice_batch import build_program_batch_pa
 from financial_report_qa.retrieval.cli import _build_table_retriever
 from financial_report_qa.retrieval.index import load_bm25_index
 from financial_report_qa.retrieval.live_query import (
-    TableRetriever,
     retrieve_candidate_table_ids,
 )
 from financial_report_qa.retrieval.release import resolve_retrieval_release
 from financial_report_qa.retrieval.row_fusion import DEFAULT_ROW_CANDIDATE_COUNT
-from financial_report_qa.retrieval.service import RetrievalService
 from financial_report_qa.submission.compliance import check_bundle
 from financial_report_qa.submission.contracts import SubmissionExportReport
 from financial_report_qa.submission.exporter import (
@@ -199,6 +197,31 @@ def _parser() -> argparse.ArgumentParser:
         help="Số dòng ứng viên mỗi câu.",
     )
     batches.add_argument("--batch-size", type=int, default=64, help="Số câu mỗi file batch.")
+    # Ba cờ dưới đây PHẢI khớp `export`: `ProgramDecision.cells` là vị trí
+    # trong danh sách ô ứng viên, mà danh sách đó dựng từ `retrieved`. Sinh
+    # payload bằng BM25 rồi export bằng fusion+rerank sẽ dịch mọi chỉ số.
+    # `retrieval-fingerprint.json` ghi lại chúng và
+    # `export --assert-payload-fingerprint` chặn nếu lệch.
+    batches.add_argument(
+        "--dense-index",
+        type=Path,
+        default=None,
+        help="Bật fusion BM25+dense cho tầng bảng lúc sinh payload. Phải "
+        "trùng --dense-index của `export`.",
+    )
+    batches.add_argument(
+        "--table-dense-weight",
+        type=float,
+        default=1.0,
+        help="Trọng số nhánh dense trong RRF tầng bảng (bm25 luôn = 1.0). "
+        "Phải trùng `export`.",
+    )
+    batches.add_argument(
+        "--rerank",
+        action="store_true",
+        help="Xếp lại top-50 của RRF bằng Qwen3-Reranker-4B. Cần "
+        "--dense-index. Phải trùng `export`.",
+    )
 
     validate = commands.add_parser("validate")
     validate.add_argument("--zip-path", type=Path, required=True)
@@ -439,10 +462,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise SubmissionError(
                     "--bm25-index dataset_fingerprint does not match --release-lock"
                 )
-            # cast: RetrievalTrace structurally satisfies TableRetriever but mypy
-            # cannot prove it against the _RankedResult protocol (same known
-            # pattern as retrieval/cli.py's sweep-k wiring).
-            service = cast(TableRetriever, RetrievalService(index))
+            # Cùng builder với `export`: mọi cấu hình retrieval đi qua đúng
+            # một chỗ, nên hai lệnh không thể lệch nhau vì code khác nhau.
+            service, batch_reranker = _build_table_retriever(args, release, index)
             questions = load_raw_questions(args.questions_path)
             row_fusion = _build_row_fusion(args, release)
             if row_fusion is None:
@@ -455,15 +477,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             # Final review 2026-08-24: ghi cạnh payload các cài đặt retrieval
             # đã dùng, để `export --assert-payload-fingerprint` chặn mọi lượt
             # chạy sinh lại danh sách ô ứng viên khác lúc batch (mọi chỉ số
-            # ProgramDecision.cells sẽ dịch). row-batches không có cờ
-            # reranker/dense-index nên luôn ghi False/None.
+            # ProgramDecision.cells sẽ dịch).
             write_retrieval_fingerprint(
                 args.output_dir,
                 RetrievalFingerprint(
                     k=args.k,
                     rows_per_question=args.rows_per_question,
-                    reranker_enabled=False,
-                    dense_index=None,
+                    reranker_enabled=batch_reranker is not None,
+                    dense_index=(
+                        args.dense_index.name if args.dense_index is not None else None
+                    ),
                     release_lock=release.lock_path.name,
                     release_lock_sha256=release.lock_sha256,
                 ),
@@ -474,7 +497,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 lines: list[str] = []
                 for raw_question in chunk:
                     retrieved = retrieve_candidate_table_ids(
-                        raw_question.question, service, k=args.k
+                        raw_question.question, service, k=args.k, reranker=batch_reranker
                     )
                     fused = row_fusion.retrieve_rows(
                         raw_question.question,

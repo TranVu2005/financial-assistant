@@ -88,3 +88,80 @@ def test_every_field_mismatch_is_reported_in_one_error(tmp_path: Path) -> None:
     message = str(excinfo.value)
     for field in ("k", "rows_per_question", "reranker_enabled"):
         assert f"{field}:" in message
+
+
+def _batch_parser_defaults(argv: list[str]) -> object:
+    """Parse a `row-batches` command line through the real production parser."""
+    from financial_report_qa.submission.cli import _parser
+
+    return _parser().parse_args(argv)
+
+
+_COMMON = [
+    "--release-lock",
+    "lock.json",
+    "--bm25-index",
+    "idx",
+    "--questions-path",
+    "q.jsonl",
+]
+
+
+def test_row_batches_exposes_the_same_retrieval_flags_as_export() -> None:
+    """`ProgramDecision.cells` are positions in the candidate list, so the two
+    commands must be *able* to be configured identically. A flag present on one
+    side only is what silently shifts every index."""
+    batches = _batch_parser_defaults(
+        [
+            "row-batches",
+            *_COMMON,
+            "--output-dir",
+            "out",
+            "--release-dir",
+            "rel",
+            "--dense-index",
+            "data/indexes/dense-qwen3-4b/fp",
+            "--table-dense-weight",
+            "0.3",
+            "--rerank",
+        ]
+    )
+
+    assert batches.dense_index.name == "fp"  # type: ignore[attr-defined]
+    assert batches.table_dense_weight == 0.3  # type: ignore[attr-defined]
+    assert batches.rerank is True  # type: ignore[attr-defined]
+
+
+def test_batch_and_export_defaults_agree_on_every_fingerprint_field() -> None:
+    """Same flags on both sides must yield an identical fingerprint.
+
+    `export` hardcodes `rows_per_question=DEFAULT_ROW_CANDIDATE_COUNT` while
+    `row-batches` takes it from `--rows-per-question`; this pins their defaults
+    together so a change to either one fails here instead of in a three-hour
+    export.
+    """
+    from financial_report_qa.retrieval.row_fusion import DEFAULT_ROW_CANDIDATE_COUNT
+
+    batches = _batch_parser_defaults(
+        ["row-batches", *_COMMON, "--output-dir", "out", "--release-dir", "rel"]
+    )
+    export = _batch_parser_defaults(
+        [
+            "export",
+            *_COMMON,
+            "--execution-config",
+            "configs/base.yaml",
+            "--output-zip",
+            "out.zip",
+            "--report-dir",
+            "rep",
+            "--program-decisions",
+            "decisions.jsonl",
+        ]
+    )
+
+    assert batches.k == export.k  # type: ignore[attr-defined]
+    assert batches.rows_per_question == DEFAULT_ROW_CANDIDATE_COUNT  # type: ignore[attr-defined]
+    assert batches.table_dense_weight == export.table_dense_weight  # type: ignore[attr-defined]
+    assert batches.rerank == export.rerank is False  # type: ignore[attr-defined]
+    assert batches.dense_index == export.dense_index is None  # type: ignore[attr-defined]
