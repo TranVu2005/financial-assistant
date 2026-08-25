@@ -87,6 +87,7 @@ from financial_report_qa.retrieval.release import (
     ResolvedRetrievalRelease,
     resolve_retrieval_release,
 )
+from financial_report_qa.retrieval.rerank_cache import CachedReranker
 from financial_report_qa.retrieval.reranker import (
     Qwen3CrossEncoderReranker,
     Reranker,
@@ -236,6 +237,14 @@ def _parser() -> argparse.ArgumentParser:
         help="Trọng số nhánh dense trong RRF của tầng bảng (bm25 luôn = 1.0).",
     )
     sweep.add_argument(
+        "--rerank-cache-dir",
+        type=Path,
+        default=None,
+        help="Nơi lưu điểm cross-encoder (mặc định data/indexes/"
+        "rerank-score-cache). Dùng CHUNG giữa `row-batches` và `export` thì "
+        "reranker chỉ tốn GPU đúng một lần; lần thứ hai chạy không cần model.",
+    )
+    sweep.add_argument(
         "--rerank",
         action="store_true",
         help="Xếp lại top-50 của RRF bằng Qwen3-Reranker-4B (pinned). Cần --dense-index "
@@ -341,6 +350,7 @@ def write_sweep_report(
 # Mặc định theo kế hoạch Task 8: QueryEmbeddingCache tự thêm thư mục con
 # `<encoder_spec_sha256[:12]>` bên dưới root này.
 _TABLE_DENSE_QUERY_CACHE_DEFAULT = Path("data/indexes/dense-query-cache/qwen3-4b")
+_RERANK_CACHE_DEFAULT = Path("data/indexes/rerank-score-cache")
 
 
 def _locate_table_dense_corpus(dense_index_dir: Path) -> Path:
@@ -434,7 +444,20 @@ def _build_table_retriever(
 
     if wants_rerank:
         if reranker is None:
-            reranker = Qwen3CrossEncoderReranker(approved_reranker_spec("qwen3-reranker-4b"))
+            spec = approved_reranker_spec("qwen3-reranker-4b")
+            # `row-batches` and `export` rank under identical settings by
+            # construction, so the second of the two runs scores exactly the
+            # pairs the first already scored. Wrapping the model in the cache
+            # makes that second pass free -- and, on a full hit, model-free:
+            # `CachedReranker` only builds the 8GB cross-encoder on a miss.
+            cache_dir: Path = (
+                getattr(args, "rerank_cache_dir", None) or _RERANK_CACHE_DEFAULT
+            )
+            reranker = CachedReranker(
+                cache_dir,
+                spec,
+                factory=lambda: Qwen3CrossEncoderReranker(spec),
+            )
     else:
         reranker = None
 

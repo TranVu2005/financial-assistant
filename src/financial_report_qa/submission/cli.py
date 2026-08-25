@@ -159,6 +159,14 @@ def _parser() -> argparse.ArgumentParser:
         "Khác --dense-weight bên trên, vốn là trọng số dense của ROW fusion.",
     )
     export.add_argument(
+        "--rerank-cache-dir",
+        type=Path,
+        default=None,
+        help="Nơi lưu điểm cross-encoder (mặc định data/indexes/"
+        "rerank-score-cache). Dùng CHUNG giữa `row-batches` và `export` thì "
+        "reranker chỉ tốn GPU đúng một lần; lần thứ hai chạy không cần model.",
+    )
+    export.add_argument(
         "--rerank",
         action="store_true",
         help="Xếp lại top-50 của RRF tầng bảng bằng Qwen3-Reranker-4B (pinned). "
@@ -215,6 +223,14 @@ def _parser() -> argparse.ArgumentParser:
         default=1.0,
         help="Trọng số nhánh dense trong RRF tầng bảng (bm25 luôn = 1.0). "
         "Phải trùng `export`.",
+    )
+    batches.add_argument(
+        "--rerank-cache-dir",
+        type=Path,
+        default=None,
+        help="Nơi lưu điểm cross-encoder (mặc định data/indexes/"
+        "rerank-score-cache). Dùng CHUNG giữa `row-batches` và `export` thì "
+        "reranker chỉ tốn GPU đúng một lần; lần thứ hai chạy không cần model.",
     )
     batches.add_argument(
         "--rerank",
