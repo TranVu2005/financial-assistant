@@ -87,6 +87,9 @@ class CachedReranker:
                     "normalization_version": "v1",
                     "query": normalize_rerank_query(query),
                     "reranker_spec_sha256": self._spec_hash,
+                    # v2: scoring semantics changed under an unchanged model pin, so every
+                    # pre-fix cached score (random classification head) must be unreachable.
+                    "scorer": "qwen3-causal-yesno-v2",
                 }
             )
         ).hexdigest()
@@ -113,9 +116,7 @@ class CachedReranker:
                 )
             self._inner = self._factory()
 
-        computed: np.ndarray = np.asarray(
-            self._inner.score(query, documents), dtype=np.float32
-        )
+        computed: np.ndarray = np.asarray(self._inner.score(query, documents), dtype=np.float32)
         write_numpy_atomic(path, computed)
         self._misses += 1
         return computed

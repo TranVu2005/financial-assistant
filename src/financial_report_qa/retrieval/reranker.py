@@ -15,7 +15,7 @@ never contend for the same VRAM.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 import numpy as np
 
@@ -39,6 +39,56 @@ _SPECS: dict[str, RerankerSpec] = {
         batch_size=4,
     ),
 }
+
+#: Default judge instruction when a caller does not supply one; mirrors the
+#: Qwen3-Reranker model card's retrieval-style instruction for this domain.
+_DEFAULT_RERANK_INSTRUCTION = (
+    "Given a financial question, retrieve the table content that answers it"
+)
+
+_JUDGE_SYSTEM_LINE = (
+    "Judge whether the Document meets the requirements based on the Query and "
+    "the Instruct below. Note that the answer need not be explicitly stated "
+    "in the Document."
+)
+
+
+def _judge_prompt(query: str, document: str) -> str:
+    """Official Qwen3-Reranker judge prompt for one (query, document) pair.
+
+    The checkpoint is a plain causal LM: relevance is read off the final
+    position as ``logit("yes") - logit("no")``, so the pair must be rendered
+    through the exact chat template the reranker was trained on.
+    """
+    return (
+        "<|im_start|>system\n"
+        f"{_JUDGE_SYSTEM_LINE}<|im_end|>\n"
+        "<|im_start|>user\n"
+        "# Instruct\n"
+        f"{_DEFAULT_RERANK_INSTRUCTION}\n"
+        "\n"
+        "# Query\n"
+        f"{query}\n"
+        "\n"
+        "# Document\n"
+        f"{document}<|im_end|>\n"
+        "<|im_start|>assistant\n"
+        "\n"
+    )
+
+
+def _single_token_id(tokenizer: Any, token: str) -> int:
+    """Resolve ``yes``/``no`` to one vocabulary id, or fail loudly."""
+    token_id = tokenizer.convert_tokens_to_ids(token)
+    unk_id = getattr(tokenizer, "unk_token_id", None)
+    if token_id is None or (unk_id is not None and token_id == unk_id):
+        encoded = tokenizer.encode(token, add_special_tokens=False)
+        if len(encoded) != 1:
+            raise RerankModelError(
+                f"reranker judge token {token!r} must map to a single id, got {encoded}"
+            )
+        return int(encoded[0])
+    return int(token_id)
 
 
 def approved_reranker_spec(name: RerankerName) -> RerankerSpec:
@@ -116,7 +166,15 @@ def rerank_candidates(
 
 
 class Qwen3CrossEncoderReranker:
-    """Real Qwen3 cross-encoder, loaded from a pinned revision.
+    """Qwen3-Reranker scored through the OFFICIAL causal yes/no path.
+
+    The pinned checkpoint (``Qwen/Qwen3-Reranker-4B``) ships **base
+    ``Qwen3ForCausalLM`` weights only -- there is no trained classification
+    head**. Loading it via ``AutoModelForSequenceClassification`` made
+    transformers report ``score.weight | MISSING | newly initialized``, so
+    every emitted score was a random projection. Per the model card, relevance
+    is instead read off the final position of a causal forward pass over the
+    judge chat template as ``logit("yes") - logit("no")``.
 
     ``model_dtype`` is a COMPUTE-only knob (same precedent as
     ``SentenceTransformerDenseEncoder.model_dtype``): it is deliberately NOT
@@ -124,8 +182,8 @@ class Qwen3CrossEncoderReranker:
     score cache keys and every artifact identity stay unchanged across dtypes.
     N5 still governs what is STORED: the SCORE/CONTRACT dtype stays
     ``spec.dtype`` (always ``"float32"``) and :meth:`score` casts every logit
-    through ``.float()``, so emitted scores remain float32 no matter what the
-    forward pass computes in.
+    difference through ``.float()``, so emitted scores remain float32 no matter
+    what the forward pass computes in.
 
     ``None`` (the default) keeps the historical fp32 load. ``"float16"`` or
     ``"bfloat16"`` lowers compute precision so the ~8GB bf16 checkpoint fits
@@ -144,42 +202,61 @@ class Qwen3CrossEncoderReranker:
     ) -> None:
         try:
             import torch
-            from transformers import AutoModelForSequenceClassification, AutoTokenizer
+            from transformers import AutoModelForCausalLM, AutoTokenizer
 
             self._torch = torch
             # Compute-only knob: ``None`` keeps the fp32 spec contract; any
             # explicit value only lowers forward-pass precision (see class doc).
             target = getattr(torch, model_dtype) if model_dtype is not None else torch.float32
+            load_kwargs: dict[str, Any] = {
+                "revision": spec.revision,
+                "trust_remote_code": False,
+                "local_files_only": local_files_only,
+            }
             self._tokenizer = AutoTokenizer.from_pretrained(
                 spec.model_id,
-                revision=spec.revision,
                 torch_dtype=target,
-                trust_remote_code=False,
-                local_files_only=local_files_only,
+                **load_kwargs,
             )
-            self._model = AutoModelForSequenceClassification.from_pretrained(
-                spec.model_id,
-                revision=spec.revision,
-                torch_dtype=target,  # COMPUTE precision; N5 governs stored scores
-                trust_remote_code=False,
-                local_files_only=local_files_only,
-            )
+            # The pinned revision is a Qwen3ForCausalLM checkpoint; loading it
+            # through AutoModelForSequenceClassification left `score.weight`
+            # MISSING in the transformers LOAD REPORT and every score was a
+            # random projection. transformers >=5 renamed the kwarg to `dtype`;
+            # older releases spell it `torch_dtype`.
+            try:
+                self._model = AutoModelForCausalLM.from_pretrained(
+                    spec.model_id,
+                    dtype=target,  # COMPUTE precision; N5 governs stored scores
+                    **load_kwargs,
+                )
+            except TypeError:
+                self._model = AutoModelForCausalLM.from_pretrained(
+                    spec.model_id,
+                    torch_dtype=target,  # COMPUTE precision; N5 governs stored scores
+                    **load_kwargs,
+                )
         except Exception as exc:
             raise RerankModelError(
                 f"Pinned reranker model is unavailable: {spec.model_id}@{spec.revision}"
             ) from exc
-        self._model.eval()
-        self._model.to(spec.device)
+        # Qwen3ForCausalLM inherits eval/to without annotations in the shipped
+        # transformers types; the calls themselves are trivially safe.
+        self._model.eval()  # type: ignore[no-untyped-call]
+        self._model.to(spec.device)  # type: ignore[arg-type]
         self.spec = spec
+        # Judge vocabulary ids are fixed once at load; they must resolve to a
+        # single id each or every downstream score would be meaningless.
+        self._yes_id = _single_token_id(self._tokenizer, "yes")
+        self._no_id = _single_token_id(self._tokenizer, "no")
 
     def score(self, query: str, documents: Sequence[str]) -> np.ndarray:
         values: list[float] = []
         batch = self.spec.batch_size
         for start in range(0, len(documents), batch):
             chunk = list(documents[start : start + batch])
+            prompts = [_judge_prompt(query, document) for document in chunk]
             encoded = self._tokenizer(
-                [query] * len(chunk),
-                chunk,
+                prompts,
                 padding=True,
                 truncation=True,
                 max_length=self.spec.max_sequence_length,
@@ -187,5 +264,9 @@ class Qwen3CrossEncoderReranker:
             ).to(self.spec.device)
             with self._torch.no_grad():
                 logits = self._model(**encoded).logits
-            values.extend(logits[:, -1].float().cpu().numpy().tolist())
+            last_logits = logits[:, -1, :]
+            chunk_scores = (
+                (last_logits[:, self._yes_id] - last_logits[:, self._no_id]).float().cpu().numpy()
+            )
+            values.extend(np.asarray(chunk_scores, dtype=np.float64).reshape(-1).tolist())
         return np.asarray(values, dtype=np.float32)
