@@ -398,6 +398,16 @@ def _locate_table_dense_corpus(dense_index_dir: Path) -> Path:
     )
 
 
+def _validate_placement_device(value: str, flag_name: str) -> None:
+    """Chặn sớm cờ đặt chỗ gõ sai ("cudo:1") thay vì để torch văng lỗi opaque
+    sâu bên trong model load. Knob compute-only nên chỉ hai dạng hợp lệ:
+    "cpu" hoặc "cuda"/"cuda:<chỉ số GPU>"."""
+    if value != "cpu" and not value.startswith("cuda"):
+        raise DenseInputError(
+            f"{flag_name} phải là 'cpu' hoặc 'cuda'/'cuda:<i>' (nhận: {value!r})"
+        )
+
+
 def _build_table_retriever(
     args: argparse.Namespace,
     release: ResolvedRetrievalRelease,
@@ -467,6 +477,11 @@ def _build_table_retriever(
     # embedding không đổi. Dtype bỏ trống suy ra theo device: fp32 4B không thể
     # vừa một T4, nên cuda* mặc định float16; cpu giữ đúng hành vi fp32 cũ.
     table_encoder_device: str = getattr(args, "table_encoder_device", "cpu")
+    _validate_placement_device(table_encoder_device, "--table-encoder-device")
+    # Đọc + kiểm luôn ở đây (kể cả khi --rerank vắng mặt) để mọi cờ đặt chỗ
+    # sai đều bị chặn TRƯỚC khi dựng bất kỳ model nào.
+    rerank_device: str = getattr(args, "rerank_device", "cpu")
+    _validate_placement_device(rerank_device, "--rerank-device")
     raw_encoder_dtype = getattr(args, "table_encoder_model_dtype", None)
     encoder_model_dtype: Literal["float32", "float16"]
     if raw_encoder_dtype is not None:
@@ -512,7 +527,6 @@ def _build_table_retriever(
             )
             # Placement-only device: phải được lambda bắt lại để model, khi
             # cache miss nạp thật, sống đúng GPU caller chỉ (--rerank-device).
-            rerank_device: str = getattr(args, "rerank_device", "cpu")
             reranker = CachedReranker(
                 cache_dir,
                 spec,

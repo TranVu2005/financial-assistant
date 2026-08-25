@@ -703,3 +703,35 @@ def test_all_three_subcommands_expose_the_placement_flags() -> None:
         assert defaults.table_encoder_device == "cpu"
         assert defaults.table_encoder_model_dtype is None
         assert defaults.rerank_device == "cpu"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "flag_name"),
+    [
+        ({"table_encoder_device": "cudo:1"}, "--table-encoder-device"),
+        ({"rerank": True, "rerank_device": "gpu:0"}, "--rerank-device"),
+    ],
+)
+def test_malformed_device_flags_fail_loudly_before_any_model_load(
+    tmp_path: Path,
+    _redirect_table_query_cache: None,
+    monkeypatch: pytest.MonkeyPatch,
+    overrides: dict[str, object],
+    flag_name: str,
+) -> None:
+    """Cờ device gõ sai ("cudo:1") phải fail ngay ở _build_table_retriever với
+    DenseInputError gọi rõ tên cờ -- không để trôi xuống torch rồi văng lỗi
+    opaque sâu bên trong model load."""
+    _, index_dir = _write_dense_artifacts(tmp_path)
+    monkeypatch.setattr(
+        retrieval_cli, "SentenceTransformerDenseEncoder", _RecordingDenseEncoder
+    )
+    _RecordingDenseEncoder.init_calls.clear()
+
+    with pytest.raises(DenseInputError, match=flag_name):
+        retrieval_cli._build_table_retriever(
+            _args(dense_index=index_dir, **overrides), _release(), _bm25_index()
+        )
+
+    # Không một model nào được dựng khi cờ sai.
+    assert _RecordingDenseEncoder.init_calls == []
